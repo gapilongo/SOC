@@ -103,6 +103,29 @@ jump hosts, the server patch window, the scanner). The evaluation measures
 it; only the scanner is applied (`tenant_settings`). See `docs/evaluation.md`
 ("Declared tenant context").
 
+## Corpus telemetry, gold evidence and the skills corpus
+
+| File | Purpose | sha256 of the text |
+|---|---|---|
+| `corpus_v1_events.jsonl.gz` | Context events around the `corpus_v1` alerts (AI-E1.10): Wazuh documents, no labels | `8e7f65e11578eb450f3e28ee1b3771b31cca4d7f3a5ae3c79724e198c143cc48` |
+| `corpus_v1_gold.json` | Gold evidence for the 52 `corpus_v1` items of the two investigation-skill families | `d58596bf299e87b9b01127aec8219e7b4a70af01ed262a871c8eba94acf04dff` |
+| `corpus_skills_v1.jsonl.gz` | 196 labelled alerts of the two skill families (63 and 60 attacks), with context-abuse items | `d4833621b875b1cf6fc638c0c4a017b30a1d73e6d540d4baab5665c7f4421679` |
+| `corpus_skills_v1_events.jsonl.gz` | Its context events | `caefe42378c021bfa10ba0e34cff513b4694c2fb7142eb366656877fd9e874ce` |
+| `corpus_skills_v1_gold.json` | Its gold evidence | `f21cec799900fc00bafa8517b8a6f4e0c4b39ea458b2dbfdc775a3e9e734d4e5` |
+
+An investigation skill (ADR 0014) reads what surrounds an alert. The events
+files hold that telemetry in the Wazuh `alerts.json` shape;
+`lg_sotf.eval.tool_fixtures.EventStore` serves a dataset's alerts and events
+offline, as of a moment, so nothing from the future is visible. A gold file
+gives per item the benign hypothesis the telemetry supports, the malicious
+indicators and never-close conditions that are true, and the ids of the
+documents they rest on. Do not edit these files: `python -m
+tests.fixtures.attack_corpus generate` writes them with `corpus_v1.jsonl.gz`
+(which does not change), and a unit test checks the bytes and these sha256
+values. `docs/evaluation.md` ("Corpus telemetry, gold evidence and the skills
+corpus") describes the contents and `scripts/load_corpus_telemetry.py`, which
+loads the telemetry around chosen items into a lab indexer.
+
 ## AIT-ADS (not committed)
 
 `aitads_v1`, a sample of the public AIT Alert Data Set (CC BY 4.0), is built

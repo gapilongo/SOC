@@ -35,6 +35,10 @@ changes another item's events):
 Password spraying needs nothing extra: its failures, lockout and success are
 corpus alerts already, and the event store serves them next to these events.
 
+:mod:`.gold` reads the store (alerts and events) and writes the gold evidence
+of the skill items; :mod:`.skills` builds the ``corpus_skills_v1`` dataset from
+the same building blocks; :mod:`.files` lists what is written.
+
 Plain Sysmon process creations are level 0 in the 4.14 ruleset, so they never
 reach ``alerts.json``; the lab raises them with :data:`LOCAL_RULES` (the local
 rule ADR 0014 section 3.1 names), which INT3.4's contract test loads.
@@ -50,12 +54,13 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
-from lg_sotf.eval.tool_fixtures import event_time
+from lg_sotf.eval.tool_fixtures import EventStore, event_time
 from tests.fixtures.attack_corpus import alerts as A
 from tests.fixtures.attack_corpus.alerts import Body, Ctx, pick, win
 from tests.fixtures.attack_corpus.catalog import rule_block
 from tests.fixtures.attack_corpus.corpus import BODY_ORDER, ID_PREFIX, Corpus
 from tests.fixtures.attack_corpus.fleet import DCS, HOSTS, MANAGER, WIN_ADMINS, WIN_SERVERS, WORKSTATIONS, Host
+from tests.fixtures.attack_corpus.gold import PSEXESVC_SERVICE_PATH, GoldRow, service_exe, skill_of
 from tests.fixtures.attack_corpus.scenarios import INSTALLS, START, Truth
 
 NAME = "corpus_v1_events"
@@ -69,13 +74,15 @@ LOCAL_RULES: Dict[str, Dict[str, Any]] = {
     PROCESS_RULE: {"level": 3, "description": "Sysmon - Event 1: Process creation",
                    "groups": ["windows", "sysmon", "sysmon_event1"], "if_sid": "61603"},
 }
-SKILL_RULES: Dict[str, Tuple[str, ...]] = {
-    "windows.logon_failure": ("60122", "60204", "60115"),
-    "windows.service_install": ("61138", "92068"),
+#: The benign hypothesis (ADR 0014 sections 1.4 and 1.5) each benign scenario of ``corpus_v1`` was written for.
+HYPOTHESES: Dict[str, str] = {
+    "noise:logon-typo": "typo_then_success",
+    "lookalike:stale-credentials": "stale_credentials",
+    "lookalike:it-admin": "sanctioned_remote_admin",
+    "lookalike:windows-patching": "vendor_updater_service",
 }
 IT_WS = HOSTS["IT-WS-01"]
 PSEXESVC = r"C:\Windows\PSEXESVC.exe"
-PSEXESVC_SERVICE_PATH = "%SystemRoot%\\PSEXESVC.exe"
 SERVICES = r"C:\Windows\System32\services.exe"
 CMD = r"C:\Windows\System32\cmd.exe"
 SC = r"C:\Windows\System32\sc.exe"
@@ -101,9 +108,9 @@ class Event:
 class Tel:
     """Events of one episode, drawn from a generator seeded by the episode's key."""
 
-    def __init__(self, key: str):
+    def __init__(self, key: str, namespace: str = NAME):
         self.key = key
-        self.rng = random.Random(f"{NAME}:{key}")
+        self.rng = random.Random(f"{namespace}:{key}")
         self.ctx = Ctx(self.rng)
         self.events: List[Event] = []
 
@@ -130,10 +137,17 @@ def logon_success(tel: Tel, dc: Host, at: datetime, *, user: str, src_ip: str, w
 
 
 def logon_failure(tel: Tel, dc: Host, at: datetime, *, user: str, src_ip: str, workstation: str,
-                  logon_type: int = 3, sub_status: str = "0xc000006a") -> Event:
+                  logon_type: int = 3, sub_status: str = "0xc000006a", rule: str = "60122") -> Event:
+    """4625; ``rule`` 60204 is the same event when it crosses the manager's failure threshold."""
     status = "0xc000006d"
-    return tel.emit(at, dc, "60122", A.logon(tel.ctx, dc, at, user=user, src_ip=src_ip, workstation=workstation,
+    return tel.emit(at, dc, rule, A.logon(tel.ctx, dc, at, user=user, src_ip=src_ip, workstation=workstation,
                                              logon_type=logon_type, ok=False, status=status, sub_status=sub_status))
+
+
+def lockout(tel: Tel, dc: Host, at: datetime, *, user: str, caller: str) -> Event:
+    """4740: ``user`` locked out after failures from the computer ``caller``."""
+    return tel.emit(at, dc, "60115", A.account_event(tel.ctx, dc, at, 4740, actor=f"{dc.name}$", target=user,
+                                                     callerComputerName=caller))
 
 
 def retries(tel: Tel, dc: Host, at: datetime, *, user: str, src_ip: str, workstation: str, start: datetime,
@@ -235,10 +249,6 @@ def corpus_items(corpus: Corpus) -> List[Item]:
     return [Item(f"{ID_PREFIX}-{i:04d}", a, corpus.labels[a["id"]]) for i, a in enumerate(corpus.alerts, start=1)]
 
 
-def skill_of(rule: str) -> Optional[str]:
-    return next((skill for skill, rules in SKILL_RULES.items() if rule in rules), None)
-
-
 def _typo(tel: Tel, item: Item) -> List[Event]:
     d = item.data
     return [logon_success(tel, item.host, tel.seconds(item.at, 20, 240), user=d["targetUserName"],
@@ -300,15 +310,20 @@ def _ransomware(tel: Tel, install: Item, child: Item, operator: str) -> List[Eve
     return found
 
 
+def sc_create(tel: Tel, host: Host, at: datetime, *, name: str, image: str, user: str) -> List[Event]:
+    """Around a 7045 at ``at``: the ``sc.exe create`` that registered the service, and the service's own process."""
+    create = f'sc.exe  create {name} binPath= "{image}" start= auto'
+    made = process_start(tel, host, tel.seconds(at, -3, -0.5), image=SC, cmd=create, parent=CMD,
+                         parent_cmd=f"{CMD} /c {create}", user=user)
+    ran = process_start(tel, host, tel.seconds(at, 1, 5), image=service_exe(image), cmd=image, parent=SERVICES,
+                        parent_cmd=SERVICES)
+    return [made, ran]
+
+
 def _sweep_service(tel: Tel, item: Item) -> List[Event]:
     d = item.data
-    user = item.host.owner or pick(tel.rng, WIN_ADMINS)
-    create = f'sc.exe  create {d["serviceName"]} binPath= "{d["imagePath"]}" start= auto'
-    made = process_start(tel, item.host, tel.seconds(item.at, -3, -0.5), image=SC, cmd=create, parent=CMD,
-                         parent_cmd=f"{CMD} /c {create}", user=user)
-    ran = process_start(tel, item.host, tel.seconds(item.at, 1, 5), image=d["imagePath"], cmd=d["imagePath"],
-                        parent=SERVICES, parent_cmd=SERVICES)
-    return [made, ran]
+    return sc_create(tel, item.host, item.at, name=d["serviceName"], image=d["imagePath"],
+                     user=item.host.owner or pick(tel.rng, WIN_ADMINS))
 
 
 def _ransomware_operator(items: Sequence[Item], install: Item) -> str:
@@ -323,7 +338,7 @@ def _ransomware_operator(items: Sequence[Item], install: Item) -> str:
 def item_episodes(items: Sequence[Item]) -> Dict[str, List[Event]]:
     """Context events per skill item id (an episode two alerts share is listed under both)."""
     episodes: Dict[str, List[Event]] = {}
-    successes: Dict[str, datetime] = {}  # source address -> last success written for a typo
+    successes: Dict[str, List[datetime]] = {}  # source address -> the successes written after its typos
     ordered = sorted(items, key=lambda i: (i.truth.scenario != "noise:logon-typo", i.at))  # typos first
     for item in ordered:
         if skill_of(item.rule) is None:
@@ -332,10 +347,10 @@ def item_episodes(items: Sequence[Item]) -> Dict[str, List[Event]]:
         scenario = item.truth.scenario
         if scenario == "noise:logon-typo":
             episodes[item.id] = _typo(tel, item)
-            successes[item.data["ipAddress"]] = max(e.at for e in episodes[item.id])
+            successes.setdefault(item.data["ipAddress"], []).append(max(e.at for e in episodes[item.id]))
         elif scenario == "lookalike:stale-credentials":
-            last = successes.get(item.data["ipAddress"])
-            episodes[item.id] = _stale(tel, item, last if last is not None and last < item.at else None)
+            earlier = [at for at in successes.get(item.data["ipAddress"], []) if at < item.at]
+            episodes[item.id] = _stale(tel, item, max(earlier, default=None))
         elif scenario == "lookalike:it-admin":
             episodes[item.id] = _it_admin(tel, item)
         elif scenario == "campaign:lateral-ransomware" and item.rule == "61138":
@@ -355,9 +370,10 @@ def item_episodes(items: Sequence[Item]) -> Dict[str, List[Event]]:
 # ---------------------------------------------------------------------------------------------------------------------
 
 
-def psexec_history(start: datetime, *, sessions: int, days: int, key: str = "history:psexec") -> List[Event]:
+def psexec_history(start: datetime, *, sessions: int, days: int, key: str = "history:psexec",
+                   namespace: str = NAME) -> List[Event]:
     """IT's routine PsExec sessions from the admin workstation over ``days`` before ``start``."""
-    tel = Tel(key)
+    tel = Tel(key, namespace)
     found: List[Event] = []
     for _ in range(sessions):
         day = start - timedelta(days=tel.rng.randrange(1, days + 1))
@@ -368,10 +384,10 @@ def psexec_history(start: datetime, *, sessions: int, days: int, key: str = "his
     return found
 
 
-def fleet_installs(start: datetime, *, key: str = "history:fleet",
+def fleet_installs(start: datetime, *, key: str = "history:fleet", namespace: str = NAME,
                    products: Iterable[Tuple[str, str, str]] = INSTALLS) -> List[Event]:
     """Every vendor updater service registered on 10 to 14 Windows hosts, 8 to 17 days before ``start``."""
-    tel = Tel(key)
+    tel = Tel(key, namespace)
     found: List[Event] = []
     for _product, service, image in products:
         if not service:
@@ -384,8 +400,8 @@ def fleet_installs(start: datetime, *, key: str = "history:fleet",
     return found
 
 
-def history(start: datetime = START) -> List[Event]:
-    return psexec_history(start, sessions=12, days=28) + fleet_installs(start)
+def history(start: datetime = START, namespace: str = NAME) -> List[Event]:
+    return psexec_history(start, sessions=12, days=28, namespace=namespace) + fleet_installs(start, namespace=namespace)
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -432,22 +448,29 @@ def documents(events: Sequence[Event], *, offset: int = OFFSET) -> Tuple[List[Di
     return docs, ids
 
 
-@dataclass(frozen=True)
-class Telemetry:
-    docs: List[Dict[str, Any]]  # the events file's documents, in time order
-    evidence: Dict[str, List[str]]  # skill item id -> ids of the context events written for it
-
-
-def build_telemetry(items: Sequence[Item]) -> Telemetry:
-    episodes = item_episodes(items)
-    background = history()
+def corpus_events(items: Sequence[Item]) -> List[Event]:
+    """Every context event of ``corpus_v1``: the skill items' episodes, then the estate's history."""
     unique: Dict[int, Event] = {}
-    for events in [*episodes.values(), background]:
+    for events in [*item_episodes(items).values(), history()]:
         for event in events:
             unique.setdefault(id(event), event)
-    docs, ids = documents(list(unique.values()))
-    evidence = {item_id: sorted({ids[id(e)] for e in events}) for item_id, events in sorted(episodes.items())}
-    return Telemetry(docs, evidence)
+    return list(unique.values())
+
+
+def build_telemetry(items: Sequence[Item]) -> List[Dict[str, Any]]:
+    """The documents of ``corpus_v1_events``, in time order."""
+    return documents(corpus_events(items))[0]
+
+
+def gold_rows(items: Sequence[Item]) -> List[GoldRow]:
+    """The skill items of ``corpus_v1`` with the benign hypothesis their scenario was written for."""
+    return [GoldRow(i.id, i.alert, i.truth.disposition, HYPOTHESES.get(i.truth.scenario))
+            for i in items if skill_of(i.rule) is not None]
+
+
+def store_of(alerts: Sequence[Mapping[str, Any]], docs: Sequence[Mapping[str, Any]]) -> EventStore:
+    """The event store an investigation reads: the dataset's alerts and its context events."""
+    return EventStore([*alerts, *docs])
 
 
 def events_text(docs: Sequence[Mapping[str, Any]], meta: Mapping[str, Any]) -> str:
@@ -456,15 +479,23 @@ def events_text(docs: Sequence[Mapping[str, Any]], meta: Mapping[str, Any]) -> s
     return "\n".join(lines) + "\n"
 
 
-def events_meta(docs: Sequence[Mapping[str, Any]], *, name: str, corpus: str, items_sha256: str,
-                description: str) -> Dict[str, Any]:
+DESCRIPTION = (
+    "Context telemetry around the corpus_v1 alerts (AI-E1.10): the Wazuh documents an investigation reads next to "
+    "an alert of the Windows logon-failure and service-install families (logons, process starts, service installs, "
+    "the estate's history), in the alerts.json shape. Not dataset items: they carry no label. Generated by "
+    "tests/fixtures/attack_corpus (telemetry.py); see docs/evaluation.md."
+)
+
+
+def events_meta(docs: Sequence[Mapping[str, Any]], *, name: str = NAME, dataset: str, dataset_sha256: str,
+                description: str = DESCRIPTION, module: str = "tests.fixtures.attack_corpus.telemetry") -> Dict[str, Any]:
     return {
         "synthetic": True,
         "version": VERSION,
         "name": name,
         "description": description,
-        "generator": {"module": "tests.fixtures.attack_corpus.telemetry", "seed": f"{NAME}:<episode>"},
-        "corpus": {"name": corpus, "items_sha256": items_sha256},
+        "generator": {"module": module, "seed": f"{name}:<episode>"},
+        "dataset": {"name": dataset, "sha256": dataset_sha256},
         "local_rules": LOCAL_RULES,
         "composition": {"events": len(docs),
                         "rules": dict(sorted(Counter(str(d["rule"]["id"]) for d in docs).items()))},

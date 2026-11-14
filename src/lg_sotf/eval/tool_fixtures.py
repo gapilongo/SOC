@@ -132,20 +132,18 @@ def fixture_enrichment(
     return EnrichmentService(providers, settings, credentials=real.credentials)
 
 
-
 # ---------------------------------------------------------------------------------------------------------------------
 # Event store: the telemetry the Wazuh evidence templates query (AI-E1.10)
 # ---------------------------------------------------------------------------------------------------------------------
 
 #: The Windows event id of a Wazuh document, the field the templates' ``event_ids`` filter reads.
 EVENT_ID_FIELD = "data.win.system.eventID"
-_TIME_FORMAT = "%Y-%m-%dT%H:%M:%S.%f%z"
 FieldMatch = Union[str, Sequence[str]]
 
 
 def event_time(doc: Mapping[str, Any]) -> datetime:
     """The manager's ``timestamp`` of a Wazuh document (``2026-10-19T07:28:01.928+0000``)."""
-    return datetime.strptime(str(doc["timestamp"]), _TIME_FORMAT)
+    return datetime.strptime(str(doc["timestamp"]), "%Y-%m-%dT%H:%M:%S.%f%z")
 
 
 def field_values(doc: Mapping[str, Any], path: str) -> List[str]:
