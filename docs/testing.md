@@ -147,6 +147,14 @@ with read access to `wazuh-alerts-*` only, and a user with no role), with
 passwords generated at run time. Alerts loaded into the lab therefore never
 change what a test sees.
 
+`tests/live/wazuh/test_evidence_tools.py` runs the Wazuh evidence tools
+([evidence-facts.md](evidence-facts.md#the-wazuh-evidence-tools)) against
+the lab as the reader: the corpus telemetry indexed with the 4.14 template
+gives the same facts as the offline event store, a capped result is cut the
+same way, a second tenant's index is never read, and a wrong password, a
+user without a role, a missing index and an unreachable host are `failed`,
+never `empty`.
+
 `tests/live/wazuh/test_guided_setup.py` runs the guided setup checks
 ([onboarding.md](onboarding.md#guided-wazuh-setup)) against the lab: a wrong
 password, a user without a role, a pattern that matches nothing, a time field
