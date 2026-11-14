@@ -190,7 +190,7 @@ def _ip_literal(value: str) -> Optional[IPAddress]:
         return None
 
 
-class GuardedTransport(httpx.AsyncBaseTransport):
+class PolicyTransport(httpx.AsyncBaseTransport):
     """Applies a :class:`DestinationPolicy` to every request before handing it on.
 
     With ``pin=True`` the request URL's host is replaced by the checked
@@ -198,6 +198,11 @@ class GuardedTransport(httpx.AsyncBaseTransport):
     ``sni_hostname`` extension keep the original name for routing and TLS.
     Injected test transports are wrapped with ``pin=False`` so they still see
     the original host.
+
+    This class is not a shadow-mode boundary. Every client uses
+    :class:`GuardedTransport`, which is one; only a caller that is itself a
+    registered boundary (the Wazuh evidence search, ``lg_sotf.tools.wazuh.indexer``)
+    uses this class directly.
     """
 
     def __init__(
@@ -208,7 +213,6 @@ class GuardedTransport(httpx.AsyncBaseTransport):
         self._resolver = resolver
         self._pin = pin
 
-    @egress("http", REFUSE)
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
         host, port = self._policy.check_url(request.url)
         address = await self._policy.resolve_allowed(host, port, self._resolver)
@@ -219,3 +223,11 @@ class GuardedTransport(httpx.AsyncBaseTransport):
 
     async def aclose(self) -> None:
         await self._inner.aclose()
+
+
+class GuardedTransport(PolicyTransport):
+    """:class:`PolicyTransport` as the ``http`` egress boundary: a shadow run's request is refused."""
+
+    @egress("http", REFUSE)
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        return await super().handle_async_request(request)

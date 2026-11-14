@@ -80,6 +80,9 @@ EXECUTOR_RECEIVER = re.compile(r"connector|executor")
 # Egress that runs in shadow mode too. Adding one is a security review: it must change nothing outside.
 REVIEWED_ALLOWED = {
     "lg_sotf.runtime.health:HealthServer._bind",
+    # INT3.4, ADR 0014 section 3.2: POST _search on the tenant's own Wazuh indexer. No third party, no write;
+    # the body passes the DSL allow-list and the destination policy before it is sent.
+    "lg_sotf.tools.wazuh.indexer:IndexerClient.search",
 }
 
 
