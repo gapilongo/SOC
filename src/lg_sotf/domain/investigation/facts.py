@@ -136,5 +136,8 @@ class InvestigationFacts:
     track: Optional[TrackCounts] = None
     #: The alert waits for its blind-audit label: nobody sees the AI's side.
     hidden: bool = False
-    #: The fact ledger of the alert's newest investigation run (``evidence_facts``), in the order it was recorded.
+    #: The fact ledger of the alert's newest investigation run (``evidence_facts``), in the order it was
+    #: recorded: its first entries, then every later entry that holds no fact (an empty or failed call).
     ledger: Sequence[LedgerEntry] = ()
+    #: How many entries that run's ledger holds in all.
+    ledger_total: int = 0

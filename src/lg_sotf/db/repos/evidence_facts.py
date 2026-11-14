@@ -3,16 +3,17 @@
 Rows are append-only: there is no update or delete here, the runtime role has neither privilege, and a
 trigger refuses both. :meth:`EvidenceFactsRepo.append` numbers a batch after the entries the run already
 has, in one statement. The entries and their ids are built by :mod:`lg_sotf.domain.ledger`; the table's
-constraints refuse a row that breaks the ledger's rules, and a second entry with an id the run already
-has.
+constraints refuse a row that breaks the ledger's rules, and a second entry with an id or a position the
+run already has (:class:`lg_sotf.db.errors.Conflict`).
 
-A shadow run stores nothing: its ledger stays with the run (:class:`lg_sotf.agents.investigation.ledger.FactLedger`).
+Only the run's ledger (:class:`lg_sotf.agents.investigation.ledger.FactLedger`) writes here, and a shadow
+run's ledger never does: its entries stay with the shadow run.
 """
 
 from __future__ import annotations
 
 from datetime import datetime
-from typing import List, Optional, Sequence
+from typing import List, NamedTuple, Optional, Sequence
 from uuid import UUID
 
 from lg_sotf.db.pagination import check_limit
@@ -37,6 +38,21 @@ _APPEND_SQL = """
     ORDER BY e.ord
 """
 
+# The newest run of the alert that has a ledger: its first $3 entries, and every later entry without a fact
+# (an empty or failed call: a small row), each with the run's size.
+_LATEST_RUN_SQL = """
+    SELECT * FROM (
+        SELECT f.*, count(*) OVER () AS run_total, row_number() OVER (ORDER BY f.seq) AS position
+        FROM evidence_facts f
+        WHERE f.tenant_id = $1 AND f.alert_id = $2 AND f.run_id = (
+            SELECT run_id FROM evidence_facts WHERE tenant_id = $1 AND alert_id = $2
+            ORDER BY created_at DESC, run_id DESC LIMIT 1
+        )
+    ) run
+    WHERE position <= $3 OR fact IS NULL
+    ORDER BY seq
+"""
+
 
 class StoredFact(LedgerEntry, Record):
     """A stored ledger entry."""
@@ -47,6 +63,15 @@ class StoredFact(LedgerEntry, Record):
     run_id: str
     seq: int
     created_at: datetime
+
+
+class LatestRun(NamedTuple):
+    """The ledger of an alert's newest investigation run, as a bounded view reads it."""
+
+    total: int
+    """How many entries the run's ledger holds."""
+    entries: List[StoredFact]
+    """Its first entries (up to the limit asked for), then every later entry that holds no fact."""
 
 
 class EvidenceFactsRepo(Repository):
@@ -79,24 +104,12 @@ class EvidenceFactsRepo(Repository):
             )
         return to_models(StoredFact, rows)
 
-    async def list_latest_run(
+    async def latest_run(
         self, tenant_id: str, alert_id: str, *, limit: int = MAX_RUN_ENTRIES, conn: Optional[Connection] = None
-    ) -> List[StoredFact]:
-        """The first ``limit`` entries of the alert's newest run that has a ledger, in the order they were recorded."""
+    ) -> LatestRun:
+        """The ledger of the alert's newest run that has one: its first ``limit`` entries, every later entry
+        without a fact (so a cut never hides a call that failed or found nothing), and the run's size."""
         check_limit(limit, MAX_RUN_ENTRIES)
         async with self._tenant(tenant_id, conn) as c:
-            rows = await c.fetch(
-                """
-                SELECT * FROM evidence_facts
-                WHERE tenant_id = $1 AND alert_id = $2 AND run_id = (
-                    SELECT run_id FROM evidence_facts WHERE tenant_id = $1 AND alert_id = $2
-                    ORDER BY created_at DESC, run_id DESC LIMIT 1
-                )
-                ORDER BY seq
-                LIMIT $3
-                """,
-                tenant_id,
-                alert_id,
-                limit,
-            )
-        return to_models(StoredFact, rows)
+            rows = await c.fetch(_LATEST_RUN_SQL, tenant_id, alert_id, limit)
+        return LatestRun(int(rows[0]["run_total"]) if rows else 0, to_models(StoredFact, rows))

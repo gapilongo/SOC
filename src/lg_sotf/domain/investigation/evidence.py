@@ -209,9 +209,9 @@ def _recorded(entry: LedgerEntry) -> InvestigationObservation:
     )
 
 
-def ledger_observations(ledger: Sequence[LedgerEntry], *, limit: int = MAX_OBSERVATIONS) -> List[InvestigationObservation]:
+def ledger_observations(ledger: Sequence[LedgerEntry]) -> List[InvestigationObservation]:
     """What the run's fact ledger holds, in the order it was recorded: typed facts, and the calls that gave none."""
-    return [_recorded(entry) for entry in ledger[: max(0, limit)]]
+    return [_recorded(entry) for entry in ledger]
 
 
 def _backing(code: str, lookups: Sequence[Lookup], found: Sequence[InvestigationObservation]) -> List[str]:

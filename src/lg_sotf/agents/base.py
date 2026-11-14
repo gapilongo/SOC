@@ -93,6 +93,9 @@ class AgentContext:
     # False for a replay (the history backtest): agents read through ``repos`` but write nothing,
     # neither LLM accounting on the alert nor indicator sightings.
     persist: bool = True
+    investigation_run_id: Optional[str] = None
+    """The investigation run the fact ledger is kept under (``WorkflowState.investigation_run_id``): minted
+    when the workflow run starts, the same after a resume or a node retry, new when the alert is reprocessed."""
 
 
 @dataclass

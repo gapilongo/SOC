@@ -4223,6 +4223,18 @@ export interface components {
             not_established: components["schemas"]["NotEstablished"];
             /** Observations */
             observations: components["schemas"]["InvestigationObservation"][];
+            /**
+             * Observations Total
+             * @description The recorded lookups listed, plus every entry of the run's fact ledger, listed or not.
+             * @default 0
+             */
+            observations_total: number;
+            /**
+             * Observations Truncated
+             * @description The fact ledger holds more entries than are listed (at most 50 observations are). A call that failed or found nothing is still named under not_established.
+             * @default false
+             */
+            observations_truncated: boolean;
             /** @description Null while the alert is still being processed. */
             outcome: components["schemas"]["InvestigationOutcome"] | null;
             /** Pending Harness */

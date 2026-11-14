@@ -454,6 +454,40 @@ def test_the_fact_ledger_is_listed_as_observations_with_what_a_benign_claim_may_
     assert words.NO_TELEMETRY[0] in [i.what for i in assemble(prototype_facts()).not_established.not_checked]
 
 
+def test_the_view_says_when_it_cut_the_ledger_and_never_drops_a_call_that_failed() -> None:
+    seen = run_ledger()[0].evidence_fact()
+    assert seen is not None
+    entries: List[LedgerEntry] = []
+    for n in range(60):
+        call = ToolStep(f"q{n}", "wazuh.host_activity", 1, "a" * 64, f"{n:064x}", "success", False, facts=(seen,))
+        entries += build_entries(call, [], NOW)
+    entries += build_entries(ToolStep("late-empty", "wazuh.logon_fanout", 1, "c" * 64, "d" * 64, "empty", True), [], NOW)
+    entries += build_entries(ToolStep("late-failed", "wazuh.process_lineage", 1, "e" * 64, "f" * 64, "failed", False), [], NOW)
+    # As the service reads a run of 62 entries: its first 50, and every later entry without a fact.
+    read = [*entries[:50], *entries[60:]]
+
+    alone = assemble(prototype_facts(ledger=read, ledger_total=62, lookups=[]))
+    assert [o.id for o in alone.observations] == [f"q{n}:0" for n in range(50)]
+    assert (alone.observations_total, alone.observations_truncated) == (62, True)
+    assert alone.not_established.empty == ["late-empty:0"]
+    assert [(u.kind, u.observation_id) for u in alone.not_established.unavailable] == [("tool_failed", "late-failed:0")]
+
+    lookups = assemble(prototype_facts()).observations
+    beside = assemble(prototype_facts(ledger=read, ledger_total=62))
+    assert len(beside.observations) == 50 and beside.observations[: len(lookups)] == lookups
+    assert (beside.observations_total, beside.observations_truncated) == (len(lookups) + 62, True)
+    assert "late-empty:0" in beside.not_established.empty
+    assert ("tool_failed", "late-failed:0") in [(u.kind, u.observation_id) for u in beside.not_established.unavailable]
+
+    # Nothing cut: the flag is off and the total is what is listed.
+    whole = assemble(prototype_facts(ledger=run_ledger(), ledger_total=3))
+    assert (whole.observations_total, whole.observations_truncated) == (len(whole.observations), False)
+    none = assemble(prototype_facts())
+    assert (none.observations_total, none.observations_truncated) == (len(lookups), False)
+    hidden = assemble(prototype_facts(ledger=read, ledger_total=62, hidden=True))
+    assert (hidden.observations, hidden.observations_total, hidden.observations_truncated) == ([], 0, False)
+
+
 def test_ledger_observations_are_bounded_data_and_hidden_with_the_ai_side() -> None:
     hostile = assemble(prototype_facts(ledger=run_ledger(HOSTILE[:1_000]), lookups=[]))
     host = hostile.observations[0]

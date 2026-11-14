@@ -10,7 +10,8 @@
 
 Each call answers with an :class:`Evidence`: the typed facts it observed (schema 1.1; none when nothing
 matched), a tuple the registry counts itself. One call is one trace step with its own outcome and hashes;
-:func:`cited` stamps them on the facts. The tools are never run as a family.
+the fact ledger (``lg_sotf.agents.investigation.ledger``) gives the facts the ids an investigation cites and
+binds them to those hashes. The tools are never run as a family.
 
 **Outcomes.** Facts came back: ``success``. The search ran and matched nothing: ``empty``. Anything else
 is ``failed`` and ``Evidence.error`` says why in a fixed code (``unreachable``, ``timeout``,
@@ -35,7 +36,7 @@ from typing import Any, Awaitable, Callable, Dict, Iterable, List, Mapping, Opti
 from pydantic import BaseModel
 
 from lg_sotf.models.evidence_fact import EvidenceFact, FactKind, SubjectType, parse_fact
-from lg_sotf.tools.registry import Tool, ToolContext, ToolError, ToolFailed, ToolRegistry, ToolResult, ToolSpec
+from lg_sotf.tools.registry import Tool, ToolContext, ToolError, ToolFailed, ToolRegistry, ToolSpec
 from lg_sotf.tools.wazuh import dsl, mappers, templates
 from lg_sotf.tools.wazuh.indexer import EGRESS_BOUNDARY, Backend, IndexerUnavailable
 from lg_sotf.tools.wazuh.mappers import Answer, Malformed, Mapped
@@ -55,7 +56,6 @@ __all__ = [
     "TENANT_SETTING",
     "Backends",
     "Evidence",
-    "cited",
     "register_wazuh_tools",
     "wazuh_tools",
 ]
@@ -91,15 +91,6 @@ class Evidence(Tuple[EvidenceFact, ...]):
         self.complete = complete and error is None
         self.error = error
         return self
-
-
-def cited(result: ToolResult[Evidence], evidence_id: str) -> Tuple[EvidenceFact, ...]:
-    """The facts of a call as an investigation cites them: ids ``<evidence_id>:<n>`` and the call's own hashes."""
-    provenance = {"input_hash": result.input_hash, "output_hash": result.output_hash or None}
-    return tuple(
-        parse_fact({**fact.model_dump(), "id": f"{evidence_id}:{n}", "provenance": provenance})
-        for n, fact in enumerate(result.value)
-    )
 
 
 class _Reader:

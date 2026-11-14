@@ -16,7 +16,7 @@ import pytest
 from lg_sotf.agents.investigation.ledger import FactLedger, tool_step
 from lg_sotf.db.repos import Escalation
 from lg_sotf.domain.investigation import words
-from lg_sotf.domain.ledger import LedgerEntry
+from lg_sotf.domain.ledger import LedgerEntry, new_run_id
 from lg_sotf.llm.trace import content_hash, tool_input_hash
 from lg_sotf.models.trace import NewTraceStep
 from tests.fixtures import investigation as prototype
@@ -428,7 +428,7 @@ async def test_pending_blind_audit_sample_shows_nothing_of_the_ai_side(api: ApiH
 
 async def record_ledger(api: ApiHarness, tenant_id: str, alert_id: str, host: str) -> List[LedgerEntry]:
     """A run's fact ledger, written as the executor will: registry calls recorded by the ledger."""
-    run = FactLedger(tenant_id, alert_id, f"{tenant_id}:{alert_id}", api.repos.evidence_facts)
+    run = FactLedger(tenant_id, alert_id, new_run_id(), api.repos.evidence_facts)
     entries: List[LedgerEntry] = []
     for evidence_id, handler in (("host", Handler(answer=(host_fact(host),))), ("fanout", Handler(answer=())), ("lineage", Boom())):
         tools = fact_tools(handler)
@@ -463,6 +463,31 @@ async def test_the_fact_ledger_of_the_run_is_listed_as_observations(api: ApiHarn
     assert "fanout:0" in body["not_established"]["empty"] and "host:0" not in body["not_established"]["empty"]
     assert ("tool_failed", "lineage:0") in [(u["kind"], u["observation_id"]) for u in body["not_established"]["unavailable"]]
     assert words.NO_TELEMETRY[0] not in [i["what"] for i in body["not_established"]["not_checked"]]
+    assert (body["observations_total"], body["observations_truncated"]) == (len(before) + 3, False)
+
+
+async def test_the_view_shows_the_newest_run_and_says_when_it_cut(api: ApiHarness) -> None:
+    """The alert was investigated twice (a reprocess): only the newer run's ledger is shown. It holds more than
+    the view lists, so the view says so, and the call that failed after the cut is still not established."""
+    alert_id, _ = await seed_prototype(api)
+    headers = await api.login_headers(TENANT_A, "analyst")
+    lookups = len((await investigation(api, alert_id, headers))["observations"])
+    await record_ledger(api, TENANT_A, alert_id, "FIRST-RUN-HOST")
+
+    run = FactLedger(TENANT_A, alert_id, new_run_id(), api.repos.evidence_facts)
+    for evidence_id, handler in (("bulk", Handler(answer=tuple(host_fact(f"h{n}") for n in range(60)))), ("late", Boom()), ("quiet", Handler(answer=()))):
+        tools = fact_tools(handler, row_cap=100)
+        result = await tools.call(Ctx(tenant_id=TENANT_A, alert_id=alert_id), TOOL, P, agent="investigation")
+        await run.record(tool_step(evidence_id, tools.get(TOOL), result))
+
+    response = await api.client.get(f"{API}/alerts/{alert_id}/investigation", headers=headers)
+    body = response.json()
+    assert response.status_code == 200 and "FIRST-RUN-HOST" not in response.text
+    listed = [o["id"] for o in body["observations"][lookups:]]
+    assert len(body["observations"]) == 50 and listed == [f"bulk:{n}" for n in range(50 - lookups)]
+    assert (body["observations_total"], body["observations_truncated"]) == (lookups + 62, True)
+    assert "quiet:0" in body["not_established"]["empty"]
+    assert ("tool_failed", "late:0") in [(u["kind"], u["observation_id"]) for u in body["not_established"]["unavailable"]]
 
 
 async def test_a_ledger_is_never_shown_to_another_tenant_or_before_the_blind_label(api: ApiHarness) -> None:

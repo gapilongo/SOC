@@ -28,7 +28,6 @@ from lg_sotf.tools.wazuh.tools import (
     PREVALENCE,
     PROCESS_LINEAGE,
     Evidence,
-    cited,
     register_wazuh_tools,
     wazuh_tools,
 )
@@ -543,11 +542,8 @@ async def test_every_call_is_one_trace_step_with_its_own_outcome_and_hashes() ->
     recorded = tape.recorded[results[0].input_hash]
     assert results[0].output_hash == content_hash(recorded) and recorded["facts"][0]["kind"] == "host_activity"
     assert [parse_fact(f) for f in recorded["facts"]] == list(results[0].value), "what is recorded is the facts, in schema 1.1"
-    # The facts an investigation cites carry its ids and the call's own hashes.
-    facts = cited(results[1], "children")
-    assert [f.id for f in facts] == ["children:0"] and facts[0].value == results[1].value[0].value
-    assert (facts[0].provenance.input_hash, facts[0].provenance.output_hash) == (steps[1].input_hash, steps[1].output_hash)
-    assert cited(results[2], "by_source") == ()
+    # The ids an investigation cites, and the binding of each fact to these hashes, are the fact ledger's
+    # (tests/unit/agents/investigation/test_ledger.py: the Wazuh tools' answers recorded as they come).
     # A replay answers from the recording and gives the same facts, outcome and hashes without asking the backend.
     silent = Down("unreachable")
     with use_tape(_Tape(replays=True, recorded=tape.recorded)):

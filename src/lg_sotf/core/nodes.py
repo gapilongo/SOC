@@ -187,6 +187,7 @@ class WorkflowNodes:
             budget_limit=limit if isinstance(limit, int) else USE_DEFAULT,
             llm_budget_exceeded=bool(state.get("llm_budget_exceeded")),
             run_id=shadow_run_id(),
+            investigation_run_id=state.get("investigation_run_id"),
         )
 
     async def gate(self, state: WorkflowState) -> Dict[str, Any]:

@@ -5,11 +5,12 @@ returned none (``empty``, ``failed``, or an answer that holds no typed fact). Ea
 verdict cites (``fact_id``, ``<evidence id>:<n>``, minted by ``lg_sotf.domain.ledger``, unique in the
 run), its position in the run (``seq``), and the call it came from: the tool and its version, the trace
 step's input and output hashes, the outcome, whether the answer was complete and when it was recorded.
-``fact`` is the evidence fact (schema v1) under that id; ``content_hash`` is the SHA-256 of the call
-and the fact's body.
+``fact`` is the evidence fact (schema v1) under that id; ``content_hash`` is the SHA-256 of every other
+field of the row's entry. ``run_id`` is the investigation run (``inv_`` and 32 hex digits), never the alert.
 
 The table states the ledger's rules itself: a row without ``success`` never holds a fact, a failed
-call is never complete, and the id and the input hash inside the fact are the row's.
+call is never complete, a row with a fact is complete exactly when the fact says so, the id and the
+input hash inside the fact are the row's, and a run holds at most 200 rows.
 
 Append-only. The runtime role may read and insert, never update or delete. A trigger also refuses
 every update, and refuses a delete or a truncate unless it is retention or tenant erasure (the schema
@@ -41,7 +42,7 @@ CREATE TABLE evidence_facts (
     tenant_id TEXT NOT NULL REFERENCES tenants (id),
     alert_id TEXT NOT NULL,
     run_id TEXT NOT NULL CHECK (length(run_id) BETWEEN 1 AND 200),
-    seq INTEGER NOT NULL CHECK (seq >= 0),
+    seq INTEGER NOT NULL CHECK (seq BETWEEN 0 AND 199),
     fact_id TEXT NOT NULL CHECK (fact_id ~ '^[a-z][a-z0-9_.-]{0,63}:(0|[1-9][0-9]{0,5})$'),
     evidence_id TEXT NOT NULL CHECK (evidence_id ~ '^[a-z][a-z0-9_.-]{0,63}$'),
     tool TEXT NOT NULL CHECK (length(tool) BETWEEN 1 AND 64),
@@ -52,12 +53,16 @@ CREATE TABLE evidence_facts (
     complete BOOLEAN NOT NULL,
     reason TEXT CHECK (length(reason) <= 64),
     as_of TIMESTAMPTZ NOT NULL,
-    fact JSONB CHECK (fact IS NULL OR octet_length(fact::text) <= 1048576),
+    fact JSONB CHECK (fact IS NULL OR octet_length(fact::text) <= 2097152),
     content_hash TEXT NOT NULL CHECK (content_hash ~ '^[0-9a-f]{64}$'),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT evidence_facts_id_names_evidence CHECK (split_part(fact_id, ':', 1) = evidence_id),
     CONSTRAINT evidence_facts_fact_needs_success CHECK (fact IS NULL OR outcome = 'success'),
     CONSTRAINT evidence_facts_failed_incomplete CHECK (outcome <> 'failed' OR NOT complete),
+    -- One notion of complete: a row with a fact is complete exactly when the fact says so.
+    CONSTRAINT evidence_facts_complete_is_the_facts CHECK (
+        fact IS NULL OR complete = COALESCE(fact -> 'complete' = 'true'::jsonb, false)
+    ),
     -- IS NOT DISTINCT FROM: a fact without an id or without its call's hash is refused, not passed as NULL.
     CONSTRAINT evidence_facts_fact_is_bound CHECK (
         fact IS NULL OR ((fact ->> 'id') IS NOT DISTINCT FROM fact_id

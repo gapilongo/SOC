@@ -265,6 +265,17 @@ class Investigation(_Model):
     summary: InvestigationSummary
     claims: List[InvestigationClaim]
     observations: List[InvestigationObservation]
+    observations_total: int = Field(
+        default=0,
+        description="The recorded lookups listed, plus every entry of the run's fact ledger, listed or not.",
+    )
+    observations_truncated: bool = Field(
+        default=False,
+        description=(
+            "The fact ledger holds more entries than are listed (at most 50 observations are). A call that "
+            "failed or found nothing is still named under not_established."
+        ),
+    )
     not_established: NotEstablished
     steps: List[PlainStep]
     track_record: Optional[OutcomeTrackRecord]

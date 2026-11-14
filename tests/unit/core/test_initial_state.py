@@ -8,6 +8,7 @@ call :func:`lg_sotf.core.graph.initial_state`.
 from __future__ import annotations
 
 import asyncio
+import re
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any, Dict, List, Mapping
@@ -17,6 +18,7 @@ import pytest
 from lg_sotf.core import graph
 from lg_sotf.core.workflow import WorkflowEngine
 from lg_sotf.db.repos import Alert
+from lg_sotf.domain.ledger import RUN_ID_PATTERN
 from lg_sotf.eval import history
 from lg_sotf.models.tenant_settings import token_budget
 
@@ -72,8 +74,12 @@ def test_the_backtest_uses_the_engine_factory() -> None:
 @pytest.mark.parametrize("budget", [None, 0, 250_000, "250000", 2.5])
 def test_backtest_initial_state_equals_the_engine(item: Alert, budget: Any) -> None:
     settings = {"llm_daily_token_budget": budget}
-    engine = engine_state(item, settings)
-    assert engine == backtest_state(item, settings)
+    engine, backtest = engine_state(item, settings), backtest_state(item, settings)
+    # Every start is its own investigation run (AI-E3.2): the run id is minted here, and is the one key
+    # that differs. A reprocessed alert goes through here again, so it never inherits the earlier ledger.
+    runs = [state.pop("investigation_run_id") for state in (engine, backtest)]
+    assert all(re.fullmatch(RUN_ID_PATTERN, run) for run in runs) and runs[0] != runs[1]
+    assert engine == backtest
     assert engine["gate"] == {} and engine["notes"] == [] and engine["alert"]["id"] == item.id
     assert engine["llm_budget_limit"] == (budget if isinstance(budget, int) else None)
 

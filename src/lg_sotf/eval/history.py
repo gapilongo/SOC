@@ -322,6 +322,7 @@ class HistoryReplayer:
                 budget=None,
                 llm_budget_exceeded=bool(state.get("llm_budget_exceeded")),
                 persist=False,
+                investigation_run_id=state.get("investigation_run_id"),
             )
             tallies.append(ctx.usage)
             return ctx
