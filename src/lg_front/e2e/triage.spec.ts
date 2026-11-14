@@ -122,6 +122,8 @@ async function reviewInvestigationView(page: Page, panel: Locator, title: string
   await expect(page).toHaveURL(new RegExp(`/alerts/${alertId}$`));
   await expect(page.getByRole('heading', { name: title, level: 1 })).toBeVisible();
   await expect(page.locator('[data-headline]')).toBeVisible();
+  // The page is the API's read model (GET /alerts/{id}/investigation), not the browser-side fallback.
+  await expect(page.locator('[data-investigation]')).toHaveAttribute('data-source', 'api');
   for (const heading of ['Claims, each beside the fact it rests on', 'What is not established', 'What the investigation did']) {
     await expect(page.getByRole('heading', { name: heading, level: 2 })).toBeVisible();
   }

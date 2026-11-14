@@ -91,6 +91,7 @@ import type {
   PovRunOut,
   PovShadowOut,
   PreviewActionOut,
+  InvestigationOut,
   PreviewConnectorOut,
   PreviewGuardrailOut,
   ProposeSuppressionIn,
@@ -207,6 +208,8 @@ export interface ResponseContract {
   RecoveryCodesOut: Response<Wire<Schemas['RecoveryCodesOut']>, RecoveryCodesOut>;
   ReprocessOut: Response<Wire<Schemas['ReprocessOut']>, ReprocessOut>;
   ResponsePreviewOut: Response<Wire<Schemas['ResponsePreviewOut']>, ResponsePreviewOut>;
+  // The investigation read model with everything nested in it (claims, observations, steps, the proposed response).
+  InvestigationOut: Response<Wire<Schemas['Investigation']>, InvestigationOut>;
   ResponseRoutesOut: Response<Wire<Schemas['ResponseRoutesOut']>, ResponseRoutesOut>;
   RetentionLimits: Response<Wire<Schemas['RetentionLimitsOut']>, RetentionLimits>;
   ReviewBandOut: Response<Wire<Schemas['ReviewBandOut']>, ReviewBandOut>;

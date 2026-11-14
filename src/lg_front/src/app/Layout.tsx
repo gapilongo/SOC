@@ -11,9 +11,10 @@ import { LoadingState } from '../components/ui';
 import { useFocusTrap } from '../components/useFocusTrap';
 import { getBrand, getConfig } from '../config';
 import { SHELL_BANNER } from '../core/slots';
+import { useSingleKeys } from '../lib/singleKeys';
 import { NAV_GROUPS, REGISTRY, pageLabel } from './routes';
 import { Rail } from './shell/Rail';
-import { useSearchKeys, useSingleKeys } from './shell/searchKeys';
+import { useSearchKeys } from './shell/searchKeys';
 import { TopBar } from './shell/TopBar';
 
 // Loaded when the search field first opens.
@@ -34,7 +35,7 @@ export function Layout() {
   const tenantLabel = useTenantLabel();
   const [menuOpen, setMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
-  const [singleKeys, setSingleKeys] = useSingleKeys();
+  const [singleKeys, setSingleKeys] = useSingleKeys(principal?.userId);
   const toggleSearch = useCallback(() => setSearchOpen((open) => !open), []);
   useSearchKeys(toggleSearch, searchOpen, singleKeys);
 

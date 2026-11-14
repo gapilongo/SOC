@@ -563,7 +563,7 @@ describe('Layout', () => {
 
   it('lets single-key shortcuts be switched off: the slash then does nothing, Ctrl+K still works', async () => {
     const user = userEvent.setup();
-    window.localStorage.setItem('lg-sotf.keys', 'off');
+    window.localStorage.setItem('lg-sotf.single-keys.u-1', 'off');
     await renderLayout('/');
     act(() => document.getElementById('main')?.focus());
     await user.keyboard('/');
@@ -574,7 +574,7 @@ describe('Layout', () => {
     await user.keyboard('>single');
     expect(screen.getByRole('option', { name: /Single-key shortcuts: turn on/ })).toBeInTheDocument();
     await user.keyboard('{Enter}');
-    expect(window.localStorage.getItem('lg-sotf.keys')).toBe('on');
+    expect(window.localStorage.getItem('lg-sotf.single-keys.u-1')).toBe('on');
     expect(await screen.findByText('Single-key shortcuts are on. Ctrl K, Tab and Enter always work.')).toBeInTheDocument();
     await user.keyboard('/');
     expect(await screen.findByRole('dialog', { name: 'Search and commands' })).toBeInTheDocument();
