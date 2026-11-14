@@ -29,7 +29,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 from lg_sotf.db.repos._base import Connection, Record, Repository, fetch_one, require_aware
 from lg_sotf.db.repos.alerts import SEVERITIES, Alert
@@ -274,6 +274,49 @@ LIMIT $3
 """
 
 
+# Track record of an outcome category (PRD-2.8a, lg_sotf.domain.investigation.outcome). Analysts' final
+# decisions made in [$2, $3) on alerts whose newest own escalation says "likely malicious" ($6 true: the
+# analysis verdict was malicious, or the routing code is one of $5) or not ($6 false).
+_OUTCOME_DECISIONS_SQL = """
+WITH final AS (
+    SELECT DISTINCT ON (f.alert_id) f.alert_id, f.decision
+    FROM analyst_feedback f
+    WHERE f.tenant_id = $1 AND f.created_at >= $2 AND f.created_at < $3
+      AND f.decision <> 'needs_more_info'
+    ORDER BY f.alert_id, f.created_at DESC, f.id DESC
+)
+SELECT count(*) AS total, count(*) FILTER (WHERE fin.decision = 'true_positive') AS confirmed
+FROM final fin
+JOIN alerts a ON a.tenant_id = $1 AND a.id = fin.alert_id AND a.source_id <> $4
+CROSS JOIN LATERAL (
+    SELECT e.summary FROM escalations e
+    WHERE e.tenant_id = $1 AND e.alert_id = fin.alert_id
+    ORDER BY e.created_at DESC, e.id DESC
+    LIMIT 1
+) le
+WHERE (COALESCE(le.summary->>'verdict', '') = 'malicious'
+       OR COALESCE(le.summary->'routing'->>'code', '') = ANY($5::text[])) = $6
+"""
+
+# Blind-audit labels given in [$2, $3) on alerts whose audited close (the last one before the sample was
+# drawn) has one of the close reasons $5. ``agreement`` is the label against the AI's class, null for unsure.
+_OUTCOME_AUDIT_SQL = """
+SELECT count(*) AS total, count(*) FILTER (WHERE i.agreement) AS confirmed
+FROM blind_audit_items i
+JOIN alerts a ON a.tenant_id = i.tenant_id AND a.id = i.alert_id AND a.source_id <> $4
+CROSS JOIN LATERAL (
+    SELECT ev.data->>'close_reason' AS close_reason
+    FROM alert_events ev
+    WHERE ev.tenant_id = i.tenant_id AND ev.alert_id = i.alert_id
+      AND ev.event_type = 'node.completed' AND ev.node = 'close' AND ev.ts <= i.created_at
+    ORDER BY ev.ts DESC, ev.id DESC
+    LIMIT 1
+) c
+WHERE i.tenant_id = $1 AND i.labelled_at >= $2 AND i.labelled_at < $3
+  AND c.close_reason = ANY($5::text[])
+"""
+
+
 class ValueDayRow(Record):
     """Counts and duration sums for alerts ingested on ``day`` (UTC)."""
 
@@ -477,6 +520,32 @@ class ReportsRepo(Repository):
             decided_at = data.pop("decided_at")
             out.append(DecidedAlert(alert=Alert.model_validate(data), decision=decision, decided_at=decided_at))
         return out
+
+    async def decided_outcomes(
+        self, tenant_id: str, start: datetime, end: datetime, *, likely_malicious: bool,
+        malicious_codes: Sequence[str], conn: Optional[Connection] = None,
+    ) -> Tuple[int, int]:
+        """``(decided, true_positive)``: analysts' final decisions made in ``[start, end)`` on the alerts that
+        went to a person as likely malicious (the analysis verdict ``malicious`` or a routing code of
+        ``malicious_codes`` on the alert's newest own escalation), or on the others (``likely_malicious`` false)."""
+        _window(start, end)
+        async with self._tenant(tenant_id, conn) as c:
+            row = await fetch_one(
+                c, _OUTCOME_DECISIONS_SQL, tenant_id, start, end, SAMPLE_SOURCE_ID, list(malicious_codes),
+                likely_malicious,
+            )
+        return int(row["total"]), int(row["confirmed"])
+
+    async def audited_closes(
+        self, tenant_id: str, start: datetime, end: datetime, *, close_reasons: Sequence[str],
+        conn: Optional[Connection] = None,
+    ) -> Tuple[int, int]:
+        """``(labelled, agreed)``: blind-audit labels given in ``[start, end)`` on alerts closed with one of
+        ``close_reasons``, and those whose label agrees with the AI (an ``unsure`` label never agrees)."""
+        _window(start, end)
+        async with self._tenant(tenant_id, conn) as c:
+            row = await fetch_one(c, _OUTCOME_AUDIT_SQL, tenant_id, start, end, SAMPLE_SOURCE_ID, list(close_reasons))
+        return int(row["total"]), int(row["confirmed"])
 
 
 def _window(start: datetime, end: datetime) -> None:

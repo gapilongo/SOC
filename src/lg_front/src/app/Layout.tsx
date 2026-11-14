@@ -5,17 +5,19 @@ import { Outlet, useLocation } from 'react-router-dom';
 import { useAuth, useAuthStore } from '../auth/AuthContext';
 import { logoutUrl } from '../auth/oidc';
 import { ErrorBoundary, PageFallback } from '../components/ErrorBoundary';
-import { ActingTenantBanner } from '../pages/platform/TenantSwitcher';
+import { SlotOutlet } from '../components/Slot';
 import { Button, LoadingState } from '../components/ui';
 import { useFocusTrap } from '../components/useFocusTrap';
 import { getConfig } from '../config';
+import { SHELL_BANNER } from '../core/slots';
 import { NAV_GROUPS, pageLabel } from './routes';
 import { Header } from './shell/Header';
 import { Sidebar } from './shell/Sidebar';
 
 /**
  * The app shell: sidebar (a drawer on phones, below 768 px), one header on
- * every page, the acting-tenant banner and the page itself. The page has its
+ * every page, the modules' banners (the `shell.banner` slot: the
+ * acting-tenant banner) and the page itself. The page has its
  * own error boundary, reset on navigation, so a crash leaves the shell (and
  * sign-out) working.
  */
@@ -102,7 +104,7 @@ export function Layout() {
 
       <div className="min-w-0 md:pl-[232px]">
         <Header ref={menuButtonRef} page={pageLabel(location.pathname)} menuOpen={menuOpen} onOpenMenu={() => setMenuOpen(true)} onSignOut={() => void signOut()} />
-        <ActingTenantBanner />
+        <SlotOutlet slot={SHELL_BANNER} props={{}} />
         <main id="main" ref={mainRef} tabIndex={-1} className="mx-auto w-full max-w-[1600px] px-4 py-6 focus:outline-none md:px-6">
           <ErrorBoundary resetKey={location.pathname} fallback={PageFallback}>
             <Suspense fallback={<LoadingState />}>

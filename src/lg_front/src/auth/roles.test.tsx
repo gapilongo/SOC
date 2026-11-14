@@ -1,9 +1,9 @@
 import { screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
-import type { ActionOut, Page } from '../api/types';
+import type { ActionOut, Page } from '../modules/soc/api/types';
 import { RequireRole } from '../components/Guards';
-import ApprovalsPage from '../pages/approvals/ApprovalsPage';
+import ApprovalsPage from '../modules/soc/pages/approvals/ApprovalsPage';
 import { NAV_GROUPS } from '../app/routes';
 import { fakeApi, renderWithSession, signedInSession } from '../test/helpers';
 import { approvalRoleFor, can, decisionBlockedReason, escalationDecisionBlockedReason, roleAtLeast } from './roles';

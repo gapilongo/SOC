@@ -48,7 +48,7 @@ WebSocket events are outside this document and versioned separately.
 | Tier | Promise | Operations |
 |---|---|---|
 | `stable` | No breaking change without a deprecation period first (below). New optional fields, parameters, enum values and operations may appear at any time: ignore what you do not know (tolerant reader, ADR-0009). | `/auth` (login, refresh, logout, me), `/ingest/*`, `/alerts`, `/escalations` (list, read, claim, decision, response preview), `/actions`, `/sources`, `/suppressions`, `/users`, `/api-keys`, `/audit`, `/healthz`, `/readyz` |
-| `beta` | May change in a minor release; breaking changes are listed in the changelog. | `/auth/mfa`, `/escalations/groups` and `/escalations/bulk/*`, `/tenant/*`, `/usage/llm`, `/platform/*`, `/alerts/{id}/evidence`, `/alerts/{id}/incident-report`, `/integrations/*`, `/tickets`, `/reports/*`, `/metrics` |
+| `beta` | May change in a minor release; breaking changes are listed in the changelog. | `/auth/mfa`, `/escalations/groups` and `/escalations/bulk/*`, `/tenant/*`, `/usage/llm`, `/platform/*`, `/alerts/{id}/investigation`, `/alerts/{id}/evidence`, `/alerts/{id}/incident-report`, `/integrations/*`, `/tickets`, `/reports/*`, `/metrics` |
 | `internal` | Screens of the bundled UI; may change or disappear in any release. | `/dashboard/summary`, `/onboarding/*` |
 
 A breaking change is one that can make a working client fail: removing an
@@ -227,6 +227,7 @@ The tenant's autonomy policy can disable approval of a risk level entirely.
 | POST | `/ingest/webhook/{source_id}` | API key `ingest` |
 | POST | `/ingest/email` (raw `message/rfc822`, optional `?reporter=`) | API key `ingest` |
 | GET | `/alerts`, `/alerts/counts`, `/alerts/{id}`, `/alerts/{id}/events` | viewer / `read` |
+| GET | `/alerts/{id}/investigation` (what the AI concluded and why; beta) | viewer / `read` |
 | POST | `/alerts/{id}/notes` | analyst / `write` |
 | POST | `/alerts/{id}/reprocess` | admin |
 | GET | `/escalations`, `/escalations/{id}`, `/escalations/groups`, `/escalations/{id}/response-preview` | viewer / `read` |
@@ -323,6 +324,29 @@ closed_from, closed_to, generated_at}`: the number of alerts in every status,
 all-time except `closed`, which counts alerts closed in the window (default:
 from today 00:00 UTC, no end). It is cached for 15 seconds per tenant and
 window.
+
+#### Investigation view (beta)
+
+`GET /alerts/{id}/investigation` returns one read model that explains the
+AI's decision on the alert. It is built from stored data only: it calls no
+model and writes nothing. `schema_version` is 1.
+
+| Field | What it holds |
+|---|---|
+| `outcome` | `category`: `ai_closed_evidence` (closed by the AI on approved evidence), `ai_closed_audit` (closed on the model's word and sampled for audit), `needs_decision` (with a person, likely malicious) or `needs_review` (with a person, not proven either way). `reason`: `{code, sentence}`, why the alert is with a person or was closed. `blockers`: why the AI may not close it on its own. `evidence`: the approved benign signals of an evidence close. `closed_by`: `{kind: "ai"\|"suppression_rule"\|"cached_verdict"\|"analyst", reason, at, rule_id, rule_name, source_alert_id, decision}`, null while the alert is open. `category` is null when a suppression rule or a cached analyst verdict closed the alert before the AI looked at it. `outcome` is null while the alert is still being processed. |
+| `summary` | `{text, written_by}`: the conclusion as it was written; `written_by` is `model` when a model wrote it and `rules` when the rule-based assessment did. |
+| `claims` | `{id, text, written_by, direction: "malicious"\|"benign", observation_ids, check, check_reason}`. `check` is `supported` when a lookup backs the claim and `unsupported` otherwise; `rejected` comes with the checker. The fast model's indicators are claims in its own words; it cites nothing yet, so they are `unsupported`. |
+| `observations` | One per tool call: `{id, tool, title, kind, target, sources, at, outcome, verdict, cached, excerpt: [{text, marks}], excerpt_truncated, input_sha256, output_sha256}`. `outcome` is `success` (a source returned data), `empty` (the sources answered and found nothing) or `failed`. The hashes come from the trace store when it has the call. |
+| `not_established` | `empty` (ids of observations that found nothing), `not_checked` (`{what, why}`), `unavailable` (`{what, why, kind: "no_source"\|"tool_failed", source, observation_id}`: could not be checked for this customer). An empty or failed lookup never backs a claim. |
+| `steps` | What the investigation did, oldest first: `{ts, actor: "code"\|"model"\|"check"\|"policy"\|"person", text, produced}`. No engine node names. |
+| `track_record` | For the alert's outcome category and tenant over the last 90 days: `{category, basis, window_days, total, confirmed, min_samples, rate}`. For `needs_*` categories, `total` is the alerts of the category analysts decided and `confirmed` those decided `true_positive`. For `ai_closed_*`, `total` is the closes of the category an analyst labelled in a blind audit and `confirmed` those whose label agrees with the AI. `rate` is null below `min_samples` (30). |
+| `response` | `{source, actions}`. `plan`: the actions the workflow recorded for the alert, with their `status`. `preview`: what a `true_positive` decision would propose now, as `GET /escalations/{id}/response-preview` computes it for your role. `none`: no response is proposed. Every action names its exact `target`. |
+| `pending_harness` | `{field, why, issue}` for each field that stays empty until the investigation harness fills it (highlight ranges, the model's citations, the checker's verdicts, typed facts from the source's event data). |
+
+Every `sentence`, `title`, `what`, `why` and step `text` is fixed text.
+What an alert, a model or a provider wrote (claim texts, targets, excerpt
+lines, rule names) is returned as data, cut to a stated length, and is
+never put into a sentence.
 
 ### Escalations and actions
 
@@ -579,7 +603,9 @@ from every caller: `GET /alerts` and `GET /alerts/{id}` return
 `hidden_for_blind_audit: true`, `disposition`, `confidence`, `threat_score`
 and `priority` null, `summary` `{"hidden_for_blind_audit": true}` and no
 `findings`, and a `disposition` filter leaves it out; `GET
-/alerts/{id}/events` returns only `ingested` and `note` events; its
+/alerts/{id}/events` returns only `ingested` and `note` events; `GET
+/alerts/{id}/investigation` returns `hidden_for_blind_audit: true` with a
+null `outcome`, empty lists and only the arrival and note steps; its
 escalations and response actions are `404` (`GET /escalations/{id}`,
 `/escalations/{id}/response-preview`, `/actions/{id}`) and left out of `GET
 /escalations` and `GET /actions`; `GET /audit` entries about it carry

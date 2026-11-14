@@ -6897,6 +6897,540 @@
         "title": "IntegrationUpdateIn",
         "type": "object"
       },
+      "Investigation": {
+        "properties": {
+          "alert_id": {
+            "title": "Alert Id",
+            "type": "string"
+          },
+          "claims": {
+            "items": {
+              "$ref": "#/components/schemas/InvestigationClaim"
+            },
+            "title": "Claims",
+            "type": "array"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "hidden_for_blind_audit": {
+            "default": false,
+            "description": "The alert waits for its blind-audit label: the AI's side is withheld and every list is empty.",
+            "title": "Hidden For Blind Audit",
+            "type": "boolean"
+          },
+          "not_established": {
+            "$ref": "#/components/schemas/NotEstablished"
+          },
+          "observations": {
+            "items": {
+              "$ref": "#/components/schemas/InvestigationObservation"
+            },
+            "title": "Observations",
+            "type": "array"
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InvestigationOutcome"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null while the alert is still being processed."
+          },
+          "pending_harness": {
+            "items": {
+              "$ref": "#/components/schemas/PendingHarnessField"
+            },
+            "title": "Pending Harness",
+            "type": "array"
+          },
+          "response": {
+            "$ref": "#/components/schemas/ProposedResponse"
+          },
+          "schema_version": {
+            "default": 1,
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/PlainStep"
+            },
+            "title": "Steps",
+            "type": "array"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/InvestigationSummary"
+          },
+          "tenant_id": {
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "track_record": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OutcomeTrackRecord"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "schema_version",
+          "alert_id",
+          "tenant_id",
+          "generated_at",
+          "hidden_for_blind_audit",
+          "outcome",
+          "summary",
+          "claims",
+          "observations",
+          "not_established",
+          "steps",
+          "track_record",
+          "response",
+          "pending_harness"
+        ],
+        "title": "Investigation",
+        "type": "object"
+      },
+      "InvestigationClaim": {
+        "properties": {
+          "check": {
+            "description": "Today: supported when a lookup backs the claim, otherwise unsupported; rejected comes with the checker.",
+            "enum": [
+              "supported",
+              "unsupported",
+              "rejected"
+            ],
+            "title": "Check",
+            "type": "string"
+          },
+          "check_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why the claim is not supported, in plain words.",
+            "title": "Check Reason"
+          },
+          "direction": {
+            "description": "What the claim points to.",
+            "enum": [
+              "malicious",
+              "benign"
+            ],
+            "title": "Direction",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "observation_ids": {
+            "description": "The observations the claim rests on.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Observation Ids",
+            "type": "array"
+          },
+          "text": {
+            "description": "A model claim in the model's words (data), or the fixed sentence of a rule claim.",
+            "title": "Text",
+            "type": "string"
+          },
+          "written_by": {
+            "enum": [
+              "model",
+              "rules"
+            ],
+            "title": "Written By",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "text",
+          "written_by",
+          "direction",
+          "observation_ids",
+          "check",
+          "check_reason"
+        ],
+        "title": "InvestigationClaim",
+        "type": "object"
+      },
+      "InvestigationClosedBy": {
+        "description": "Who or what closed the alert, and why.",
+        "properties": {
+          "at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "At"
+          },
+          "decision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "analyst or cached_verdict: the analyst's decision.",
+            "title": "Decision"
+          },
+          "kind": {
+            "enum": [
+              "ai",
+              "suppression_rule",
+              "cached_verdict",
+              "analyst"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "reason": {
+            "$ref": "#/components/schemas/InvestigationReason"
+          },
+          "rule_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "suppression_rule: the rule.",
+            "title": "Rule Id"
+          },
+          "rule_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "suppression_rule: its name, as data.",
+            "title": "Rule Name"
+          },
+          "source_alert_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "cached_verdict: the alert the analyst decided.",
+            "title": "Source Alert Id"
+          }
+        },
+        "required": [
+          "kind",
+          "reason",
+          "at",
+          "rule_id",
+          "rule_name",
+          "source_alert_id",
+          "decision"
+        ],
+        "title": "InvestigationClosedBy",
+        "type": "object"
+      },
+      "InvestigationObservation": {
+        "description": "One tool call and what it returned.",
+        "properties": {
+          "at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "At"
+          },
+          "cached": {
+            "default": false,
+            "description": "Every result came from the lookup cache.",
+            "title": "Cached",
+            "type": "boolean"
+          },
+          "excerpt": {
+            "items": {
+              "$ref": "#/components/schemas/ObservationExcerptLine"
+            },
+            "title": "Excerpt",
+            "type": "array"
+          },
+          "excerpt_truncated": {
+            "default": false,
+            "title": "Excerpt Truncated",
+            "type": "boolean"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "input_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "From the trace store, when it has the call.",
+            "title": "Input Sha256"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The kind of value looked up (ip, domain, hash, user, ...).",
+            "title": "Kind"
+          },
+          "outcome": {
+            "description": "success: a source returned data. empty: the sources answered and found nothing. failed: none answered.",
+            "enum": [
+              "success",
+              "empty",
+              "failed"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "output_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Sha256"
+          },
+          "sources": {
+            "description": "The providers that answered or failed.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Sources",
+            "type": "array"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The value looked up: data, redacted, at most 128 characters.",
+            "title": "Target"
+          },
+          "title": {
+            "description": "What the tool looks up, in plain words.",
+            "title": "Title",
+            "type": "string"
+          },
+          "tool": {
+            "title": "Tool",
+            "type": "string"
+          },
+          "verdict": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The worst provider verdict of a success (malicious ... unknown).",
+            "title": "Verdict"
+          }
+        },
+        "required": [
+          "id",
+          "tool",
+          "title",
+          "kind",
+          "target",
+          "sources",
+          "at",
+          "outcome",
+          "verdict",
+          "cached",
+          "excerpt",
+          "excerpt_truncated",
+          "input_sha256",
+          "output_sha256"
+        ],
+        "title": "InvestigationObservation",
+        "type": "object"
+      },
+      "InvestigationOutcome": {
+        "properties": {
+          "blockers": {
+            "description": "Why the AI may not close this alert on its own (needs_* categories).",
+            "items": {
+              "$ref": "#/components/schemas/InvestigationReason"
+            },
+            "title": "Blockers",
+            "type": "array"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "enum": [
+                  "ai_closed_evidence",
+                  "ai_closed_audit",
+                  "needs_decision",
+                  "needs_review"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What happens next. ai_closed_evidence: closed by the AI on approved evidence. ai_closed_audit: closed on the model's word and sampled for audit. needs_decision: with a person, likely malicious. needs_review: with a person, not proven either way. Null when a suppression rule or a cached analyst verdict closed the alert before the AI looked at it.",
+            "title": "Category"
+          },
+          "closed_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InvestigationClosedBy"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null while the alert is open."
+          },
+          "evidence": {
+            "description": "ai_closed_evidence: the approved benign signals the rules found (codes written by code).",
+            "items": {
+              "type": "string"
+            },
+            "title": "Evidence",
+            "type": "array"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InvestigationReason"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why the alert is with a person, or why it was closed."
+          }
+        },
+        "required": [
+          "category",
+          "reason",
+          "blockers",
+          "evidence",
+          "closed_by"
+        ],
+        "title": "InvestigationOutcome",
+        "type": "object"
+      },
+      "InvestigationReason": {
+        "properties": {
+          "code": {
+            "description": "The decide code, blocker or close reason, for filters and tests.",
+            "title": "Code",
+            "type": "string"
+          },
+          "sentence": {
+            "description": "The same in plain words (fixed text, never built from alert content).",
+            "title": "Sentence",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "sentence"
+        ],
+        "title": "InvestigationReason",
+        "type": "object"
+      },
+      "InvestigationSummary": {
+        "properties": {
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The conclusion as it was written: data, at most 2000 characters.",
+            "title": "Text"
+          },
+          "written_by": {
+            "anyOf": [
+              {
+                "enum": [
+                  "model",
+                  "rules"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "model: a model wrote the text. rules: the rule-based assessment did. Null without a text, or when the stored row does not say.",
+            "title": "Written By"
+          }
+        },
+        "required": [
+          "text",
+          "written_by"
+        ],
+        "title": "InvestigationSummary",
+        "type": "object"
+      },
       "LLMTestOut": {
         "properties": {
           "enabled": {
@@ -7940,6 +8474,59 @@
         "title": "MonthlyReport",
         "type": "object"
       },
+      "NotCheckedItem": {
+        "properties": {
+          "what": {
+            "title": "What",
+            "type": "string"
+          },
+          "why": {
+            "title": "Why",
+            "type": "string"
+          }
+        },
+        "required": [
+          "what",
+          "why"
+        ],
+        "title": "NotCheckedItem",
+        "type": "object"
+      },
+      "NotEstablished": {
+        "description": "What the investigation does not establish. Nothing here counts for or against the outcome.",
+        "properties": {
+          "empty": {
+            "description": "Observation ids: checked, found nothing.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Empty",
+            "type": "array"
+          },
+          "not_checked": {
+            "items": {
+              "$ref": "#/components/schemas/NotCheckedItem"
+            },
+            "title": "Not Checked",
+            "type": "array"
+          },
+          "unavailable": {
+            "description": "Could not be checked for this customer (no source connected, or it failed).",
+            "items": {
+              "$ref": "#/components/schemas/UnavailableItem"
+            },
+            "title": "Unavailable",
+            "type": "array"
+          }
+        },
+        "required": [
+          "empty",
+          "not_checked",
+          "unavailable"
+        ],
+        "title": "NotEstablished",
+        "type": "object"
+      },
       "NoteIn": {
         "additionalProperties": false,
         "properties": {
@@ -7954,6 +8541,49 @@
           "text"
         ],
         "title": "NoteIn",
+        "type": "object"
+      },
+      "ObservationExcerptLine": {
+        "properties": {
+          "marks": {
+            "items": {
+              "$ref": "#/components/schemas/ObservationMark"
+            },
+            "title": "Marks",
+            "type": "array"
+          },
+          "text": {
+            "description": "One line of what the tool returned: data, at most 200 characters.",
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "marks"
+        ],
+        "title": "ObservationExcerptLine",
+        "type": "object"
+      },
+      "ObservationMark": {
+        "description": "A highlighted character range of an excerpt line (``start`` inclusive, ``end`` exclusive).",
+        "properties": {
+          "end": {
+            "minimum": 0.0,
+            "title": "End",
+            "type": "integer"
+          },
+          "start": {
+            "minimum": 0.0,
+            "title": "Start",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "start",
+          "end"
+        ],
+        "title": "ObservationMark",
         "type": "object"
       },
       "OnboardingStatusOut": {
@@ -8122,6 +8752,69 @@
           "created_at"
         ],
         "title": "OrganisationOut",
+        "type": "object"
+      },
+      "OutcomeTrackRecord": {
+        "description": "How often people confirmed this outcome category for this tenant: the counts, and a rate only with enough of them.",
+        "properties": {
+          "basis": {
+            "description": "analyst_decisions (needs_*): total is the alerts of the category analysts decided, confirmed those decided true_positive. blind_audit_labels (ai_closed_*): total is the closes of the category an analyst labelled blind, confirmed those whose label agrees with the AI.",
+            "enum": [
+              "analyst_decisions",
+              "blind_audit_labels"
+            ],
+            "title": "Basis",
+            "type": "string"
+          },
+          "category": {
+            "enum": [
+              "ai_closed_evidence",
+              "ai_closed_audit",
+              "needs_decision",
+              "needs_review"
+            ],
+            "title": "Category",
+            "type": "string"
+          },
+          "confirmed": {
+            "title": "Confirmed",
+            "type": "integer"
+          },
+          "min_samples": {
+            "title": "Min Samples",
+            "type": "integer"
+          },
+          "rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "confirmed / total; null when total is below min_samples.",
+            "title": "Rate"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "window_days": {
+            "title": "Window Days",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "category",
+          "basis",
+          "window_days",
+          "total",
+          "confirmed",
+          "min_samples",
+          "rate"
+        ],
+        "title": "OutcomeTrackRecord",
         "type": "object"
       },
       "PageOut_ActionOut_": {
@@ -8367,6 +9060,31 @@
         "title": "PageOut[PovRunOut]",
         "type": "object"
       },
+      "PendingHarnessField": {
+        "properties": {
+          "field": {
+            "description": "The path of a field that stays empty until the investigation harness fills it.",
+            "title": "Field",
+            "type": "string"
+          },
+          "issue": {
+            "description": "The GitHub issue of the story that fills it.",
+            "title": "Issue",
+            "type": "integer"
+          },
+          "why": {
+            "title": "Why",
+            "type": "string"
+          }
+        },
+        "required": [
+          "field",
+          "why",
+          "issue"
+        ],
+        "title": "PendingHarnessField",
+        "type": "object"
+      },
       "PermissionCheck": {
         "properties": {
           "api": {
@@ -8419,6 +9137,51 @@
           "via"
         ],
         "title": "PermissionCheck",
+        "type": "object"
+      },
+      "PlainStep": {
+        "description": "One thing the investigation did, in plain words (no engine node names).",
+        "properties": {
+          "actor": {
+            "enum": [
+              "code",
+              "model",
+              "check",
+              "policy",
+              "person"
+            ],
+            "title": "Actor",
+            "type": "string"
+          },
+          "produced": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What the step produced: counts and vocabulary values only, never alert text.",
+            "title": "Produced"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ts",
+          "actor",
+          "text",
+          "produced"
+        ],
+        "title": "PlainStep",
         "type": "object"
       },
       "PlatformEscalationOut": {
@@ -9107,6 +9870,288 @@
           "rule"
         ],
         "title": "ProposeSuppressionIn",
+        "type": "object"
+      },
+      "ProposedAction": {
+        "properties": {
+          "action_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "plan: the action on the ledger.",
+            "title": "Action Id"
+          },
+          "action_type": {
+            "enum": [
+              "block_ip",
+              "block_domain",
+              "block_url",
+              "isolate_host",
+              "terminate_process",
+              "quarantine_file",
+              "disable_user",
+              "reset_password",
+              "revoke_sessions",
+              "collect_forensics",
+              "create_ticket",
+              "send_alert",
+              "block_sender",
+              "purge_message",
+              "notify_reporter",
+              "confirm_compromised",
+              "release_host",
+              "unblock_ip",
+              "unblock_domain",
+              "unblock_url",
+              "unblock_file",
+              "unblock_sender",
+              "enable_user",
+              "restore_message",
+              "dismiss_user_risk"
+            ],
+            "title": "Action Type",
+            "type": "string"
+          },
+          "approval_entry": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "preview: its approved_actions entry.",
+            "title": "Approval Entry"
+          },
+          "can_preapprove": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "preview: your role may pre-approve it.",
+            "title": "Can Preapprove"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "guardrail": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProposedActionGuardrail"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "inverse_action": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inverse Action"
+          },
+          "irreversible_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Irreversible Note"
+          },
+          "reversible": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reversible"
+          },
+          "risk": {
+            "enum": [
+              "low",
+              "medium",
+              "high",
+              "critical"
+            ],
+            "title": "Risk",
+            "type": "string"
+          },
+          "role_lock": {
+            "anyOf": [
+              {
+                "enum": [
+                  "admin",
+                  "disabled"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role Lock"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "proposed",
+                  "awaiting_approval",
+                  "approved",
+                  "rejected",
+                  "executing",
+                  "succeeded",
+                  "failed",
+                  "dry_run",
+                  "blocked"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "plan: the action's status; null in a preview.",
+            "title": "Status"
+          },
+          "target": {
+            "description": "The exact target: data, at most 512 characters.",
+            "title": "Target",
+            "type": "string"
+          },
+          "without_preapproval": {
+            "anyOf": [
+              {
+                "enum": [
+                  "automatic",
+                  "awaiting_approval",
+                  "blocked"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "preview: what happens to it when nothing is pre-approved.",
+            "title": "Without Preapproval"
+          }
+        },
+        "required": [
+          "action_id",
+          "action_type",
+          "target",
+          "description",
+          "risk",
+          "reversible",
+          "inverse_action",
+          "irreversible_note",
+          "status",
+          "guardrail",
+          "without_preapproval",
+          "can_preapprove",
+          "role_lock",
+          "approval_entry"
+        ],
+        "title": "ProposedAction",
+        "type": "object"
+      },
+      "ProposedActionGuardrail": {
+        "properties": {
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "verdict": {
+            "enum": [
+              "passed",
+              "blocked"
+            ],
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "verdict",
+          "code",
+          "reason"
+        ],
+        "title": "ProposedActionGuardrail",
+        "type": "object"
+      },
+      "ProposedResponse": {
+        "properties": {
+          "actions": {
+            "items": {
+              "$ref": "#/components/schemas/ProposedAction"
+            },
+            "title": "Actions",
+            "type": "array"
+          },
+          "source": {
+            "description": "plan: the actions the workflow recorded for this alert. preview: what a true_positive decision would propose now (nothing is written). none: no response is proposed.",
+            "enum": [
+              "plan",
+              "preview",
+              "none"
+            ],
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "actions"
+        ],
+        "title": "ProposedResponse",
         "type": "object"
       },
       "QuotaUsageOut": {
@@ -11506,6 +12551,58 @@
         "title": "TokenOut",
         "type": "object"
       },
+      "UnavailableItem": {
+        "properties": {
+          "kind": {
+            "enum": [
+              "no_source",
+              "tool_failed"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "observation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observation Id"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The provider, as data.",
+            "title": "Source"
+          },
+          "what": {
+            "title": "What",
+            "type": "string"
+          },
+          "why": {
+            "title": "Why",
+            "type": "string"
+          }
+        },
+        "required": [
+          "what",
+          "why",
+          "kind",
+          "source",
+          "observation_id"
+        ],
+        "title": "UnavailableItem",
+        "type": "object"
+      },
       "UncoveredSpan": {
         "description": "Time in the report's window that no run sampled: alerts closed then are in no frame.",
         "properties": {
@@ -13546,6 +14643,50 @@
         "summary": "Draft a NIS2 incident report (early warning, notification or final) for a person to complete",
         "tags": [
           "compliance"
+        ],
+        "x-stability": "beta"
+      }
+    },
+    "/api/v1/alerts/{alert_id}/investigation": {
+      "get": {
+        "description": "One read model for the investigation view: the outcome and its reason in plain words, the summary, the\nclaims and the observations they rest on, what is not established, the steps, the track record of the\noutcome category and the proposed response. Built from stored data: no model is called, nothing is written.\n\n``pending_harness`` names the fields that stay empty until the investigation harness fills them. While the\nalert waits for its blind-audit label, the AI's side is withheld (``hidden_for_blind_audit``).",
+        "operationId": "get_investigation_api_v1_alerts__alert_id__investigation_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "alert_id",
+            "required": true,
+            "schema": {
+              "title": "Alert Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Investigation"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "What the AI concluded about the alert and why (the investigation view)",
+        "tags": [
+          "alerts"
         ],
         "x-stability": "beta"
       }

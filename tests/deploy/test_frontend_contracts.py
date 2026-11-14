@@ -16,9 +16,10 @@ from lg_sotf.integrations.config import KINDS, TICKETING_KINDS
 from lg_sotf.services.response import GUARDRAIL_REASONS
 from tests.deploy._support import REPO_ROOT
 
-FRONT_SRC = REPO_ROOT / "src" / "lg_front" / "src"
-GUARDRAILS_TS = FRONT_SRC / "lib" / "guardrails.ts"
-TYPES_TS = FRONT_SRC / "api" / "types.ts"
+# The vocabularies are the SOC module's (ADR 0015): its helpers and its API slice.
+SOC_SRC = REPO_ROOT / "src" / "lg_front" / "src" / "modules" / "soc"
+GUARDRAILS_TS = SOC_SRC / "lib" / "guardrails.ts"
+TYPES_TS = SOC_SRC / "api" / "types.ts"
 
 # blocked_reason codes written by the approval paths rather than by a guardrail.
 REVIEWER_REASONS = ("rejected_by_reviewer", "rejected_with_remaining")
