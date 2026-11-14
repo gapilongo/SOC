@@ -37,6 +37,9 @@ export const POV_HREF = '/pov';
 /** The proof-of-value wizard, where the first-run setup ends. */
 export const POV_WIZARD_HREF = '/pov/new';
 
+/** The guided Wazuh setup (checks first, then the source is saved). */
+export const WAZUH_SETUP_HREF = '/sources/wazuh';
+
 /** The Reports page over a window of whole UTC days (`YYYY-MM-DD`, both included). */
 export function reportsHref(range: { from: string; to: string }): string {
   return withQuery('/reports', new URLSearchParams(range));
