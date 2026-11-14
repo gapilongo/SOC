@@ -55,6 +55,15 @@ def test_only_the_ledger_builds_ledger_entries() -> None:
     assert elsewhere == [], "a fact gets its id from FactLedger.record, nowhere else"
 
 
+def test_no_code_stamps_fact_ids_around_the_ledger() -> None:
+    """``tools.wazuh.tools.cited`` (INT3.4) also writes ``<evidence id>:<n>`` on a call's facts, numbered per
+    call, not per run. The tools' own tests use it; an investigation must not: its ids come from the ledger."""
+    callers = [
+        f"{src.rel}:{node.lineno}" for src in source_files() for node in ast.walk(src.tree) if _called(node) == "cited"
+    ]
+    assert callers == [], "record the result with FactLedger.record; it mints the ids a verdict may cite"
+
+
 def test_only_the_ledger_and_the_investigation_view_reach_the_store() -> None:
     reached: List[str] = []
     for src in source_files():

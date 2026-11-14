@@ -16,12 +16,14 @@ from lg_sotf.agents.base import AgentContext
 from lg_sotf.agents.investigation.ledger import FactLedger, tool_step
 from lg_sotf.db.repos.evidence_facts import EvidenceFactsRepo
 from lg_sotf.domain.ledger import LedgerEntry, LedgerError, ToolStep, check_citations
+from lg_sotf.eval.tool_fixtures import event_time
 from lg_sotf.llm.cassette import CASSETTE_SCHEMA_VERSION, Cassette
 from lg_sotf.llm.prompting import build_prompt
 from lg_sotf.llm.trace import use_tape
 from lg_sotf.security.shadow import ShadowRun, shadow_scope
 from tests.unit.agents.investigation._support import AT, HOSTILE, TOOL, MemoryStore, fact_tools, host_fact
 from tests.unit.tools._support import Boom, Ctx, Handler, P
+from tests.unit.tools.wazuh._support import corpus, investigate
 
 pytestmark = pytest.mark.unit
 
@@ -224,6 +226,40 @@ async def test_the_ledger_of_a_run_comes_from_its_context(make_settings: Any) ->
     replay = FactLedger.for_run(AgentContext("tenant-a", "alert-1", make_settings(), repos=repos, persist=False))
     (entry,) = await observe(replay, "host", Handler(answer=(host_fact(),)))
     assert entry.fact_id == "host:0" and len(store.rows[("tenant-a", "alert-1", "tenant-a:alert-1")]) == 1
+
+
+async def test_the_wazuh_evidence_tools_answers_are_recorded_as_they_come() -> None:
+    """The real tools on the corpus telemetry: their ``Evidence`` (a tuple of facts) needs no mapper."""
+    telemetry = corpus("corpus_v1")
+    item = telemetry.items["cv1-0113"]
+    look, at = investigate(telemetry, item), event_time(item.alert)
+    calls = [
+        ("host", "host_activity", {"host": "SRV-APP-02", "at": at, "before_min": 30, "after_min": 15}),
+        ("children", "process_lineage", {"host": "SRV-APP-02", "at": at, "image": "C:\\Windows\\PSEXESVC.exe", "after_min": 15}),
+        ("by_source", "logon_fanout", {"pivot": "source_ip", "value": "203.0.113.200", "at": at, "before_min": 30}),
+        ("children", "process_lineage", {"host": "SRV-APP-02", "at": at, "image": "C:\\Windows\\PSEXESVC.exe", "after_min": 15}),
+    ]
+    run = ledger()
+    results = [await look.call(tool, **params) for _, tool, params in calls]
+    for (evidence_id, tool, _), result in zip(calls, results, strict=True):
+        await run.record(tool_step(evidence_id, look.tools.get(f"wazuh.{tool}"), result))
+
+    entries = await run.facts()
+    assert [(e.fact_id, e.tool, e.kind, e.outcome, e.citable_as_benign_evidence) for e in entries] == [
+        ("host:0", "wazuh.host_activity", "host_activity", "success", True),
+        ("children:0", "wazuh.process_lineage", "process_lineage", "success", True),
+        ("by_source:0", "wazuh.logon_fanout", None, "empty", False),
+        ("children:1", "wazuh.process_lineage", "process_lineage", "success", True),
+    ]
+    assert [(e.input_hash, e.output_hash, e.complete) for e in entries] == [
+        (r.input_hash, r.output_hash, r.complete) for r in results
+    ]
+    # The fact on the ledger is the tool's fact under the ledger's id, bound to the call's hashes. The same
+    # answer asked twice is two entries with one content hash; the ids never repeat.
+    stored = entries[1].evidence_fact()
+    assert stored is not None and stored.value == results[1].value[0].value
+    assert stored.provenance is not None and stored.provenance.input_hash == results[1].input_hash
+    assert entries[1].content_hash == entries[3].content_hash and all(e.intact for e in entries)
 
 
 async def test_a_shadow_run_stores_nothing() -> None:
