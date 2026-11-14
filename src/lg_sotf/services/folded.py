@@ -10,6 +10,11 @@ worker applies it again, idempotently, if a resume message for it arrives.
 ``true_positive`` closes it ``malicious``, a benign decision ``benign``;
 ``needs_more_info`` leaves it waiting, and the threat's next case takes it
 over (:func:`lg_sotf.core.retro_reopen.refold`).
+
+An alert the safety net only **linked** to the case (AI-E3.15: a model, not a
+person, judged the threat) is still closed by the models
+(:func:`closed_by_models`). It has no run waiting either, and no decision on
+the case applies to it: it stays closed by the models, marked for audit.
 """
 
 from __future__ import annotations
@@ -26,6 +31,13 @@ FOLDED, REQUEUED = "folded", "requeued"
 SETTLED_ACTION = "alert.folded_settled"
 
 
+def closed_by_models(alert: Any) -> bool:
+    """Whether the models closed the alert alone and nobody touched it since (close reason ``ai_closed:*``)."""
+    summary = alert.summary if isinstance(alert.summary, Mapping) else {}
+    reason = summary.get("close_reason")
+    return alert.status == "closed" and isinstance(reason, str) and reason.startswith("ai_closed:")
+
+
 def folded_into(alert: Any) -> Optional[str]:
     """The escalation a folded, still waiting alert belongs to, else ``None``."""
     summary = alert.summary if isinstance(alert.summary, Mapping) else {}
@@ -40,15 +52,19 @@ async def settle_folded(
     repos: Repositories, tenant_id: str, alert_id: str, *, escalation_id: str, decision: str, decided_by: str,
     conn: Optional[Connection] = None,
 ) -> bool:
-    """Apply the decision on ``escalation_id`` to a folded alert; whether the alert is a folded one (into any case).
+    """Apply the decision on ``escalation_id`` to a folded alert; whether the alert has no run waiting on a case
+    (folded into any case, or linked and still closed by the models).
 
-    Only a decision on the alert's own case changes it. Idempotent: a settled alert is no longer folded.
+    Only a decision on the alert's own case changes it, and none changes a linked alert. Idempotent: a settled
+    alert is no longer folded.
     """
     if conn is None:
         async with repos.db.tenant_tx(tenant_id) as tx:
             return await settle_folded(repos, tenant_id, alert_id, escalation_id=escalation_id, decision=decision,
                                        decided_by=decided_by, conn=tx)
     alert = await repos.alerts.get(tenant_id, alert_id, conn=conn)
+    if closed_by_models(alert):
+        return True  # linked to a case, not reopened: whatever the decision, it stays closed by the models
     case = folded_into(alert)
     if case is None:
         return False
@@ -81,8 +97,9 @@ async def settle_folded(
 async def settle_case(
     repos: Repositories, tenant_id: str, escalation: Any, decision: str, decided_by: Any, conn: Connection
 ) -> Set[str]:
-    """In the decision's transaction: settle every alert folded into the decided case; their ids (they have no run
-    waiting, so the review service sends them no resume message)."""
+    """In the decision's transaction: settle every alert folded into the decided case. Returns the ids of the
+    case's alerts that have no run waiting (the folded ones, and the linked ones, which the decision leaves closed
+    by the models): the review service sends them no resume message."""
     return {
         alert_id for alert_id in escalation.related_alert_ids
         if await settle_folded(repos, tenant_id, alert_id, escalation_id=escalation.id, decision=decision,

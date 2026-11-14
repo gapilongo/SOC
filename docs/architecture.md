@@ -297,14 +297,32 @@ Rules:
     recent true positive, was normalised by a model, or was reopened. The
     `decide` node reads the tier from the tenant's settings at every
     decision.
-  * Retro-reopen (`core/retro_reopen.py`) replaces the forward gates: a
-    response plan or malicious close, an escalation a model judged a
-    threat (not a merely suspicious one), an analyst true positive or a blind-audit
-    malicious label reopens every model-closed alert of the tenant that
-    shares a host, user or IP with it and closed in the previous 24 hours:
-    folded into the threat's open escalation (attached, `waiting_human`, no
-    new run or case; the decision on the case settles it), or, without an
-    open case, queued for its own review run; audited `alert.reopened`.
+  * The safety net (`core/retro_reopen.py`) replaces the forward gates.
+    It looks at every model-closed alert of the tenant that shares a host,
+    user or IP with a threat and closed in the previous 24 hours, and what
+    it does depends on who stands behind the threat (AI-E3.15):
+    * a model only (an escalation a model judged a threat, not a merely
+      suspicious one; a response the workflow only proposes, or only
+      simulates in the tenant's dry-run mode): the alert is
+      **linked**. It is attached to the threat's open escalation as a
+      related alert, so the analyst sees it in the case, gets a `linked`
+      entry in its summary and is audited `alert.linked`. It stays closed
+      with its close reason `ai_closed:audit_required`, no run starts, no
+      decision on the case settles it, and the evidence pack and the NIS2
+      draft show no human decision for it. Linked alerts do not use up the
+      case's room for waiting alerts;
+    * a confirmation (an analyst true positive, an analyst's own approval
+      of a response action, a blind-audit malicious label, or a response
+      action that really ran (`succeeded`, never `dry_run`) when the
+      workflow carried it out alone under the tenant's autonomy policy:
+      once the platform has acted on a threat, the related alerts do not
+      stay closed): the alert is
+      **reopened**, and
+      so is every alert linked to the threat or into its case earlier,
+      however long ago it closed. It is folded into the threat's open
+      escalation (attached, `waiting_human`, no new run or case; the
+      decision on the case settles it), or, without an open case, queued
+      for its own review run; audited `alert.reopened`.
 * Side-effecting nodes (`escalate`, `plan_response`, `execute_actions`) are
   idempotent because nodes may re-run on resume.
 * The graph is versioned (`core/graph.py`: `GRAPH_VERSION`,
