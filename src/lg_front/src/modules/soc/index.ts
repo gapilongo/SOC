@@ -33,27 +33,27 @@ import { defineModule, type Allowed } from '../../core/module';
 import { useNavCount } from './navCounts';
 
 // One chunk per route.
-const OverviewPage = lazy(() => import('../../pages/overview/OverviewPage'));
-const AlertsPage = lazy(() => import('../../pages/alerts/AlertsPage'));
-const EscalationsPage = lazy(() => import('../../pages/escalations/EscalationsPage'));
-const DecisionPage = lazy(() => import('../../pages/escalations/DecisionPage'));
-const ApprovalsPage = lazy(() => import('../../pages/approvals/ApprovalsPage'));
-const LegacyActionsRedirect = lazy(() => import('../../pages/approvals/redirect').then((m) => ({ default: m.LegacyActionsRedirect })));
-const SuppressionsPage = lazy(() => import('../../pages/SuppressionsPage'));
-const SourcesPage = lazy(() => import('../../pages/SourcesPage'));
-const IntegrationsPage = lazy(() => import('../../pages/integrations/IntegrationsPage'));
-const UsersPage = lazy(() => import('../../pages/UsersPage'));
-const TenantSettingsPage = lazy(() => import('../../pages/settings/TenantSettingsPage'));
-const UsagePage = lazy(() => import('../../pages/UsagePage'));
-const AuditPage = lazy(() => import('../../pages/AuditPage'));
-const ReportsPage = lazy(() => import('../../pages/ReportsPage'));
-const MonthlyReportPage = lazy(() => import('../../pages/MonthlyReportPage'));
-const PlatformPage = lazy(() => import('../../pages/platform/PlatformPage'));
-const GettingStartedPage = lazy(() => import('../../pages/GettingStartedPage'));
-const AccountSecurityPage = lazy(() => import('../../pages/AccountSecurityPage'));
-const SetupWizardPage = lazy(() => import('../../pages/setup/SetupWizardPage'));
-const PovPage = lazy(() => import('../../pages/PovPage'));
-const BlindAuditPage = lazy(() => import('../../pages/blindAudit/BlindAuditPage'));
+const OverviewPage = lazy(() => import('./pages/overview/OverviewPage'));
+const AlertsPage = lazy(() => import('./pages/alerts/AlertsPage'));
+const EscalationsPage = lazy(() => import('./pages/escalations/EscalationsPage'));
+const DecisionPage = lazy(() => import('./pages/escalations/DecisionPage'));
+const ApprovalsPage = lazy(() => import('./pages/approvals/ApprovalsPage'));
+const LegacyActionsRedirect = lazy(() => import('./pages/approvals/redirect').then((m) => ({ default: m.LegacyActionsRedirect })));
+const SuppressionsPage = lazy(() => import('./pages/SuppressionsPage'));
+const SourcesPage = lazy(() => import('./pages/SourcesPage'));
+const IntegrationsPage = lazy(() => import('./pages/integrations/IntegrationsPage'));
+const UsersPage = lazy(() => import('./pages/UsersPage'));
+const TenantSettingsPage = lazy(() => import('./pages/settings/TenantSettingsPage'));
+const UsagePage = lazy(() => import('./pages/UsagePage'));
+const AuditPage = lazy(() => import('./pages/AuditPage'));
+const ReportsPage = lazy(() => import('./pages/ReportsPage'));
+const MonthlyReportPage = lazy(() => import('./pages/MonthlyReportPage'));
+const PlatformPage = lazy(() => import('./pages/platform/PlatformPage'));
+const GettingStartedPage = lazy(() => import('./pages/GettingStartedPage'));
+const AccountSecurityPage = lazy(() => import('./pages/AccountSecurityPage'));
+const SetupWizardPage = lazy(() => import('./pages/setup/SetupWizardPage'));
+const PovPage = lazy(() => import('./pages/PovPage'));
+const BlindAuditPage = lazy(() => import('./pages/blindAudit/BlindAuditPage'));
 
 const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
 

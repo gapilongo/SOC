@@ -4,7 +4,7 @@ import { forwardRef } from 'react';
 import { useTenantLabel } from '../../api/hooks';
 import { useAuth } from '../../auth/AuthContext';
 import { isTenantOverride } from '../../auth/roles';
-import { TenantSwitcher } from '../../pages/platform/TenantSwitcher';
+import { TenantSwitcher } from '../../modules/soc/pages/platform/TenantSwitcher';
 import { Button, ThemeSwitch, cx } from '../../components/ui';
 import { useLive } from '../../live/LiveProvider';
 import { UserMenu } from './UserMenu';

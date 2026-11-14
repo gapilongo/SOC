@@ -5,7 +5,7 @@ import { Outlet, useLocation } from 'react-router-dom';
 import { useAuth, useAuthStore } from '../auth/AuthContext';
 import { logoutUrl } from '../auth/oidc';
 import { ErrorBoundary, PageFallback } from '../components/ErrorBoundary';
-import { ActingTenantBanner } from '../pages/platform/TenantSwitcher';
+import { ActingTenantBanner } from '../modules/soc/pages/platform/TenantSwitcher';
 import { Button, LoadingState } from '../components/ui';
 import { useFocusTrap } from '../components/useFocusTrap';
 import { getConfig } from '../config';
