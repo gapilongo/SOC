@@ -27,7 +27,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any, Awaitable, Callable, Dict, Iterator, List, Mapping, Optional, Protocol, Sequence, TypeVar
+from typing import Any, Awaitable, Callable, Dict, Iterator, List, Mapping, Optional, Protocol, Sequence, Tuple, TypeVar
 
 from langchain_core.messages import BaseMessage
 from pydantic import BaseModel
@@ -211,6 +211,11 @@ class TraceRecorder:
         tape = _TAPE.get()
         if tape is not None:
             tape.record_llm(step, messages, value, reply, error)
+
+    @staticmethod
+    def tool_hashes(tool: str, request: Mapping[str, Any], recorded: Any) -> Tuple[str, str]:
+        """The input and output hash a tool step stores, for a caller that keeps them with the result."""
+        return tool_input_hash(tool, request), content_hash(recorded)
 
     async def tool(
         self,

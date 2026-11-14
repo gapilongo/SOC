@@ -260,6 +260,24 @@ Rules:
   errors. A node that still fails raises; the worker records `failed`, the
   message is retried by the queue and eventually dead-lettered. Failures are
   never converted into default scores that drive routing.
+* Evidence tools run through the tool registry (`tools/registry.py`). The
+  analysis agent's threat-intelligence lookups (`reputation.<provider>`) and
+  its history lookup (`platform.history`) are declared in
+  `tools/enrichment/tools.py`. A tool is a `ToolSpec` (read-only risk class,
+  strict parameter model, row, time and window caps, egress, shadow mode,
+  tenant switch) plus six functions: `run`, `rows`, `failed`, `record`,
+  `restore` and `refused`. A declaration that misses a cap or the schema does
+  not load (INV-14). A tenant switches a third-party tool off for itself with
+  `tools.<provider>.enabled: false` in its settings.
+  * Every call returns a `ToolResult` with a typed outcome: `success` (rows
+    came back), `empty` (the query ran and matched nothing) or `failed`
+    (switched off, unreachable, refused, timed out, over the row cap). An
+    empty answer and a failed call are never the same value, so "no rows"
+    cannot be read as "nothing happened" when the query did not run.
+  * The result also carries the SHA-256 of the canonical JSON of the tool's
+    input and of its output. They are the hashes the trace store keeps in
+    `investigation_steps.input_hash` and `output_hash`, computed by the run's
+    trace, never by a model.
 * LLM output alone can never auto-close a high/critical alert or authorise a
   containment action (INV-03, INV-11). Containment requires tenant autonomy
   policy `auto` for that risk level *and* guardrails passing.

@@ -487,6 +487,22 @@ class EnrichmentService:
             )
         )
 
+    async def lookup_one(
+        self,
+        provider: str,
+        tenant_id: str,
+        kind: str,
+        value: str,
+        *,
+        repos: Optional[Repositories] = None,
+        exclude_alert_id: Optional[str] = None,
+    ) -> EnrichmentResult:
+        """One external provider's answer (the tool ``reputation.<provider>``; :mod:`lg_sotf.tools.enrichment.tools`)."""
+        found = self._providers.get(provider)
+        if found is None or not found.external:
+            return EnrichmentResult.failed(provider, kind, "not_configured")
+        return await self._lookup_one(found, tenant_id, kind, value, repos, exclude_alert_id)
+
     async def history(
         self,
         tenant_id: str,

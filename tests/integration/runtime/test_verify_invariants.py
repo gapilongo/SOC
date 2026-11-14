@@ -71,10 +71,11 @@ def test_verify_invariants_passes_on_a_fresh_install(cli_env: str) -> None:
     assert "FAIL" not in result.stdout
     # The test database's login role owns the schema: a single-role install.
     assert {line.split()[2] for line in lines if line.startswith("SKIP")} == {"runtime_role", "audit_append_only"}
-    assert lines[-1].endswith("12 invariants registered"), "none pending: INV-09 is enforced since AI-E1.5a"
+    # Pending: INV-13 (earned autonomy, AI-E3.10) and INV-14 (evidence tools, until INT3.4's query templates).
+    assert lines[-1].endswith("14 invariants registered, pending: INV-13, INV-14")
 
     report = json.loads(runner.invoke(cli, ["verify-invariants", "--json"]).stdout)
-    assert {r["check"] for r in report["results"]} == set(CHECKS) and report["pending"] == []
+    assert {r["check"] for r in report["results"]} == set(CHECKS) and report["pending"] == ["INV-13", "INV-14"]
     by_check = {r["check"]: r for r in report["results"]}
     assert by_check["evidence_seal"]["detail"].endswith("signed (HMAC-SHA256)")
     assert by_check["kill_switch"]["detail"].startswith("install kill switch on")
