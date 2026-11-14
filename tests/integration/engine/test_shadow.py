@@ -35,7 +35,7 @@ from lg_sotf.integrations.ticketing import JiraClient, TicketDraft
 from lg_sotf.models.trace import NewTraceStep
 from lg_sotf.net.egress import egress_policy
 from lg_sotf.net.http import guarded_client
-from lg_sotf.observability.metrics import RETRO_REOPEN_FAILURES, RETRO_REOPENED
+from lg_sotf.observability.metrics import RETRO_LINKED, RETRO_REOPEN_FAILURES, RETRO_REOPENED
 from lg_sotf.queue.events import EventBus
 from lg_sotf.queue.redis import ShadowSafeRedis
 from lg_sotf.security.crypto import SecretBox
@@ -358,7 +358,8 @@ async def model_closed(repos: Repositories, entities: Dict[str, List[str]]) -> s
 
 def reopen_counters() -> List[float]:
     return [counter.labels(path=path)._value.get()
-            for counter in (RETRO_REOPEN_FAILURES, RETRO_REOPENED) for path in ("workflow", "escalation")]
+            for counter in (RETRO_REOPEN_FAILURES, RETRO_REOPENED, RETRO_LINKED)
+            for path in ("workflow", "escalation")]
 
 
 async def test_a_shadow_run_of_a_threat_reopens_nothing_and_enqueues_nothing(
@@ -366,9 +367,9 @@ async def test_a_shadow_run_of_a_threat_reopens_nothing_and_enqueues_nothing(
 ) -> None:
     """Decision policy v3 (FIX-3) in a shadow run: the safety net is recorded, never run.
 
-    Live, the alert below (a model judges it a threat: a response plan, then an escalation) reopens the related
-    alert the models closed alone and queues a run for it (the control at the end). The shadow run of it reopens
-    nothing, enqueues nothing, counts no reopen and no reopen failure, and only ``shadow_effects`` grows. The two
+    Live, the alert below (a model judges it a threat: a response plan, then an escalation) links the related
+    alert the models closed alone to it (AI-E3.15; the control at the end). The shadow run of it
+    links and reopens nothing, enqueues nothing, counts no link, reopen or failure, and only ``shadow_effects`` grows. The two
     writes of the policy a shadow graph does not reach, the run message of a requeued alert and the settling of a
     folded one, are refused when called in a shadow run.
     """
@@ -416,9 +417,10 @@ async def test_a_shadow_run_of_a_threat_reopens_nothing_and_enqueues_nothing(
     assert await redis_state(redis_client) == redis_before
     assert await snapshot(db, folded) == {**folded_before, "counts": after["counts"]}
 
-    # Control: live, the same alert reopens the related alert and queues a run for it.
+    # Control: live, the same alert links the related alert at its response plan (the run then waits for the
+    # plan's approval, without a case), and that is counted.
     await engine.run(TENANT_A, threat)
-    reopened = await repos.alerts.get(TENANT_A, related)
-    assert (reopened.status, reopened.summary["reopened"]["mode"]) == ("queued", "requeued")
-    assert await redis_state(redis_client) != redis_before
-    assert reopen_counters()[2] == counters[2] + 1
+    linked = await repos.alerts.get(TENANT_A, related)
+    assert linked.status == "closed" and linked.summary.get("reopened") is None
+    assert [(m["threat_alert_id"], m["escalation_id"]) for m in linked.summary["linked"]] == [(threat, None)]
+    assert reopen_counters() == [*counters[:4], counters[4] + 1, counters[5]]

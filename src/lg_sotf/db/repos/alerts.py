@@ -274,6 +274,20 @@ class AlertsRepo(Repository):
             raise NotFound("alert", alert_id)
         return alert
 
+    async def get_locked(self, tenant_id: str, alert_id: str, *, conn: Connection) -> Alert:
+        """The alert, its row locked ``FOR UPDATE`` until the caller's transaction ends (a read-modify-write of
+        its summary, such as the safety net's links, then loses no concurrent update)."""
+        async with self._tenant(tenant_id, conn) as c:
+            row = await c.fetchrow(
+                f"SELECT *, {_ROW_EXTRAS} FROM alerts WHERE tenant_id = $1 AND id = $2 FOR UPDATE OF alerts",  # noqa: S608
+                tenant_id,
+                alert_id,
+            )
+        alert = to_model(Alert, row)
+        if alert is None:
+            raise NotFound("alert", alert_id)
+        return alert
+
     async def list(
         self,
         tenant_id: str,
@@ -528,11 +542,13 @@ class AlertsRepo(Repository):
         ips: Sequence[str],
         since: datetime,
         exclude_alert_id: str,
+        not_linked_to: bool = False,
         limit: int = 200,
         conn: Optional[Connection] = None,
     ) -> List[str]:
         """Ids of alerts the models closed alone (close reason ``ai_closed:*``) since ``since`` that share a host,
-        user or IP with the given ones, newest first (the retro-reopen of decision policy v3)."""
+        user or IP with the given ones, newest first (the safety net of decision policy v3). ``not_linked_to``
+        leaves out those already linked to ``exclude_alert_id`` (the threat), so repeated calls reach older ones."""
         require_aware(since, "since")
         check_limit(limit, 1_000)
         if not (hosts or users or ips):
@@ -546,6 +562,8 @@ class AlertsRepo(Repository):
                   AND (COALESCE(normalized->'entities'->'hosts', '[]'::jsonb) ?| $4::text[]
                        OR COALESCE(normalized->'entities'->'users', '[]'::jsonb) ?| $5::text[]
                        OR COALESCE(normalized->'entities'->'ips', '[]'::jsonb) ?| $6::text[])
+                  AND NOT ($8 AND COALESCE(summary->'linked', '[]'::jsonb)
+                                  @> jsonb_build_array(jsonb_build_object('threat_alert_id', $2::text)))
                 ORDER BY closed_at DESC, id
                 LIMIT $7
                 """,
@@ -556,6 +574,7 @@ class AlertsRepo(Repository):
                 list(users),
                 list(ips),
                 limit,
+                not_linked_to,
             )
         return [str(r["id"]) for r in rows]
 

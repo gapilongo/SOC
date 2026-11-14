@@ -89,7 +89,7 @@ MAX_APPROVED_ACTIONS = 50
 # Per entry, as the workflow's resume payload accepts it.
 MAX_APPROVED_ENTRY_CHARS = 256
 MAX_ACTION_IDS = 100
-_ALERT_KEYS_SQL = "SELECT id, fingerprint, severity, normalized, raw FROM alerts WHERE tenant_id = $1 AND id = ANY($2)"
+_ALERT_KEYS_SQL = "SELECT id, status, fingerprint, severity, normalized, raw FROM alerts WHERE tenant_id = $1 AND id = ANY($2)"
 # Locks the run row until the approval commits: a reprocess (or the run finishing) waits for it.
 _RUN_FOR_SHARE_SQL = "SELECT status FROM workflow_runs WHERE tenant_id = $1 AND alert_id = $2 FOR SHARE"
 SUPPRESSION_SUGGESTION_DAYS = 90
@@ -336,7 +336,7 @@ class ReviewService:
         """Record the analyst decision and return one resume message per waiting alert.
 
         The escalation's own alert and every attached alert are resumed with the decision (limits: module docstring,
-        :attr:`DecisionResult.own_review_alert_ids`); alerts folded into the case (policy v3) are settled instead.
+        :attr:`DecisionResult.own_review_alert_ids`); folded alerts (policy v3) are settled instead, linked ones stay closed.
         ``approved_actions`` (``"action_type"`` or ``"action_type:target"``)
         pre-approves actions for the escalation's own alert only and only
         with ``true_positive``; a bare ``"action_type"`` is resolved to that
@@ -478,7 +478,7 @@ class ReviewService:
         out: List[str] = []
         for alert_id in attached:
             row = rows.get(alert_id)
-            if own_review_reason(
+            if (row is None or row["status"] != "closed") and own_review_reason(  # closed: only linked, no run waits
                 decision,
                 parent_key=verdict_key_of(parent) if parent else None,
                 parent_severity=parent["severity"] if parent else None,
