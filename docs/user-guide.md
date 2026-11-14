@@ -87,6 +87,20 @@ sample alerts under Getting started (docs/onboarding.md).
 * `POST /alerts/{id}/notes`: add a note for colleagues (stored on the
   timeline).
 
+In the web app, an alert's side panel has **Open full page**. The page
+(`/alerts/<id>`, the investigation view) reads top to bottom in the same
+order for every alert: the outcome and the verdict as a sentence, with why
+the alert is with a person or why it was closed; the alert's description and
+entities; the claims of the analysis, each beside what the lookup it names
+returned; what is not established (checked and found nothing, not checked,
+could not check for this customer); the steps of the investigation in plain
+words; the proposed response with exact targets; and a decision bar. What a
+tool returned is set in monospace on a recessed surface, apart from what the
+model wrote and from what a check, the policy or a person decided. A claim
+that names no lookup, or only one that returned nothing, is marked
+unsupported. **Hide the verdict** (`V`) withholds the verdict and the claims
+so you judge from the evidence first.
+
 Read the summary critically: the analysis states whether its evidence came
 from threat intelligence and alert history or only from the model, and
 alerts where text in the alert tried to steer the model carry a
@@ -120,6 +134,12 @@ alerts where text in the alert tried to steer the model carry a
      decided severity or lower.
    * `needs_more_info`: the analysis runs again with your notes, once; after
      that the case comes back to you.
+
+   The investigation view records the same decision from its decision bar:
+   `T` (true positive), `B` (benign, expected here: `benign_positive`) or `F`
+   (false positive) chooses the verdict, the bar says what it sets in motion,
+   and `Ctrl+Enter` records it and opens the next escalation. The bar does
+   not offer `needs_more_info` yet.
    Add `notes` and optional `feedback` (`confidence`, `triage_correct`,
    `correlation_helpful`, `analysis_accurate`). Feedback feeds the
    evaluation harness (docs/evaluation.md) and helps tune the platform.
