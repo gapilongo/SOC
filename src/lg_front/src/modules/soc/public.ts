@@ -6,4 +6,4 @@
  */
 
 export { ALERT_ENTITY } from './slots';
-export { alertsHref, APPROVALS_HREF, escalationHref, escalationQueueHref } from './lib/links';
+export { alertHref, alertsHref, APPROVALS_HREF, escalationHref, escalationQueueHref } from './lib/links';

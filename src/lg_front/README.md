@@ -161,7 +161,10 @@ src/modules/<id>/ one folder per service. index.ts is its manifest (routes with 
                   pages and gates, nav groups and items, nav counts, live events,
                   extension contributions); api/ is its API slice (types, endpoints,
                   query keys, invalidation, hooks, contract check); pages/, components/
-                  and lib/ are its own; public.ts is all another module may import
+                  and lib/ are its own; public.ts is all another module may import.
+                  In the SOC module, components/investigation/ holds the three voices of
+                  an investigation (observed, claimed, decided), the outcome headline
+                  and the other parts that render the read model of api/investigation.ts
 src/components/   presentational building blocks: ui/ primitives (buttons, fields, tabs,
                   timeline, entity list), dialogs (focus trap), virtualized table, error
                   boundary, route guards, the extension-point outlet (Slot)
