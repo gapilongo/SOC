@@ -188,6 +188,22 @@ are proposals.
 
 ### Investigation
 
+**Built since this table was written (PRD-2.8a, #411):** `GET /alerts/{id}/investigation` returns the read model
+(`Investigation` in `docs/openapi.json`; fields in `docs/api.md`, "Investigation view"). It fills the rows below from
+today's data and lists what stays empty until the harness in `pending_harness`. Where its names differ from the
+proposals in the New column, the API's names are the ones to build on:
+
+| Proposal below | In the API |
+|---|---|
+| `outcome`, `outcome_reason` | `outcome.category` (same four values; null when a suppression rule or a cached verdict closed the alert), `outcome.reason` (`code`, `sentence`), `outcome.blockers`, `outcome.closed_by` |
+| `investigation.summary`, `.summary_source` | `summary.text`, `summary.written_by` (`model` or `rules`) |
+| `claims[].stance`, `.check` (`backed`, ...) | `claims[].direction` (`malicious`, `benign`), `.check` (`supported`, `unsupported`, `rejected`), `.written_by` |
+| `observations[].excerpt` with `marks` | Same shape; `marks` is empty today. `rows`, `row_cap`, `complete`, `payload`, `erased` and `explain` are not returned yet |
+| `not_established` | Same three lists; `unavailable[]` has no `fix_href` yet |
+| `steps[]` | `ts`, `actor`, `text`, `produced`; no cost, budget or `chain_verified_at` yet |
+| `GET /reports/outcomes` | `track_record` on the read model, for the alert's own category and tenant (90 days, no rate under 30) |
+| Proposed response | `response.source` (`plan`, `preview`, `none`) and `response.actions[]` with the preview's fields |
+
 | Element | Has | New |
 |---|---|---|
 | Page title, severity, tenant, time | `AlertDetailOut.title`, `.severity`, `.tenant_id`, `.occurred_at`, `.source_name` | Tenant name on the alert (`tenant_name`), a readable reference (`ref`, for example `ALR-48213`) |
