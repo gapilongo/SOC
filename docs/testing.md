@@ -79,6 +79,16 @@ document. Locally: `OASDIFF=scripts/ci/oasdiff.sh python scripts/ci/check_api_co
 <base.json> docs/openapi.json` (Docker), or a local oasdiff binary's path; with `OASDIFF` set,
 `tests/unit/api/test_api_stability.py` runs the same checks.
 
+`eval-gate` runs `scripts/ci/eval_gate.py pr`: `lg-sotf eval` on the synthetic
+and phishing sets with the fake model, against each set's thresholds and its
+committed baseline. One more missed attack, or one fewer benign alert closed,
+than the baseline fails the build. Locally: `make test-services eval-gate`;
+after an intended behaviour change, `make eval-baselines` and commit the
+result. The nightly workflow's `real-model-eval` job runs the same sets through
+a pinned EU or local model and keeps the scorecard as an artifact; it is
+skipped until the model is configured. See
+[evaluation.md](evaluation.md#evaluation-gate-in-ci).
+
 ## The test services
 
 The integration tier needs a **plain** PostgreSQL role: superusers and roles
