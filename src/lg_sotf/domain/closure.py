@@ -85,6 +85,7 @@ __all__ = [
     "autonomy_tier",
     "catalogued_noise",
     "evidence_close_blockers",
+    "linked_only_cases",
     "model_close_blockers",
     "model_close_class",
     "never_close_class",
@@ -106,6 +107,17 @@ FAST_TIER_THREATS: FrozenSet[str] = frozenset({"likely_threat", "confirmed_threa
 #: The alert key the safety net sets on a reopened alert (lg_sotf.core.retro_reopen); it never model-closes.
 REOPENED = "reopened"
 LLM_NORMALIZED_FLAG = "llm_normalized"
+
+
+def linked_only_cases(summary: Mapping[str, Any]) -> FrozenSet[str]:
+    """The cases the safety net only linked this alert into (its summary's ``linked`` entries): the alert stayed
+    closed by the models, so nobody's claim or decision on such a case is a human step of this alert. A case the
+    alert was later reopened through is not one of them."""
+    links = summary.get("linked")
+    cases = {link.get("escalation_id") for link in links if isinstance(link, Mapping)} if isinstance(links, list) else set()
+    reopened = summary.get(REOPENED)
+    through = reopened.get("escalation_id") if isinstance(reopened, Mapping) else None
+    return frozenset(case for case in cases if isinstance(case, str) and case != through)
 #: Triage's rule false-positive signals that say where the activity came from (a scanner the tenant declared, a
 #: test-environment source), as opposed to what was detected (the rule's own test intent, the EICAR file).
 CONTEXT_EVIDENCE: FrozenSet[str] = frozenset({"known_scanner", "test_environment"})

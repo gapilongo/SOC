@@ -154,26 +154,50 @@ async def test_an_escalation_a_model_judged_a_threat_links_related_model_closes_
     assert "reopened" in closure.model_close_blockers(state, tier=closure.MODEL_CLOSE_TIER)
 
 
-async def test_a_response_plan_and_a_malicious_close_on_the_models_word_link_and_reopen_nothing(
-    engine_factory: Any, engine_settings: Settings, repos: Repositories
-) -> None:
-    """AI-E3.15: the workflow proposes a response and closes the alert malicious with no analyst behind either.
-    The related model close is linked (there is no case to show it in) and stays closed."""
+async def policy_response(
+    engine_factory: Any, engine_settings: Settings, repos: Repositories, autonomy: Dict[str, str]
+) -> tuple[Any, str, str]:
+    """A response the policy plans on the models' word (no analyst, no case) for an alert sharing an address with
+    a model close; ``autonomy`` decides whether its low-risk action runs alone or waits for a person."""
     settings = engine_settings.model_copy(update={"routing": {**dict(engine_settings.routing or {}), "response_threshold": 0}})
     engine = await engine_factory(settings=settings)
-    await repos.tenants.update_settings(TENANT_A, {"autonomy": {"low": "auto"}})
+    await repos.tenants.update_settings(TENANT_A, {"autonomy": autonomy})
     closed_alert = await model_closed(repos, {"ips": ["185.220.101.44"]})
     threat = await make_alert(repos, TENANT_A, title="Unusual outbound traffic volume", severity="medium",
                               normalized={"entities": {"ips": ["185.220.101.44"]}})
+    return await engine.run(TENANT_A, threat), threat, closed_alert
 
-    outcome = await engine.run(TENANT_A, threat)
+
+async def test_a_response_plan_the_workflow_only_proposes_links_and_reopens_nothing(
+    engine_factory: Any, engine_settings: Settings, repos: Repositories
+) -> None:
+    """AI-E3.15: the workflow proposes a response on the models' word and waits for a person to approve it. The
+    related model close is linked (there is no case to show it in) and stays closed."""
+    outcome, threat, closed_alert = await policy_response(engine_factory, engine_settings, repos, {"low": "approval"})
 
     stored = await repos.alerts.get(TENANT_A, threat)
-    assert stored.summary["response"]["threat_type"]  # a response was planned
-    assert outcome.status == "completed" and stored.summary["close_reason"] == "policy:response"
+    assert outcome.status == "waiting_approval" and stored.summary["response"]["awaiting"] > 0
     assert stored.summary.get("analyst_decision") is None and stored.summary["linked_alert_ids"] == [closed_alert]
     assert await linked(repos, closed_alert, threat, None)
     assert await audited(repos, LINK_ACTION) == [closed_alert] and await audited(repos, REOPEN_ACTION) == []
+
+
+async def test_a_response_the_workflow_carries_out_alone_reopens_related_model_closes(
+    engine_factory: Any, engine_settings: Settings, repos: Repositories
+) -> None:
+    """AI-E3.15 (lead decision): once the platform has acted on a threat under the tenant's autonomy policy, the
+    related alerts do not stay closed. The plan links the model close; the executed action reopens it."""
+    before = RETRO_REOPENED.labels(path="response")._value.get()
+    outcome, threat, closed_alert = await policy_response(engine_factory, engine_settings, repos, {"low": "auto"})
+
+    stored = await repos.alerts.get(TENANT_A, threat)
+    actions = (await repos.actions.list(TENANT_A, alert_id=threat, limit=50)).items
+    assert actions and {a.status for a in actions} == {"dry_run"}  # the tenant's dry-run mode: carried out all the same
+    assert outcome.status == "completed" and stored.summary["close_reason"] == "policy:response"
+    assert stored.summary.get("analyst_decision") is None
+    assert await reopened(repos, closed_alert, "requeued")
+    assert await audited(repos, LINK_ACTION) == [closed_alert] and await audited(repos, REOPEN_ACTION) == [closed_alert]
+    assert RETRO_REOPENED.labels(path="response")._value.get() == before + 1
 
 
 async def test_an_analysts_true_positive_reopens_at_the_response_plan_and_at_the_malicious_close(
@@ -247,10 +271,10 @@ async def test_a_later_case_of_the_threat_shows_what_it_linked_before(repos: Rep
     )
     later = datetime.now(UTC) + timedelta(days=3)
 
-    for expected in ([closed_alert], []):  # the second call finds it linked to this threat and case already
+    for _ in range(2):  # no first link (nothing to count); the second call finds it in this case already
         assert await link_related_model_closes(
             repos, TENANT_A, threat, actor=ACTOR, escalation_id=case.id, now=later
-        ) == expected
+        ) == []
     assert await linked(repos, closed_alert, threat.id, case.id)
     assert (await repos.escalations.get(TENANT_A, case.id)).related_alert_ids == [closed_alert]
     assert await audited(repos, LINK_ACTION) == [closed_alert, closed_alert]  # without a case, then into the case

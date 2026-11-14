@@ -41,6 +41,7 @@ from lg_sotf.audit.logger import Actor, AuditLogger
 from lg_sotf.compliance import html as h
 from lg_sotf.compliance.canonical import jsonable
 from lg_sotf.db.repos import Alert, AlertEvent, Escalation, Repositories, ResponseAction
+from lg_sotf.domain.closure import linked_only_cases
 from lg_sotf.llm import (
     USE_DEFAULT,
     BudgetLimit,
@@ -138,9 +139,11 @@ async def load_case(repos: Repositories, tenant_id: str, alert_id: str) -> CaseD
         actions = await repos.actions.list(tenant_id, alert_id=alert_id, limit=MAX_CASE_ACTIONS, conn=conn)
         sightings = await repos.indicators.sightings_for_alert(tenant_id, alert_id, conn=conn)
     displays = [f"{s.indicator_type}: {s.value_display}" for s in sightings if s.value_display][:MAX_IOCS]
+    # A case the alert was only linked into (it stayed closed by the models) was decided about another alert.
+    linked_only = linked_only_cases(_obj(alert.summary))
     return CaseData(
         alert=alert,
-        escalations=sorted(escalations.items, key=lambda e: (e.created_at, e.id)),
+        escalations=sorted((e for e in escalations.items if e.id not in linked_only), key=lambda e: (e.created_at, e.id)),
         actions=sorted(actions.items, key=lambda a: (a.created_at, str(a.id))),
         indicator_displays=displays,
     )

@@ -51,7 +51,10 @@ _FIND_PARENT_SQL = f"""
     SELECT e.* FROM escalations e
     WHERE e.tenant_id = $1 AND e.status IN {_ACTIVE_IN} AND e.alert_id <> $2
       AND e.created_at >= $3
-      AND cardinality(e.related_alert_ids) < $6
+      AND (SELECT count(*) FROM alerts w
+           WHERE w.tenant_id = e.tenant_id AND w.id = ANY(e.related_alert_ids)
+             AND NOT (w.status = 'closed' AND starts_with(COALESCE(w.summary->>'close_reason', ''), 'ai_closed:'))
+          ) < $6
       AND (
             e.alert_id = ANY($4::text[])
          OR e.related_alert_ids && $4::text[]
@@ -453,7 +456,8 @@ class EscalationsRepo(Repository):
     ) -> Optional[Escalation]:
         """The oldest active escalation of another alert, created since ``since``, that ``alert_id`` can join.
 
-        It must have room (fewer than ``max_attached`` attached alerts) and
+        It must have room (fewer than ``max_attached`` attached alerts; the alerts the safety net only linked
+        to it, still closed by the models, wait on nothing and do not count) and
         involve one of the ``related`` alerts or, with ``fingerprint``, a
         primary alert of that fingerprint. The row is locked ``FOR UPDATE``.
         """

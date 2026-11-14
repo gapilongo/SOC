@@ -7,33 +7,20 @@ models whatever the decision on the case."""
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import pytest
 
 from lg_sotf.audit.logger import Actor
 from lg_sotf.core.retro_reopen import LINK_ACTION, REOPEN_ACTION, link_related_model_closes
-from lg_sotf.db.repos import Escalation
 from lg_sotf.domain import closure
 from lg_sotf.observability.metrics import RETRO_REOPEN_FAILURES
 from tests.integration.api._blind_audit import API, alert_of, queue, sample, seed_frame
+from tests.integration.api._safety_net import audited, model_closed, threat_with_linked
 from tests.integration.api._support import TENANT_A, ApiHarness
 from tests.integration.db._support import make_alert
 
 pytestmark = pytest.mark.integration
-
-
-LONG_AGO = datetime.now(UTC) - timedelta(days=3)  # outside the safety net's 24-hour window
-
-
-async def model_closed(api: ApiHarness, entities: Dict[str, List[str]], closed_at: Optional[datetime] = None) -> str:
-    alert_id = await make_alert(api.repos, TENANT_A, title="Package installed", severity="low",
-                                normalized={"entities": entities})
-    for status in ("queued", "processing", "closed"):
-        await api.repos.alerts.update_status(TENANT_A, alert_id, status, now=closed_at)
-    await api.repos.alerts.update(TENANT_A, alert_id, disposition="benign",
-                                  summary={"close_reason": closure.MODEL_CLOSE_REASON})
-    return alert_id
 
 
 async def assert_reopened(api: ApiHarness, alert_id: str, escalation_id: str, mode: str) -> None:
@@ -45,27 +32,6 @@ async def assert_reopened(api: ApiHarness, alert_id: str, escalation_id: str, mo
     assert attached is (mode == "folded")
     assert alert.summary["reopened"]["escalation_id"] == escalation_id
     assert [e.resource_id for e in (await api.repos.audit.list(TENANT_A, action=REOPEN_ACTION)).items] == [alert_id]
-
-
-async def threat_with_linked(api: ApiHarness, host: str, *, case: bool = True) -> tuple[str, str, Optional[Escalation]]:
-    """A threat a model judged three days ago, its open case (if any) and the model close linked to it then."""
-    threat = await make_alert(api.repos, TENANT_A, title="Beacon", severity="medium",
-                              normalized={"entities": {"hosts": [host]}})
-    linked = await model_closed(api, {"hosts": [host]}, closed_at=LONG_AGO)
-    escalation = None
-    if case:
-        escalation, _ = await api.repos.escalations.create_or_attach(
-            TENANT_A, threat, reason="review", sla_deadline=datetime.now(UTC) + timedelta(hours=1)
-        )
-    assert await link_related_model_closes(
-        api.repos, TENANT_A, await api.repos.alerts.get(TENANT_A, threat), actor=Actor("agent", "workflow"),
-        escalation_id=escalation.id if escalation else None, now=LONG_AGO + timedelta(hours=1),
-    ) == [linked]
-    return threat, linked, await api.repos.escalations.get(TENANT_A, escalation.id) if escalation else None
-
-
-async def audited(api: ApiHarness, action: str) -> List[str]:
-    return [e.resource_id for e in (await api.repos.audit.list(TENANT_A, action=action)).items]
 
 
 async def test_a_linked_alert_is_listed_on_the_case_and_a_benign_decision_leaves_it_closed_by_the_models(

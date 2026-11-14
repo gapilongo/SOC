@@ -302,15 +302,20 @@ Rules:
     user or IP with a threat and closed in the previous 24 hours, and what
     it does depends on who stands behind the threat (AI-E3.15):
     * a model only (an escalation a model judged a threat, not a merely
-      suspicious one; a response plan or a malicious close with no analyst
-      true positive behind it): the alert is **linked**. It is attached to
-      the threat's open escalation as a related alert, so the analyst sees
-      it in the case, gets a `linked` entry in its summary and is audited
-      `alert.linked`. It stays closed with its close reason
-      `ai_closed:audit_required`, no run starts, and no decision on the
-      case settles it;
-    * a person (an analyst true positive, an analyst approving a response
-      action, a blind-audit malicious label): the alert is **reopened**, and
+      suspicious one; a response the workflow only proposes): the alert is
+      **linked**. It is attached to the threat's open escalation as a
+      related alert, so the analyst sees it in the case, gets a `linked`
+      entry in its summary and is audited `alert.linked`. It stays closed
+      with its close reason `ai_closed:audit_required`, no run starts, no
+      decision on the case settles it, and the evidence pack and the NIS2
+      draft show no human decision for it. Linked alerts do not use up the
+      case's room for waiting alerts;
+    * a confirmation (an analyst true positive, an analyst's own approval
+      of a response action, a blind-audit malicious label, or a response
+      action the workflow carried out alone under the tenant's autonomy
+      policy, `succeeded` or `dry_run`: once the platform has acted on a
+      threat, the related alerts do not stay closed): the alert is
+      **reopened**, and
       so is every alert linked to the threat or into its case earlier,
       however long ago it closed. It is folded into the threat's open
       escalation (attached, `waiting_human`, no new run or case; the

@@ -279,7 +279,7 @@ async def _review_action(
     ok, failed = await enqueue_resumes(ctx.queue, principal.tenant_id, requests)
     action = await ctx.repos.actions.get(principal.tenant_id, action_id)
     if approve:
-        await reopen_for_approval(ctx, principal.tenant_id, action, principal.actor)
+        await reopen_for_approval(ctx, principal.tenant_id, action, principal.user_id)
     return ApprovalOut(
         action=await one_action_out(ctx, principal.tenant_id, action),
         resumed_alert_ids=[r.alert_id for r in requests],
