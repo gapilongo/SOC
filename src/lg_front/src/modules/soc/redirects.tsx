@@ -1,6 +1,6 @@
 import { Navigate, useLocation } from 'react-router-dom';
 
-import { APPROVALS_HREF } from '../../lib/links';
+import { APPROVALS_HREF } from './lib/links';
 
 /**
  * Where an old `/actions` link goes: the pending approvals for

@@ -32,6 +32,8 @@ import { can, isTenantOverride } from '../../auth/roles';
 import { defineModule, type Allowed } from '../../core/module';
 import { contribute, SHELL_BANNER, SHELL_HEADER_TENANT } from '../../core/slots';
 import { useNavCount } from './navCounts';
+// Not a page: a route that only redirects, so an old link costs no extra download.
+import { LegacyActionsRedirect } from './redirects';
 
 // One chunk per route.
 const OverviewPage = lazy(() => import('./pages/overview/OverviewPage'));
@@ -39,7 +41,6 @@ const AlertsPage = lazy(() => import('./pages/alerts/AlertsPage'));
 const EscalationsPage = lazy(() => import('./pages/escalations/EscalationsPage'));
 const DecisionPage = lazy(() => import('./pages/escalations/DecisionPage'));
 const ApprovalsPage = lazy(() => import('./pages/approvals/ApprovalsPage'));
-const LegacyActionsRedirect = lazy(() => import('./pages/approvals/redirect').then((m) => ({ default: m.LegacyActionsRedirect })));
 const SuppressionsPage = lazy(() => import('./pages/SuppressionsPage'));
 const SourcesPage = lazy(() => import('./pages/SourcesPage'));
 const IntegrationsPage = lazy(() => import('./pages/integrations/IntegrationsPage'));

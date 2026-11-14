@@ -16,7 +16,7 @@ import {
   usageLevel,
   usageText,
 } from './approvals';
-import { legacyActionsTarget } from './redirect';
+import { legacyActionsTarget } from '../../redirects';
 
 function principal(overrides: Partial<Principal> = {}): Principal {
   return { userId: 'u-1', email: 'x@acme.test', role: 'analyst', tenantId: 'acme', homeTenantId: 'acme', isPlatformAdmin: false, method: 'password', ...overrides };
