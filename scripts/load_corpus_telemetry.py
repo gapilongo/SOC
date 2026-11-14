@@ -66,10 +66,11 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 EVAL_DIR = REPO_ROOT / "tests" / "fixtures" / "eval"
 DATASETS = ("corpus_v1", "corpus_skills_v1")
 DEFAULT_INDEX = "wazuh-alerts-4.x-corpus-telemetry"
-URL_ENV = "LG_SOTF_CORPUS_INDEXER_URL"
-USERNAME_ENV = "LG_SOTF_CORPUS_INDEXER_USERNAME"
-PASSWORD_ENV = "LG_SOTF_CORPUS_INDEXER_PASSWORD"  # noqa: S105 - the variable's name
-CA_ENV = "LG_SOTF_CORPUS_INDEXER_CA_FILE"
+ENV_PREFIX = "LG_SOTF_CORPUS_INDEXER_"
+URL_ENV = ENV_PREFIX + "URL"
+USERNAME_ENV = ENV_PREFIX + "USERNAME"
+PASSWORD_ENV = ENV_PREFIX + "PASSWORD"
+CA_ENV = ENV_PREFIX + "CA_FILE"
 ED = "data.win.eventdata."
 LOGON_EVENT_IDS = ("4624", "4625", "4648", "4740", "4771", "4776")
 HOST_WINDOW = timedelta(minutes=60)

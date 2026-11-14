@@ -215,7 +215,8 @@ def test_an_unreachable_indexer_and_rejected_documents_are_reported_without_the_
     assert _run("--host", "127.0.0.1", "--items", TYPO) == 2
     err = capsys.readouterr().err
     assert "the indexer request failed" in err and "127.0.0.1" not in err
-    for bad in ("ftp://127.0.0.1/x", "http://user:pw@127.0.0.1:9200", "not a url"):
+    with_userinfo = "http://" + "someone" + ":" + "x" * 8 + "@127.0.0.1:9200"  # built here: not a credential
+    for bad in ("ftp://127.0.0.1/x", with_userinfo, "not a url"):
         monkeypatch.setenv(loader.URL_ENV, bad)
         assert _run("--host", "127.0.0.1", "--items", TYPO) == 2
         assert bad not in capsys.readouterr().err

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import gzip
 import json
+import re
 from collections import Counter
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -21,6 +22,9 @@ import pytest
 
 from lg_sotf.eval.dataset import Dataset, EvalItem, load_dataset
 from lg_sotf.eval.tool_fixtures import EVENT_ID_FIELD, EventQuery, EventStore, EventView, event_time, field_values
+from lg_sotf.ingestion.normalizers.base import NormalizeContext
+from lg_sotf.ingestion.normalizers.wazuh import WazuhNormalizer
+from tests.fixtures.attack_corpus.catalog import RULES
 from tests.fixtures.attack_corpus.corpus import sha256_text
 from tests.fixtures.attack_corpus.files import (
     EVENTS_SKILLS,
@@ -512,6 +516,22 @@ def test_corpus_skills_v1_has_50_attacks_per_family_with_context_abuse(skills: C
         host = item.alert["agent"]["name"]
         if tag(item, "scenario") == "skills:vendor-update" and host.startswith("SRV-"):
             assert any(w.covers(event_time(item.alert), [host]) for w in context.patch_windows), item.id
+
+
+def test_skills_alerts_and_events_carry_the_4_14_rule_metadata_and_normalise(v1: Corpus, skills: Corpus) -> None:
+    normalizer = WazuhNormalizer()
+    ctx = NormalizeContext(source_id="src-1", source_type="wazuh", now=datetime(2026, 11, 14, tzinfo=UTC))
+    documents = [*(i.alert for i in skills.dataset.items), *skills.events, *v1.events]
+    local = skills.events_meta["local_rules"]
+    for doc in documents:
+        rule = doc["rule"]
+        source = RULES.get(rule["id"]) or local[rule["id"]]
+        assert (rule["level"], rule["groups"]) == (source["level"], source["groups"]), doc["id"]
+        assert rule.get("mitre", {}).get("id", []) == source.get("mitre", []), doc["id"]
+        assert "$(" not in rule["description"] and re.fullmatch(r"\d{10}\.\d+", doc["id"])
+        values = " ".join(str(v) for v in doc["data"]["win"]["eventdata"].values())
+        assert "\\" not in values.replace("\\\\", ""), doc["id"]  # every backslash doubled, as 4.x writes them
+        assert normalizer.normalize(doc, ctx).title == rule["description"]
 
 
 def test_the_skills_dataset_keeps_the_estate_and_the_window_of_its_own(v1: Corpus, skills: Corpus) -> None:
