@@ -5,7 +5,7 @@
 * Date: 2026-11-08
 * Roadmap step: AI-E2, AI-E3, AI-E4 ([build order](../design/investigation-skills-stories.md))
 * Supersedes nothing. Amends the safety invariant INV-03 when AI-E3.8a merges (section 6.2).
-* **Amended on 2026-11-14 by [Amendment 1](#amendment-1-2026-11-14-harness-v1-on-decision-policy-v3): read it first. It changes the closing rule, drops the settle delay and reorders the build.**
+* **Amended on 2026-11-14 by [Amendment 1](#amendment-1-2026-11-14-harness-v1-on-decision-policy-v3) and [Amendment 2](#amendment-2-2026-11-14-what-the-public-evidence-changes): read both first. It changes the closing rule, drops the settle delay and reorders the build.**
 
 Items marked **(uncertain)** are assumptions to confirm while building; each names the story that confirms it.
 
@@ -1153,3 +1153,62 @@ spent; no tool runs without a declared risk class, schema, egress target and row
 always rendered as data; per-tenant enablement, with a read-only indexer user; a shadow run performs no
 side effect (INV-09); cost per investigation is metered and capped; the threat-model rows TM-WRK-11 to
 TM-WRK-14 are implemented or explicitly deferred.
+
+## Amendment 2 (2026-11-14): what the public evidence changes
+
+A research pass on the same day (public papers, vendor documentation, licences and EU rules; the report
+is kept with the lead's notes, and its findings are on the re-scoped issues) confirms the direction and
+corrects one rule of Amendment 1.
+
+**Correction: an empty or failed query is never benign evidence.** Amendment 1 said an *unknown*
+indicator does not block a close. The closest public study, on Wazuh alerts (Aida / Alert-Bench, October
+2026), found that agents dismissed 88 to 99% of attack alerts when a query returned nothing, and that the
+one component whose removal measurably hurt was the gate requiring *affirmative* benign evidence (missed
+attack alerts fell from 40-70% to 3.1% with it). Therefore:
+
+* every tool result carries a typed outcome, `success`, `empty` or `failed` (AI-E2.1), and a benign claim
+  may cite only `success` observations (AI-E3.4);
+* whether an alert the harness could not prove benign still closes on the model's word (policy v3 with
+  full audit) or goes to an analyst is **decided by measurement**, not by this record: AI-E3.8a (#330)
+  runs both rules on `corpus_v1` with telemetry and on the dev run and ships the one with more benign
+  closed at 0 attacks closed.
+
+**Confirmed, with evidence.** One investigator loop inside the existing workflow, not several agents; a
+non-LLM executor writing the ledger; skills pinned by code; no same-context self-review (it broke more
+decisions than it fixed) and no adversary role (no measurable effect); typed tools and templates (prompt
+defences alone leave 8 to 12% injection success, so closing must rest on typed facts); human-reviewed
+skills only (model-written skills gave no benefit in a public benchmark).
+
+**Not measured anywhere in public, so measured here.** A deterministic checker in place of an LLM judge,
+and tenant context. If the checker underperforms on the corpus, a separate-context judge is added on the
+dismissal path only.
+
+**Added to the build.**
+
+| Addition | Story | Step |
+|---|---|---|
+| Typed outcomes and input/output hashes on every tool result | AI-E2.1 (#193) | 1 |
+| Entity baseline (30-day history), the fifth shared lookup | INT3.4c (#358) | 2 |
+| Forced verification before finish, loop detection, two-pass calls for open-weight models | AI-E3.3 (#205) | 3 |
+| Non-investigation route for vulnerability, compliance and health findings | AI-E3.12 (#355) | 4 |
+| Evidence record: observations, claims, decision, per-tenant hash chain | AI-E3.13 (#356) | 4 |
+| Model qualification per tenant model | AI-E5.4 (#357) | 6 |
+| Seeded attacks for any miss-rate claim (59 with no miss for below 5%, 299 for below 1%) | AI-E3.11 (#334), AI-E3.10 (#331) | 6 |
+
+**Skill order.** `wazuh.default`, then logon failures and password spray, then file-integrity change
+(the two largest sources of `inconclusive` on dev). Public incident data puts identity first (67 to 72%
+of cases needing intervention), so the Microsoft sign-in and mailbox families follow as soon as the
+Microsoft lab tenant exists (INT1.1). The learning loop (AI-E3.7) is deferred and re-scoped to drafting
+help for a human reviewer.
+
+**Content we may ship.** Splunk security content (Apache-2.0), Sigma (DRL 1.1, with attribution), MITRE
+ATT&CK, Azure-Sentinel (MIT), LOLDrivers, Atomic Red Team. Reading only: Elastic's investigation guides
+(Elastic License 2.0 forbids managed-service use, which is how MSSPs run the product) and Microsoft Learn
+playbooks (non-commercial terms). Never bundled: Wazuh rule files (GPLv2; reference rule ids only),
+LOLBAS and GTFOBins (GPL-3.0). These readings need counsel before a release that ships third-party
+content.
+
+**Risks carried.** The dismissal-gate evidence is one benchmark of mostly web-scanning attacks. Wazuh
+5.0 (release candidate) moves to a Sigma-based rule format, so the router must not depend on 4.x rule
+ids alone: it keys on rule groups and techniques as well.
+

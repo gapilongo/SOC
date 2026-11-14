@@ -1,0 +1,36 @@
+{
+  "schema_version": "1.1.0",
+  "id": "fact-children-fin-srv-02-psexesvc",
+  "kind": "process_lineage",
+  "subject": {"type": "process", "value": "FIN-SRV-02:PSEXESVC.exe"},
+  "observed_at": "2026-11-07T09:16:10Z",
+  "source": {"name": "wazuh.process_lineage", "version": "1"},
+  "complete": false,
+  "value": {
+    "chain": [
+      {"name": "services.exe", "image_name": "services.exe", "pid": 668},
+      {
+        "name": "PSEXESVC.exe",
+        "image_name": "psexesvc.exe",
+        "pid": 5120,
+        "process_guid": "{4f1c2a9e-1b7d-4c43-9a51-0d2b9e7c4f10}",
+        "command_line": "C:\\Windows\\PSEXESVC.exe",
+        "command_template": "<windir>\\psexesvc.exe",
+        "user": "NT AUTHORITY\\SYSTEM",
+        "started_at": "2026-11-07T09:15:41Z"
+      }
+    ],
+    "children": [
+      {
+        "name": "cmd.exe",
+        "image_name": "cmd.exe",
+        "pid": 5344,
+        "process_guid": "{4f1c2a9e-1b7d-4c43-9a51-0d2b9e7c4f11}",
+        "command_line": "\"cmd.exe\" /c whoami /all",
+        "command_template": "cmd.exe /c whoami /all",
+        "user": "CONTOSO\\svc-deploy",
+        "started_at": "2026-11-07T09:15:42Z"
+      }
+    ]
+  }
+}
