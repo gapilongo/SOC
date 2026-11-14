@@ -24,7 +24,7 @@ import { endpoints } from './api/endpoints';
 import { useDashboardSummary } from './api/hooks';
 import { qk } from './api/queryKeys';
 import type { SourceOut } from './api/types';
-import { APPROVALS_HREF, escalationQueueHref } from './lib/links';
+import { APPROVALS_HREF, QUEUE_HREF, QUEUE_SOON_HREF } from './lib/links';
 
 /** A deadline this close is "about to pass". */
 const SOON_MS = 15 * 60_000;
@@ -48,8 +48,8 @@ export function socNotices(summary: unknown, sources: readonly SourceOut[] | und
       id: 'overdue',
       kind: 'deadline',
       text: `${overdue} ${plural(overdue, 'escalation is past its deadline', 'escalations are past their deadline')}`,
-      detail: 'the oldest first',
-      to: escalationQueueHref({ overdue: true, order: 'sla_deadline' }),
+      detail: 'the queue lists them first',
+      to: QUEUE_HREF,
     });
   }
   const left = typeof s.next_sla_deadline === 'string' ? new Date(s.next_sla_deadline).getTime() - now : Number.NaN;
@@ -60,7 +60,7 @@ export function socNotices(summary: unknown, sources: readonly SourceOut[] | und
       kind: 'deadline',
       text: `A deadline passes in ${Math.max(1, Math.ceil(left / 60_000))} min`,
       detail: unassigned ? `${unassigned} ${plural(unassigned, 'escalation near its deadline has', 'escalations near their deadline have')} no owner` : 'the soonest deadline first',
-      to: escalationQueueHref({ order: 'sla_deadline' }),
+      to: QUEUE_SOON_HREF,
     });
   }
   const approvals = count(s, 'pending_approvals');

@@ -15,7 +15,13 @@ function withQuery(path: string, params: URLSearchParams): string {
   return query ? `${path}?${query}` : path;
 }
 
-/** The escalation queue with these filters. */
+/** The work queue: what needs a person, soonest deadline first. The rail's entry for work that waits. */
+export const QUEUE_HREF = '/queue';
+
+/** The work queue on its "Deadline under 15 min" view (the queue's own `view` parameter). */
+export const QUEUE_SOON_HREF = '/queue?view=soon';
+
+/** The older escalation list with these filters (grouping by rule and bulk close live there). */
 export function escalationQueueHref(filters: EscalationFilters = {}): string {
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(filters) as Array<[string, unknown]>) {

@@ -30,6 +30,10 @@ describe('route table', () => {
     expect(pageLabel('/approvals')).toBe('Approvals');
     expect(pageLabel('/queue')).toBe('Queue');
     expect(pageLabel('/escalations/esc-1')).toBe('Escalations');
+    // The page's own title, where the rail names it differently ("People and keys").
+    expect(pageLabel('/users')).toBe('Users and API keys');
+    expect(pageLabel('/usage')).toBe('LLM usage');
+    expect(pageLabel('/platform')).toBe('MSSP console');
     expect(pageLabel('/reports/x')).toBe('Reports');
     expect(pageLabel('/account')).toBe('Account security');
     expect(pageLabel('/actions')).toBeNull();

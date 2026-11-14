@@ -152,10 +152,15 @@ export function buildRegistry(modules: readonly ModuleManifest[]): Registry {
   return { modules, routes, bareRoutes, navGroups, liveKeys: (type) => live.get(type) ?? [], extensions, searches, commands, notices };
 }
 
-/** Page name for the breadcrumb and the phone top bar: the route at `pathname` or its closest parent. */
+/** A page's own name: its title where the manifest gives one, else its label in the rail. */
+export function pageName(route: Pick<ModuleRoute, 'label' | 'nav'>): string | undefined {
+  return route.label ?? route.nav?.label;
+}
+
+/** Page name for the browser tab: the route at `pathname` or its closest parent. */
 export function pageLabelIn(routes: readonly AppRoute[], pathname: string): string | null {
   for (const r of routes) {
-    const label = r.nav?.label ?? r.label;
+    const label = pageName(r);
     if (!label || r.path.includes(':')) continue;
     if (r.path === '/' ? pathname === '/' : pathname === r.path || pathname.startsWith(`${r.path}/`)) return label;
   }

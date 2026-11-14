@@ -70,23 +70,25 @@ afterEach(() => {
 
 describe('navigation model', () => {
   it('puts the pages in the capability groups of console v2, by role', () => {
-    expect(titles(principal({ role: 'viewer' }))).toEqual(['Work: Overview, Queue, Escalations, Approvals', 'Detect and respond: Alerts, Suppressions', 'Assure: Reports']);
-    expect(titles(principal())).toEqual(['Work: Overview, Queue, Escalations, Approvals', 'Detect and respond: Alerts, Suppressions, Blind audit', 'Assure: Reports']);
+    expect(titles(principal({ role: 'viewer' }))).toEqual(['Work: Overview, Queue, Approvals', 'Detect and respond: Alerts, Suppressions', 'Assure: Reports']);
+    expect(titles(principal())).toEqual(['Work: Overview, Queue, Approvals', 'Detect and respond: Alerts, Suppressions, Blind audit', 'Assure: Reports']);
     expect(titles(principal({ role: 'admin' }))).toEqual([
-      'Work: Overview, Queue, Escalations, Approvals',
+      'Work: Overview, Queue, Approvals',
       'Detect and respond: Alerts, Suppressions, Blind audit',
-      'Assure: Reports, Audit log, LLM usage, Proof of value',
-      'Configure: Getting started, Sources, Integrations, Users and API keys, Tenant settings',
+      'Assure: Reports, Audit log, AI usage and cost, Proof of value',
+      'Configure: Getting started, Sources, Integrations, People and keys, Tenant settings',
     ]);
-    expect(titles(principal({ role: 'admin', isPlatformAdmin: true })).at(-1)).toBe('Platform: MSSP console');
+    expect(titles(principal({ role: 'admin', isPlatformAdmin: true })).at(-1)).toBe('Platform: Tenants');
     // The console works across tenants: hidden while acting on one.
-    expect(titles(principal({ role: 'admin', isPlatformAdmin: true, tenantId: 'globex' }))).not.toContain('Platform: MSSP console');
+    expect(titles(principal({ role: 'admin', isPlatformAdmin: true, tenantId: 'globex' }))).not.toContain('Platform: Tenants');
     expect(navFor(NAV_GROUPS, null)).toEqual([]);
+    // The older escalation list has no entry in the rail; the work queue is where work waits.
+    expect(NAV_GROUPS.flatMap((g) => g.items).map((i) => i.to)).not.toContain('/escalations');
   });
 
   it('maps every item to an existing route', () => {
     const items = navFor(NAV_GROUPS, principal({ role: 'admin', isPlatformAdmin: true })).flatMap((g) => g.items);
-    expect(Object.fromEntries(items.map((i) => [i.label, i.to]))).toMatchObject({ Overview: '/', Approvals: '/approvals', 'MSSP console': '/platform' });
+    expect(Object.fromEntries(items.map((i) => [i.label, i.to]))).toMatchObject({ Overview: '/', Queue: '/queue', Approvals: '/approvals', Tenants: '/platform' });
   });
 
   it('lists a service that is not licensed locked for a platform admin and not at all for a customer', () => {
@@ -164,10 +166,11 @@ describe('Rail', () => {
   };
 
   it('shows the brand, the groups of the role, the current page and the person, and no count the API does not send', async () => {
-    const { calls, nav } = await renderRail({}, { role: 'analyst' }, NAV_GROUPS, '/escalations');
+    const { calls, nav } = await renderRail({}, { role: 'analyst' }, NAV_GROUPS, '/queue');
     await waitFor(() => expect(calls.some((c) => c.path === '/dashboard/summary')).toBe(true));
     expect(within(nav).getByRole('link', { name: 'LG-SOTF Security operations' })).toHaveAttribute('href', '/');
-    expect(within(nav).getByRole('link', { name: 'Escalations' })).toHaveAttribute('aria-current', 'page');
+    expect(within(nav).getByRole('link', { name: 'Queue' })).toHaveAttribute('aria-current', 'page');
+    expect(within(nav).queryByRole('link', { name: 'Escalations' })).not.toBeInTheDocument();
     expect(within(nav).getByRole('link', { name: 'Approvals' })).toHaveAttribute('href', '/approvals');
     expect(within(nav).getByRole('link', { name: 'Overview' })).not.toHaveAttribute('aria-current');
     expect(within(nav).queryByText(/breaching SLA/)).not.toBeInTheDocument();
@@ -183,8 +186,8 @@ describe('Rail', () => {
 
   it('shows counts with their meaning once the API sends them', async () => {
     await renderRail({ summary: { ...DASHBOARD, unassigned_breaching: 3, pending_approvals: 1 } }, { role: 'admin' });
-    const escalations = await screen.findByRole('link', { name: 'Escalations 3 unassigned escalations breaching SLA' });
-    expect(within(escalations).getByTitle('3 unassigned escalations breaching SLA')).toHaveTextContent('3');
+    const queue = await screen.findByRole('link', { name: 'Queue 3 unassigned escalations breaching SLA' });
+    expect(within(queue).getByTitle('3 unassigned escalations breaching SLA')).toHaveTextContent('3');
     expect(screen.getByRole('link', { name: 'Approvals 1 action you can approve' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Overview' })).toHaveAttribute('aria-current', 'page');
     expect(screen.getByRole('list', { name: 'Configure' })).toBeInTheDocument();
@@ -304,8 +307,8 @@ describe('Notifications', () => {
     await user.click(bell);
     const dialog = screen.getByRole('dialog', { name: 'Notifications' });
     expect(within(dialog).getAllByRole('link').map((a) => [a.textContent, a.getAttribute('href')])).toEqual([
-      ['1 escalation is past its deadlineAcme Corp · the oldest first', '/escalations?overdue=true&order=sla_deadline'],
-      ['A deadline passes in 4 minAcme Corp · 2 escalations near their deadline have no owner', '/escalations?order=sla_deadline'],
+      ['1 escalation is past its deadlineAcme Corp · the queue lists them first', '/queue'],
+      ['A deadline passes in 4 minAcme Corp · 2 escalations near their deadline have no owner', '/queue?view=soon'],
       ['4 actions wait for your approvalAcme Corp', '/approvals'],
       ['Source failing: Wazuh managerAcme Corp · alerts may be missing', '/sources'],
     ]);

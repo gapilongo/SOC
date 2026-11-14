@@ -24,7 +24,6 @@ import {
   Rocket,
   Send,
   Settings,
-  ShieldAlert,
   UserCheck,
 } from 'lucide-react';
 import { lazy } from 'react';
@@ -88,19 +87,20 @@ export const soc = defineModule({
     { id: 'configure', title: 'Configure', order: 50 },
     { id: 'platform', title: 'Platform', order: 60 },
   ],
+  // A route's `label` is the page's own title where the rail names it differently (console v2's rail says
+  // "People and keys" for the page titled "Users and API keys").
   routes: [
     // Work
     { path: '/', Page: OverviewPage, allowed: can.view, nav: { group: 'operate', label: 'Overview', icon: LayoutDashboard } },
-    // The work queue of console v2, beside the Escalations page until the shell switches over.
-    { path: '/queue', Page: QueuePage, allowed: can.view, nav: { group: 'operate', label: 'Queue', icon: ListTodo } },
+    // The work queue of console v2: what needs a person, in the rail where the Escalations list used to be.
     {
-      path: '/escalations',
-      Page: EscalationsPage,
+      path: '/queue',
+      Page: QueuePage,
       allowed: can.view,
       nav: {
         group: 'operate',
-        label: 'Escalations',
-        icon: ShieldAlert,
+        label: 'Queue',
+        icon: ListTodo,
         count: {
           useCount: () => useNavCount('unassigned_breaching'),
           tone: 'warn',
@@ -108,6 +108,9 @@ export const soc = defineModule({
         },
       },
     },
+    // The older list (grouping by rule, bulk close). It has no entry in the rail any more; its address still
+    // works, for existing links and for the decision page of someone who came from it.
+    { path: '/escalations', Page: EscalationsPage, allowed: can.view, label: 'Escalations' },
     { path: '/escalations/:id', Page: DecisionPage, allowed: can.view },
     {
       path: '/approvals',
@@ -138,7 +141,7 @@ export const soc = defineModule({
     // Printable report: outside the app shell so only the report prints.
     { path: '/reports/monthly/:month', Page: MonthlyReportPage, allowed: signedIn, shell: false },
     { path: '/audit', Page: AuditPage, allowed: can.admin, nav: { group: 'assure', label: 'Audit log', icon: FileClock } },
-    { path: '/usage', Page: UsagePage, allowed: can.admin, nav: { group: 'assure', label: 'LLM usage', icon: BarChart3 } },
+    { path: '/usage', Page: UsagePage, allowed: can.admin, label: 'LLM usage', nav: { group: 'assure', label: 'AI usage and cost', icon: BarChart3 } },
     // Proof-of-value runs, and the wizard that starts one (reached from the page and from where the setup ends).
     { path: '/pov', Page: PovPage, allowed: can.admin, nav: { group: 'assure', label: 'Proof of value', icon: FlaskConical } },
     { path: '/pov/new', Page: PovWizardPage, allowed: can.admin, label: 'New proof of value' },
@@ -150,10 +153,10 @@ export const soc = defineModule({
     // Guided setup of one source type (reached from Sources and Getting started).
     { path: '/sources/wazuh', Page: WazuhSetupPage, allowed: can.admin, label: 'Connect Wazuh' },
     { path: '/integrations', Page: IntegrationsPage, allowed: can.admin, nav: { group: 'configure', label: 'Integrations', icon: Send } },
-    { path: '/users', Page: UsersPage, allowed: can.admin, nav: { group: 'configure', label: 'Users and API keys', icon: KeyRound } },
+    { path: '/users', Page: UsersPage, allowed: can.admin, label: 'Users and API keys', nav: { group: 'configure', label: 'People and keys', icon: KeyRound } },
     { path: '/settings', Page: TenantSettingsPage, allowed: can.admin, nav: { group: 'configure', label: 'Tenant settings', icon: Settings } },
     // Platform
-    { path: '/platform', Page: PlatformPage, allowed: can.platform, nav: { group: 'platform', label: 'MSSP console', icon: Building2 } },
+    { path: '/platform', Page: PlatformPage, allowed: can.platform, label: 'MSSP console', nav: { group: 'platform', label: 'Tenants', icon: Building2 } },
     // Reached from the account menu, which shows it under the same gate.
     { path: '/account', Page: AccountSecurityPage, allowed: can.account, label: 'Account security' },
   ],

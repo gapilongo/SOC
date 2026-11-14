@@ -130,9 +130,11 @@ attempts the top bar shows "Live updates unavailable" instead of
   ESLint forbids `localStorage`, and `tests/deploy/test_frontend.py` checks
   the sources.
 * The browser keeps display preferences only, through `src/lib/prefs.ts`
-  (the one file that touches `localStorage`): the theme, the table density
-  and whether single-key shortcuts are on, and per user the work queue's row
-  density and saved views (a name and filter names, nothing else). The keys are closed types, every
+  (the one file that touches `localStorage`): the theme and the table
+  density, and per user the work queue's row density and saved views (a
+  name and filter names, nothing else) and whether single-key shortcuts are
+  on (`src/lib/singleKeys.ts`: one switch for the shell's `/` and a page's
+  own keys). The keys are closed types, every
   access is guarded, and a stored value is parsed defensively.
 * One exception to "not in URLs": browsers cannot set headers on a
   WebSocket, and the API reads the token from the query string of

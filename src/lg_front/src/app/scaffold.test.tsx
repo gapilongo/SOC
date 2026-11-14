@@ -109,7 +109,7 @@ describe('a module is its folder and one registry line', () => {
     expect(link).toHaveAttribute('href', '/scaffold');
     expect(link).toHaveAttribute('aria-current', 'page');
     // The SOC's nav is still there, untouched.
-    expect(within(nav).getByRole('link', { name: 'Escalations' })).toHaveAttribute('href', '/escalations');
+    expect(within(nav).getByRole('link', { name: 'Queue' })).toHaveAttribute('href', '/queue');
     expect(document.title).toBe('Scaffold things · LG-SOTF');
     // Licensed: its service group is an ordinary group.
     expect(within(nav).queryByText('Not licensed')).not.toBeInTheDocument();

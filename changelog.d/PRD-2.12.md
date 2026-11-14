@@ -3,7 +3,12 @@
 - The console has the shell of the console v2 design (PRD-2.12): the frame
   every page lives in.
   - **The rail.** Pages are in five groups: Work, Detect and respond, Assure,
-    Configure and Platform. Counts are plain numbers next to a page's name,
+    Configure and Platform. The Queue is where work waits: the older
+    Escalations list left the rail (its address `/escalations` still works,
+    and the decision page leads back to the queue unless you came from that
+    list). Three entries have the design's names and open the same pages as
+    before: "AI usage and cost" (LLM usage), "People and keys" (Users and
+    API keys) and "Tenants" (MSSP console). Counts are plain numbers next to a page's name,
     the signed-in person is at the bottom (account security, row density and
     sign out are in their menu), and on a narrow screen the rail opens from
     the menu button.
@@ -18,7 +23,8 @@
     admin) tenants. Each alert says which tenant it is in. `>` lists
     commands. A command that changes something never runs from the field:
     it opens the page where the act is confirmed. The `/` key can be
-    switched off with the command "Single-key shortcuts".
+    switched off with the command "Single-key shortcuts": the same switch,
+    kept per user, as on the investigation view.
   - **Notifications.** The bell lists only what needs an act now:
     escalations past their deadline, a deadline in the next 15 minutes,
     actions waiting for your approval and, for admins, a source the API

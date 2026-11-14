@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import { fakeApi } from '../../test/helpers';
 import type { SourceOut } from './api/types';
 import { soc } from './index';
+import { QUEUE_HREF, QUEUE_SOON_HREF } from './lib/links';
+import { viewSearch } from './pages/queue/model';
 import { navCounts } from './navCounts';
 import { socNotices } from './notices';
 import { alertSearch, socCommands } from './search';
@@ -20,9 +22,9 @@ describe('SOC nav counts', () => {
     expect(navCounts({ unassigned_breaching: null })).toEqual({});
   });
 
-  it('puts a count on Escalations and Approvals, each with its meaning', () => {
+  it('puts a count on Queue and Approvals, each with its meaning', () => {
     const counted = soc.routes.filter((r) => r.nav?.count);
-    expect(counted.map((r) => r.path)).toEqual(['/escalations', '/approvals']);
+    expect(counted.map((r) => r.path)).toEqual(['/queue', '/approvals']);
     expect(counted[0].nav?.count?.meaning(1)).toBe('unassigned escalation breaching SLA');
     expect(counted[0].nav?.count?.meaning(3)).toBe('unassigned escalations breaching SLA');
     expect(counted[1].nav?.count?.meaning(1)).toBe('action you can approve');
@@ -82,6 +84,28 @@ describe('SOC in the search field', () => {
   });
 });
 
+describe('SOC navigation', () => {
+  it('has the work queue in the rail and keeps the older escalation list reachable by its address', () => {
+    const route = (path: string) => soc.routes.find((r) => r.path === path);
+    expect(route('/queue')?.nav).toMatchObject({ group: 'operate', label: 'Queue' });
+    expect(route('/escalations')?.nav).toBeUndefined();
+    expect(route('/escalations')?.label).toBe('Escalations');
+    expect(route('/escalations/:id')).toBeDefined();
+    // The links that lead to the queue spell its views as the queue does.
+    expect(QUEUE_HREF).toBe(route('/queue')?.path);
+    expect(QUEUE_SOON_HREF).toBe(`${QUEUE_HREF}?${viewSearch('soon')}`);
+  });
+
+  it('names three pages in the rail as console v2 does, and keeps their own titles', () => {
+    const named = soc.routes.filter((r) => r.nav && r.label).map((r) => [r.path, r.nav?.label, r.label]);
+    expect(named).toEqual([
+      ['/usage', 'AI usage and cost', 'LLM usage'],
+      ['/users', 'People and keys', 'Users and API keys'],
+      ['/platform', 'Tenants', 'MSSP console'],
+    ]);
+  });
+});
+
 describe('SOC notices', () => {
   const NOW = Date.parse('2026-11-14T10:04:00Z');
   const source = (overrides: Partial<SourceOut>): SourceOut => ({
@@ -107,7 +131,7 @@ describe('SOC notices', () => {
 
   it('reports escalations past their deadline and approvals waiting, one or many', () => {
     expect(socNotices({ overdue_escalations: 1, pending_approvals: 1 }, undefined, NOW)).toEqual([
-      { id: 'overdue', kind: 'deadline', text: '1 escalation is past its deadline', detail: 'the oldest first', to: '/escalations?overdue=true&order=sla_deadline' },
+      { id: 'overdue', kind: 'deadline', text: '1 escalation is past its deadline', detail: 'the queue lists them first', to: '/queue' },
       { id: 'approvals', kind: 'approval', text: '1 action waits for your approval', to: '/approvals' },
     ]);
     expect(socNotices({ overdue_escalations: 3, pending_approvals: 13 }, undefined, NOW).map((n) => n.text)).toEqual([
@@ -119,7 +143,7 @@ describe('SOC notices', () => {
   it('reports the next deadline only when it is about to pass', () => {
     const at = (ms: number) => ({ next_sla_deadline: new Date(NOW + ms).toISOString() });
     expect(socNotices(at(4 * 60_000), undefined, NOW)).toEqual([
-      { id: 'next-deadline', kind: 'deadline', text: 'A deadline passes in 4 min', detail: 'the soonest deadline first', to: '/escalations?order=sla_deadline' },
+      { id: 'next-deadline', kind: 'deadline', text: 'A deadline passes in 4 min', detail: 'the soonest deadline first', to: '/queue?view=soon' },
     ]);
     expect(socNotices(at(20_000), undefined, NOW)[0].text).toBe('A deadline passes in 1 min');
     expect(socNotices(at(15 * 60_000), undefined, NOW)).toHaveLength(1);

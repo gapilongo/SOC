@@ -62,9 +62,14 @@ sample alerts under Getting started (docs/onboarding.md).
 The frame is the same on every page.
 
 * **The rail** on the left lists the pages you may open, in five groups:
-  **Work** (Overview, Queue, Escalations, Approvals), **Detect and respond**
-  (Alerts, Suppressions, Blind audit), **Assure** (Reports, Audit log, LLM
-  usage, Proof of value), **Configure** and **Platform**. A number next to a
+  **Work** (Overview, Queue, Approvals), **Detect and respond** (Alerts,
+  Suppressions, Blind audit), **Assure** (Reports, Audit log, AI usage and
+  cost, Proof of value), **Configure** (with People and keys) and
+  **Platform** (Tenants). Three entries open a page with a longer title: AI
+  usage and cost opens "LLM usage", People and keys opens "Users and API
+  keys", Tenants opens the "MSSP console". The older Escalations list
+  (grouping by rule, bulk close) is no longer in the rail: the Queue took
+  its place, and `/escalations` still opens the list. A number next to a
   page counts what waits for a person there. You are at the bottom: your
   menu holds Account security, the row density and Sign out. On a phone the
   rail opens from the menu button.
@@ -77,11 +82,12 @@ The frame is the same on every page.
   says which tenant an alert is in. Type **>** to list commands. A command
   never changes anything from the field: it opens the page where you confirm
   the act. `/` is a single-key shortcut; the command "Single-key shortcuts:
-  turn off" switches it off, and Ctrl+K always works.
+  turn off" switches it off (the same switch as on the investigation view,
+  kept per user), and Ctrl+K always works.
 * **The bell** lists only what needs an act now: escalations past their
   deadline, a deadline in the next 15 minutes, actions waiting for your
   approval and, for admins, an alert source that is failing. Each line opens
-  the page where you act. A line leaves when the thing it names is done.
+  the page where you act (the Queue for deadlines). A line leaves when the thing it names is done.
 * **The theme** follows your system setting until you choose Light or Dark
   with the control at the right of the top bar.
 

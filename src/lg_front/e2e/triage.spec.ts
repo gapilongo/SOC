@@ -204,7 +204,7 @@ test('security headers on every document, and the admin signs in under the CSP',
 test('the admin creates an API key, an analyst and a viewer in the UI', async ({ browser }) => {
   const { context, page, watch } = await newSession(browser);
   await signIn(page, admin);
-  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Users and API keys' }).click();
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'People and keys' }).click();
   await expect(page.getByRole('heading', { name: 'Users and API keys', level: 1 })).toBeVisible();
 
   await page.getByRole('button', { name: 'Create key' }).click();
@@ -344,7 +344,7 @@ test('a viewer reads everything but sees no administration', async ({ browser })
   await signIn(page, viewer);
   const nav = page.getByRole('navigation', { name: 'Main' });
   await expect(nav.getByRole('link', { name: 'Alerts' })).toBeVisible();
-  for (const adminOnly of ['Users and API keys', 'Audit log', 'Tenant settings', 'Sources', 'LLM usage']) {
+  for (const adminOnly of ['People and keys', 'Audit log', 'Tenant settings', 'Sources', 'AI usage and cost']) {
     await expect(nav.getByRole('link', { name: adminOnly })).toHaveCount(0);
   }
   await page.goto('/users');
@@ -362,8 +362,10 @@ test('an analyst has no administration either', async ({ browser }) => {
   const { context, page, watch } = await newSession(browser);
   await signIn(page, analyst);
   const nav = page.getByRole('navigation', { name: 'Main' });
-  await expect(nav.getByRole('link', { name: 'Escalations' })).toBeVisible();
-  for (const adminOnly of ['Users and API keys', 'Audit log', 'Tenant settings', 'Sources', 'LLM usage']) {
+  await expect(nav.getByRole('link', { name: 'Queue', exact: true })).toBeVisible();
+  // The older escalation list is no longer in the rail.
+  await expect(nav.getByRole('link', { name: 'Escalations' })).toHaveCount(0);
+  for (const adminOnly of ['People and keys', 'Audit log', 'Tenant settings', 'Sources', 'AI usage and cost']) {
     await expect(nav.getByRole('link', { name: adminOnly })).toHaveCount(0);
   }
   await page.goto('/audit');
@@ -803,12 +805,12 @@ test('the shell: rail navigation, search opens a page, the tenant in the address
   await page.goto(`/s/${tenantId}/alerts`);
   await expect(page.getByRole('heading', { name: 'Alerts', level: 1 })).toBeVisible();
   // Every link carries it, so does a navigation, and a reload keeps it.
-  await expect(nav.getByRole('link', { name: 'Escalations' })).toHaveAttribute('href', `/s/${tenantId}/escalations`);
-  await nav.getByRole('link', { name: 'Escalations' }).click();
-  await expect(page).toHaveURL(new RegExp(`/s/${tenantId}/escalations$`));
+  await expect(nav.getByRole('link', { name: 'Approvals' })).toHaveAttribute('href', `/s/${tenantId}/approvals`);
+  await nav.getByRole('link', { name: 'Approvals' }).click();
+  await expect(page).toHaveURL(new RegExp(`/s/${tenantId}/approvals$`));
   await page.reload();
-  await expect(page.getByRole('heading', { name: 'Escalations', level: 1 })).toBeVisible();
-  await expect(page).toHaveURL(new RegExp(`/s/${tenantId}/escalations$`));
+  await expect(page.getByRole('heading', { name: 'Approvals', level: 1 })).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`/s/${tenantId}/approvals$`));
   await expect(page.getByTestId('tenant-name').first()).toHaveText(tenantName);
 
   // Each part of the top bar open, in both themes.
@@ -832,7 +834,7 @@ test('the shell: rail navigation, search opens a page, the tenant in the address
 
   // A phone: the rail is a menu, the top bar fits, nothing scrolls sideways.
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(page.getByRole('heading', { name: 'Escalations', level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Approvals', level: 1 })).toBeVisible();
   await assertNoSideScroll(page, 'the shell at 390 px');
   await assertAccessible(page, 'the shell at 390 px (light theme)');
   await bar.getByRole('button', { name: 'Open the menu' }).click();

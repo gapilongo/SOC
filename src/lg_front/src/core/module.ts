@@ -98,7 +98,10 @@ export interface ModuleRoute {
   Page: ComponentType;
   /** Role gate; the nav entry, if any, shows exactly when this allows. */
   allowed: Allowed;
-  /** Page name for the breadcrumb, when the page has no nav entry. */
+  /**
+   * The page's own name (its title), for the browser tab and the search field. Needed when the page has no
+   * nav entry, or when the rail names it differently from its title.
+   */
   label?: string;
   nav?: { group: string; label: string; icon: LucideIcon; count?: NavCount };
   /** `false` for a page rendered outside the app shell (a printable page). Default: inside. */

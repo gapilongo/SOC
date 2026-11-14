@@ -29,7 +29,7 @@ import { cx } from '../../components/ui';
 import { useFocusTrap } from '../../components/useFocusTrap';
 import { useDensity } from '../../theme/density';
 import { useTheme } from '../../theme/theme';
-import { mayOpen, pageLabelIn, type Registry } from '../registry';
+import { mayOpen, pageLabelIn, pageName, type Registry } from '../registry';
 import { searchPrompt } from './nav';
 import { filterTenants, useChooseTenant } from './tenants';
 
@@ -39,13 +39,17 @@ export type PaletteItem = { id: string; kind: string; title: string; detail?: st
 const MIN_QUERY = 2;
 const MAX_TENANTS = 8;
 
-/** Every page `p` may open that has a name and no parameter in its path. */
+/**
+ * Every page `p` may open that has a name and no parameter in its path. A page is listed as the rail
+ * names it; where its own title differs, the title follows the group, so either name finds it.
+ */
 export function pageItems(registry: Pick<Registry, 'routes' | 'navGroups'>, p: Principal | null): PaletteItem[] {
   const groupOf = new Map(registry.navGroups.flatMap((g) => g.items.map((i) => [i.to, g.title] as const)));
   return registry.routes.flatMap((r) => {
-    const label = r.nav?.label ?? r.label;
-    if (!label || r.path.includes(':') || !mayOpen(r, p)) return [];
-    return [{ id: `page:${r.path}`, kind: 'Page', title: label, detail: groupOf.get(r.path), to: r.path }];
+    const title = r.nav?.label ?? r.label;
+    if (!title || r.path.includes(':') || !mayOpen(r, p)) return [];
+    const detail = [groupOf.get(r.path), r.nav && r.label !== title ? r.label : undefined].filter(Boolean).join(' · ');
+    return [{ id: `page:${r.path}`, kind: 'Page', title, detail: detail || undefined, to: r.path }];
   });
 }
 
@@ -57,7 +61,7 @@ export function commandItems(registry: Pick<Registry, 'routes' | 'commands'>, p:
       const path = c.to.split(/[?#]/)[0];
       // The page itself when it has a name, else the page it belongs to.
       const exact = registry.routes.find((r) => r.path === path);
-      const page = exact?.nav?.label ?? exact?.label ?? pageLabelIn(registry.routes, path);
+      const page = (exact && pageName(exact)) ?? pageLabelIn(registry.routes, path);
       return { id: `do:${c.module}:${c.label}`, kind: 'Do', title: c.label, detail: `opens ${page ?? 'its page'}, runs nothing`, to: c.to };
     });
 }

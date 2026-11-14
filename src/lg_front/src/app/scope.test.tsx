@@ -112,7 +112,7 @@ describe('the tenant is part of the address', () => {
     expect(await screen.findByRole('heading', { name: 'Alerts', level: 1 }, LAZY)).toBeInTheDocument();
     expect(window.location.pathname).toBe('/s/globex/alerts');
     // Every link of the console carries the tenant, so a new tab opens the same one.
-    expect(within(nav).getByRole('link', { name: 'Escalations' })).toHaveAttribute('href', '/s/globex/escalations');
+    expect(within(nav).getByRole('link', { name: 'Queue' })).toHaveAttribute('href', '/s/globex/queue');
     expect(within(nav).getByRole('link', { name: 'Alerts' })).toHaveAttribute('aria-current', 'page');
 
     // A reload: everything in memory is gone, the address is not.
@@ -136,7 +136,7 @@ describe('the tenant is part of the address', () => {
     const nav = await screen.findByRole('navigation', { name: 'Main' }, LAZY);
     expect(named.session.auth.getActingTenant()).toBeNull();
     expect(window.location.pathname).toBe('/s/acme/alerts');
-    expect(within(nav).getByRole('link', { name: 'Escalations' })).toHaveAttribute('href', '/s/acme/escalations');
+    expect(within(nav).getByRole('link', { name: 'Queue' })).toHaveAttribute('href', '/s/acme/queue');
   });
 
   it('follows the scope control: choosing a tenant puts it in the address, and Back returns to the one before', async () => {

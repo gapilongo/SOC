@@ -56,19 +56,20 @@ const DENIED = 'You do not have access to this page';
 /**
  * Every static page of the route table (parameterised routes and redirects are covered by their pages' tests;
  * the setup wizard, the proof-of-value wizard and the guided Wazuh setup are reached from in-page links: their
- * pages' tests cover the first two, and the gate of the last one is tested below).
+ * pages' tests cover the first two, and the gate of the last one is tested below; the older escalation list
+ * has no entry in the rail since the work queue took its place, and its page's tests cover it).
  */
-const LINKED_ONLY = ['/actions', '/setup', '/pov/new', '/sources/wazuh'];
+const LINKED_ONLY = ['/actions', '/setup', '/pov/new', '/sources/wazuh', '/escalations'];
 const PAGES = APP_ROUTES.filter((r) => !r.path.includes(':') && !LINKED_ONLY.includes(r.path));
 
 /** [who, user, acting tenant, how many of the pages they may open] */
 const PRINCIPALS: Array<[string, Partial<UserOut>, string | null, number]> = [
-  ['viewer', { role: 'viewer' }, null, 8],
-  ['analyst', { role: 'analyst' }, null, 9],
-  ['admin', { role: 'admin' }, null, 17],
-  ['platform admin', { role: 'admin', is_platform_admin: true }, null, 18],
+  ['viewer', { role: 'viewer' }, null, 7],
+  ['analyst', { role: 'analyst' }, null, 8],
+  ['admin', { role: 'admin' }, null, 16],
+  ['platform admin', { role: 'admin', is_platform_admin: true }, null, 17],
   // No MSSP console, no account security and no blind audit (a person's label) while acting on another tenant.
-  ['platform admin acting on a tenant', { role: 'admin', is_platform_admin: true }, 'globex', 15],
+  ['platform admin acting on a tenant', { role: 'admin', is_platform_admin: true }, 'globex', 14],
 ];
 
 describe('route gates and navigation agree', () => {

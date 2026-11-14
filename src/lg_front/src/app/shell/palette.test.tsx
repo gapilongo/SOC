@@ -102,7 +102,8 @@ describe('search and commands', () => {
     expect(lines().slice(0, 8)).toEqual([
       'PageOverviewWork',
       'PageQueueWork',
-      'PageEscalationsWork',
+      // The older list is in no group of the rail, and still found by name.
+      'PageEscalations',
       'PageApprovalsWork',
       'PageAlertsDetect and respond',
       'PageSuppressionsDetect and respond',
@@ -116,7 +117,14 @@ describe('search and commands', () => {
     // Nothing was typed: nothing was asked of the API, and no tenant list for someone with one tenant.
     expect(calls).toEqual([]);
 
-    expect(pageItems(REGISTRY, principal({ role: 'admin' })).map((i) => i.title)).toEqual(expect.arrayContaining(['Sources', 'Connect Wazuh', 'New proof of value']));
+    const forAdmin = pageItems(REGISTRY, principal({ role: 'admin', isPlatformAdmin: true }));
+    expect(forAdmin.map((i) => i.title)).toEqual(expect.arrayContaining(['Sources', 'Connect Wazuh', 'New proof of value']));
+    // A page is listed as the rail names it, with its own title beside the group: either name finds it.
+    expect(Object.fromEntries(forAdmin.filter((i) => i.detail?.includes(' · ')).map((i) => [i.title, i.detail]))).toEqual({
+      'AI usage and cost': 'Assure · LLM usage',
+      'People and keys': 'Configure · Users and API keys',
+      Tenants: 'Platform · MSSP console',
+    });
     expect(pageItems(REGISTRY, null)).toEqual([]);
   });
 
