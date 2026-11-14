@@ -61,7 +61,7 @@ SKIPPED = {("POST", f"{API}/auth/logout")}
 # Reached without the principal (credentials in the body, a cookie or a Slack signature): X-Tenant-ID means nothing.
 PUBLIC = {
     ("POST", f"{API}/auth/login"), ("POST", f"{API}/auth/refresh"), ("POST", f"{API}/auth/mfa/verify"),
-    ("POST", f"{API}/integrations/slack/interactions"),
+    ("POST", f"{API}/integrations/slack/interactions"), ("POST", f"{API}/auth/break-glass"),
 }
 LATER = datetime.now(UTC) + timedelta(days=1)
 

@@ -143,6 +143,8 @@ PUBLIC_ENDPOINTS = {
     ("POST", "/api/v1/auth/refresh"),
     ("POST", "/api/v1/auth/logout"),
     ("POST", "/api/v1/auth/mfa/verify"),
+    # Authenticated by the install's sealed credential (body); covered by test_break_glass.
+    ("POST", "/api/v1/auth/break-glass"),
     # Authenticated by the Slack app's signing secret; covered by tests/integration/integrations/test_slack.py.
     ("POST", "/api/v1/integrations/slack/interactions"),
 }
