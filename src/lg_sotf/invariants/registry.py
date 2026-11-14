@@ -118,7 +118,12 @@ INVARIANTS: Tuple[Invariant, ...] = (
             "vendor's authentication-failure rules and T1531, a Wazuh alert whose rule cannot be read, log "
             "clearing, security-tool tampering, ransomware behaviour, persistence through attacker-named objects), "
             "steering text, entities with a recent true positive, an alert normalised by a model or one reopened; "
-            "such a close is marked model_closed for audit. When an alert becomes a threat, the safety net looks "
+            "such a close is marked model_closed for audit. Nor while a related threat is open: when the decision "
+            "is made the workflow reads the tenant's stored alerts of the previous 24 hours on the same host or "
+            "user, and an alert that is not closed and has a response planned for it or was judged a threat by a "
+            "model, or a high or critical one on the same host that is being processed at that moment, sends the "
+            "alert to an analyst instead (read from the database, never from a model's text; unreadable blocks "
+            "the close). When an alert becomes a threat after the close, the safety net looks "
             "at every model-closed alert sharing a host, user or IP with it in the previous 24 hours. A model's "
             "judgement is not a confirmation: a threat only a model stands behind (an escalation a model judged a "
             "threat: deep verdict malicious, or fast tier likely_threat or confirmed_threat, never a merely "
@@ -162,6 +167,16 @@ INVARIANTS: Tuple[Invariant, ...] = (
             "tests/unit/domain/test_closure.py::test_never_close_classes_never_close_on_the_models_word",
             "tests/unit/domain/test_closure.py::test_each_condition_alone_blocks_a_model_led_close",
             "tests/unit/domain/test_closure.py::test_approved_benign_evidence_never_closes_past_a_hard_flag",
+            "tests/unit/domain/test_closure.py::"
+            "test_a_related_open_threat_holds_a_model_led_close_and_names_the_reason",
+            "tests/unit/domain/test_closure.py::test_related_alerts_that_were_not_checked_block_the_close",
+            "tests/integration/engine/test_related_open.py::"
+            "test_an_open_threat_on_the_same_host_or_user_holds_the_close",
+            "tests/integration/engine/test_related_open.py::"
+            "test_a_serious_alert_being_processed_on_the_same_host_holds_the_close",
+            "tests/integration/engine/test_related_open.py::test_another_tenants_threat_never_holds_a_close",
+            "tests/integration/engine/test_related_open.py::"
+            "test_no_alert_of_the_demo_attack_chain_closes_without_a_person",
             "tests/unit/domain/test_closure.py::test_a_scanner_or_test_source_never_closes_a_never_close_class",
             "tests/unit/domain/test_closure.py::"
             "test_an_unmapped_alert_closes_on_the_models_word_but_an_unreadable_wazuh_rule_does_not",

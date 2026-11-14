@@ -31,6 +31,7 @@ __all__ = [
     "LlmRefusal",
     "PhishingDigest",
     "PlanDigest",
+    "RelatedOpenDigest",
     "ResponseSummary",
     "ReviewBand",
     "RoutingDigest",
@@ -141,6 +142,14 @@ class DecisionDigest(TypedDict, total=False):
     code: str
 
 
+class RelatedOpenDigest(TypedDict, total=False):
+    """The related alerts that hold back a close on the models' word, as stored when the alert was decided: ids of
+    the open threats on the same host or user, and of the high or critical alerts in progress on the same host."""
+
+    threats: List[str]
+    in_progress: List[str]
+
+
 class PlanDigest(TypedDict, total=False):
     """The response plan: action ids by what happens to them next."""
 
@@ -245,6 +254,8 @@ class AlertSummary(TypedDict, total=False):
     # alert, case, time) and, on the threat, the alerts it linked.
     linked: List[Dict[str, Optional[str]]]
     linked_alert_ids: List[str]
+    # The related-alert check of a model-led close, as the database stood when ``decide`` ran (only at the tier).
+    related_open: RelatedOpenDigest
     confidence: Optional[float]
     threat_score: Optional[float]
     decision: Optional[DecisionDigest]

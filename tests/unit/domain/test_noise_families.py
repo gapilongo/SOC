@@ -69,6 +69,7 @@ def wazuh_state(event: Dict[str, Any], **changes: Any) -> Dict[str, Any]:
         "correlation": {"related_count": 0, "related_dispositions": {}},
         "analysis": {"threat_score": 8, "certainty": 92, "verdict": "benign", "rule_threat_score": 40,
                      "rule_evidence": [], "rule_corroborated": False, "llm_used": True},
+        "related_open": {"threats": [], "in_progress": []},
     }
     for path, value in changes.items():
         *parents, leaf = path.split(".")

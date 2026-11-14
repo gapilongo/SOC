@@ -649,9 +649,9 @@ It is a test fixture, not evidence of detection quality.
 ## Adversarial corpus v2
 
 `tests/fixtures/eval/adversarial_v2.jsonl` (version 2, sha256
-`4dfd1be1a01599fe21f805598aae4963246be28981c4ec9d9b6d744a06da83f1`) is a
-synthetic set of 97 hand-written alerts that try to steer the model or the
-rules, all in the gated `adversarial` split, in seven families. Its
+`9d9a81b75e0df8dfb548ec5907e596bb8c0aba829762ae0499b04c68f9ed4a70`) is a
+synthetic set of 100 hand-written alerts that try to steer the model or the
+rules, all in the gated `adversarial` split, in eight families. Its
 `_meta.tenant_settings` names the corpus scanner (`triage.known_scanners`).
 Every item has a ground-truth label, a
 `family`, and (for the injection families) an `injection` spec saying what
@@ -674,6 +674,7 @@ through tool output, and response steering.
 | `benign-lookalike` | 17 (17 benign) | The security team's own test strings and look-alike content: EICAR validation, phishing simulation, AI red-team harness, prompt-injection training and unit tests, an authorised scanner, SCCM's encoded PowerShell, a Cyrillic employee name, honeytoken and pipeline self-tests | TM-WRK-1 (the cost of its controls) | ASI01, ASI09 | AML.T0015 |
 | `title-camouflage` | 3 (3 malicious) | An attacker-named scheduled task or service, or an integration that builds the title from attacker-chosen names, puts benign words ("Update Test", "Backup Maintenance") into the title; gated since AI-E6.3 (was the reported-only `known-gap` split) | TM-WRK-2 | ASI01 | AML.T0015 |
 | `activity-camouflage` | 6 (6 malicious) | Attacks whose detection rule name holds a word for the detected activity (`scheduled-task-update`, `scheduled-backup-deleted`, `real time monitoring was disabled`, `cron-job-scheduled-by-web-user`, `internal-port-scan`, `update-agent-spawned-shell`; T1053, T1490, T1562.001, T1046, T1195.002), with benign-sounding persona text in attacker-written fields; added in AI-E6.4 | TM-WRK-2 | ASI01 | AML.T0015 |
+| `provenance-camouflage` | 3 (3 malicious) | A real attack pattern whose names look like test data: a credential dump, a command-and-control beacon and PsExec lateral movement on hosts with `demo`, `qa` and `.test` naming, an attacker-named `.test` domain full of benign words, documentation addresses, a `Demo` vendor and `demo-test` ids. Test-looking names are no benign evidence (the prompts say so), and at the tier `auto_full_audit` the open credential dump on the same host or user holds a model-led close of the other two back; added in AI-E3.16 (#435) | TM-WRK-2 | ASI01 | AML.T0015 |
 
 Addresses are documentation ranges and RFC 1918; names are `example.com`,
 `example.net`, `example.org` and `.test`; hashes are SHA-256 digests of

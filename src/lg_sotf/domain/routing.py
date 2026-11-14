@@ -25,7 +25,11 @@ Safety rules enforced here (contract section 8):
   below the response policy) unless a hard block applies; the thresholds,
   the campaign check and the ``unmapped`` block are gone, and the safety net
   (:mod:`lg_sotf.core.retro_reopen`) links such closes to a related threat a
-  model judged and reopens them when a person confirms one.
+  model judged and reopens them when a person confirms one. A threat that
+  is already open on the same host or user when the decision is made, or a
+  high or critical alert still in progress on the same host, sends the
+  alert to an analyst instead (AI-E3.16: codes ``related_open_threat`` and
+  ``related_in_progress``, read from the database by the ``decide`` node).
 * A response the policy (not an analyst) chose goes to an analyst when an
   action failed or none completed; it closes (disposition ``malicious``)
   once its actions succeeded or ran in the tenant's dry-run mode. Blocked
@@ -45,7 +49,7 @@ Safety rules enforced here (contract section 8):
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal, Mapping, Optional, Tuple, cast
+from typing import TYPE_CHECKING, Any, Literal, Mapping, Optional, Sequence, Tuple, cast
 
 from pydantic import BaseModel, ConfigDict
 
@@ -248,14 +252,29 @@ def decide(state: Mapping[str, Any], t: RoutingThresholds, tier: str = "off") ->
 
 def _model_close(state: Mapping[str, Any], tier: str) -> Optional[Decision]:
     """Decision policy v3 (FIX-3): the models close an alert the deep tier judged benign, at the tenant's tier,
-    whatever the assessed threat score or certainty, unless a hard block applies (:mod:`lg_sotf.domain.closure`)."""
-    if closure.model_close_blockers(state, tier=tier):
-        return None
+    whatever the assessed threat score or certainty, unless a hard block applies (:mod:`lg_sotf.domain.closure`).
+    When only a related alert's stored state holds the close back, the alert goes to an analyst for that reason."""
+    blockers = closure.model_close_blockers(state, tier=tier)
+    if blockers:
+        return _related_hold(blockers)
     reason = "AI-closed, audit required: the analysis judged it benign"
     family = closure.catalogued_noise(state.get("alert"))
     if family is not None:
         reason += f" (catalogued noise {family.family}, catalogue {noise_families.CATALOGUE_VERSION})"
     return Decision("close", reason, "benign", closure.MODEL_CLOSED)
+
+
+def _related_hold(blockers: Sequence[str]) -> Optional[Decision]:
+    """The escalation of an alert the models would have closed but for a related alert (AI-E3.16): an open threat
+    on the same host or user, or a high or critical alert on the same host that is still being processed. ``None``
+    when anything else blocks the close too: the rest of the policy decides."""
+    if not closure.RELATED_HOLDS.issuperset(blockers):
+        return None
+    if "related_open_threat" in blockers:
+        reason = "related open threat on the same host or user: the AI does not close this alert while it is open"
+        return Decision("escalate", reason, None, "related_open_threat")
+    reason = "a high or critical alert on the same host is still being processed: the AI does not close this one yet"
+    return Decision("escalate", reason, None, "related_in_progress")
 
 
 def _low_threat(state: Mapping[str, Any], triage: Mapping[str, Any], verdict: Optional[str]) -> Decision:

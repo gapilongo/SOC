@@ -331,7 +331,21 @@ Rules:
     recent true positive, was normalised by a model, or was reopened. The
     `decide` node reads the tier from the tenant's settings at every
     decision.
-  * The safety net (`core/retro_reopen.py`) replaces the forward gates.
+  * A related open threat holds that close back (AI-E3.16). At the tier,
+    `decide` reads the tenant's stored alerts of the previous 24 hours
+    that share a host or user with the alert (`related_open` in
+    `core/retro_reopen.py`; not IPs, not `root` or `SYSTEM`). The alert
+    goes to an analyst when one of them is not closed and is a threat as
+    stored (a response was planned for it, or a model judged it
+    `malicious`, `likely_threat` or `confirmed_threat`; decision code
+    `related_open_threat`), or when a high or critical alert on the same
+    host is being processed at that moment (`related_in_progress`). The
+    answer comes from the database, never from a model's text or the
+    correlation digest; it is kept in the alert summary (`related_open`),
+    and a read that fails or is missing blocks the close.
+  * The safety net (`core/retro_reopen.py`) covers the other order of
+    arrival, a threat that appears after the close, and replaces the
+    other forward gates.
     It looks at every model-closed alert of the tenant that shares a host,
     user or IP with a threat and closed in the previous 24 hours, and what
     it does depends on who stands behind the threat (AI-E3.15):

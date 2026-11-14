@@ -25,7 +25,7 @@ from lg_sotf.db.repos._base import (
     to_models,
     utcnow,
 )
-from lg_sotf.models.vocabulary import ALERT_STATUSES, DISPOSITIONS, SEVERITIES
+from lg_sotf.models.vocabulary import ALERT_STATUSES, DISPOSITIONS, HIGH_SEVERITIES, SEVERITIES
 from lg_sotf.security.shadow import egress, sink
 
 if TYPE_CHECKING:
@@ -183,6 +183,14 @@ class StrandedAlertRef(Record):
     tenant_id: str
     alert_id: str
     severity: str
+
+
+class OpenRelatedAlert(Record):
+    """A related alert that holds a model-led close back (:meth:`AlertsRepo.open_threats_sharing_entities`):
+    ``threat`` when its stored assessment or status says so, else it is still being processed."""
+
+    id: str
+    threat: bool
 
 
 class DashboardCounts(Record):
@@ -577,6 +585,61 @@ class AlertsRepo(Repository):
                 not_linked_to,
             )
         return [str(r["id"]) for r in rows]
+
+    async def open_threats_sharing_entities(
+        self,
+        tenant_id: str,
+        *,
+        hosts: Sequence[str],
+        users: Sequence[str],
+        since: datetime,
+        exclude_alert_id: str,
+        threat_assessments: Sequence[str],
+        limit: int = 20,
+        conn: Optional[Connection] = None,
+    ) -> List[OpenRelatedAlert]:
+        """What holds a model-led close back (:mod:`lg_sotf.domain.closure`): the alerts ingested since ``since``
+        that are not closed and share a host or user with the given ones, when they are
+
+        * a threat as stored: a response was planned for them (they wait for its approval, or for an analyst after
+          it), or a model judged them one (the deep tier's verdict ``malicious``, or a fast-tier assessment in
+          ``threat_assessments``); or
+        * on one of ``hosts``, high or critical, and being processed right now: nothing is decided about them yet.
+
+        Threats first, then newest first."""
+        require_aware(since, "since")
+        check_limit(limit, 200)
+        if not (hosts or users):
+            return []
+        async with self._tenant(tenant_id, conn) as c:
+            rows = await c.fetch(
+                """
+                SELECT id, threat FROM (
+                    SELECT id, ingested_at, status, severity,
+                           COALESCE(normalized->'entities'->'hosts', '[]'::jsonb) ?| $4::text[] AS same_host,
+                           (status = 'waiting_approval' OR summary ? 'response'
+                            OR COALESCE(summary->'analysis'->>'verdict' = 'malicious', false)
+                            OR COALESCE(summary->'triage'->>'threat_assessment' = ANY($7::text[]), false)) AS threat
+                    FROM alerts
+                    WHERE tenant_id = $1 AND id <> $2 AND ingested_at >= $3 AND status = ANY($6::text[])
+                      AND (COALESCE(normalized->'entities'->'hosts', '[]'::jsonb) ?| $4::text[]
+                           OR COALESCE(normalized->'entities'->'users', '[]'::jsonb) ?| $5::text[])
+                ) related
+                WHERE threat OR (same_host AND status = 'processing' AND severity = ANY($8::text[]))
+                ORDER BY threat DESC, ingested_at DESC, id
+                LIMIT $9
+                """,
+                tenant_id,
+                exclude_alert_id,
+                since,
+                list(hosts),
+                list(users),
+                [status for status in ALERT_STATUSES if status != "closed"],  # a list, so ix_alerts_status serves it
+                list(threat_assessments),
+                sorted(HIGH_SEVERITIES),
+                limit,
+            )
+        return to_models(OpenRelatedAlert, rows)
 
     async def folded_for_threat(
         self, tenant_id: str, threat_alert_id: str, *, exclude_escalation_id: str, conn: Optional[Connection] = None

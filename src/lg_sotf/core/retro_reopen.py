@@ -73,6 +73,20 @@ both, is an egress boundary).
 IPs are matched whatever their role in the alert (source or destination):
 the canonical alert does not keep the role, and a wider match only links or
 reopens more.
+
+**The other order of arrival** (:func:`related_open`, AI-E3.16): the threat
+is there before the close. When ``decide`` runs for an alert at the tier, it
+reads the tenant's alerts of the same window that share a host or user with
+it and are not closed: the ones that are a threat as stored (a response was
+planned for them, or a model judged them a threat: the same tests as above),
+and the high or critical ones on the same host that are being processed at
+that moment. Either holds the model-led close back
+(:mod:`lg_sotf.domain.closure`). IPs are left out here, and so are the
+accounts every host has of its own (:data:`BUILT_IN_ACCOUNTS`): a shared
+proxy, resolver or NAT address, or ``root`` on two servers, would hold back
+unrelated closes, and the safety net above still links by them. An alert
+that is only queued has not been looked at; if it becomes a threat it
+arrives after the close, which the safety net covers.
 """
 
 from __future__ import annotations
@@ -81,6 +95,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 from lg_sotf.audit.logger import Actor, AuditLogger
+from lg_sotf.core.state import RelatedOpenDigest
 from lg_sotf.db.errors import InvalidTransition, NotFound
 from lg_sotf.db.repos import Repositories
 from lg_sotf.observability.logging import get_logger, log_failure
@@ -103,6 +118,11 @@ REOPENED_CLOSE_REASON = "reopened:related_threat"
 ACTIVE_ESCALATION_STATUSES = frozenset({"open", "claimed"})
 MAX_REOPEN = 200
 MAX_ENTITY_VALUES = 50
+#: The related alerts a decision names as holding a close back (one is enough to hold it).
+MAX_RELATED_OPEN = 10
+#: Accounts every host has of its own: two alerts that share only one of them are not about the same user, so it
+#: holds no close back (:func:`related_open`). The safety net still links by them: a link changes no decision.
+BUILT_IN_ACCOUNTS = frozenset({"root", "system", "local service", "network service"})
 #: The fast-tier verdicts that make an escalated alert a threat for the safety net: the same ones that block a
 #: model close. ``suspicious`` is absent on purpose (#352).
 THREAT_ASSESSMENTS = frozenset({"likely_threat", "confirmed_threat"})
@@ -144,6 +164,35 @@ async def _related(repos: Repositories, tenant_id: str, threat: Any, now: dateti
         not_linked_to=unlinked,
         limit=MAX_REOPEN,
     )
+
+
+def _built_in(user: str) -> bool:
+    """A built-in account of the host itself, with or without its authority prefix (``NT AUTHORITY\\SYSTEM``)."""
+    return user.rsplit("\\", 1)[-1].strip().lower() in BUILT_IN_ACCOUNTS
+
+
+async def related_open(
+    repos: Repositories, tenant_id: str, alert_id: str, *, now: Optional[datetime] = None
+) -> RelatedOpenDigest:
+    """What the database holds, at this moment, against a model-led close of the alert: the ids of the open
+    threats on its hosts and users and of the high or critical alerts in progress on its hosts, at most
+    :data:`MAX_RELATED_OPEN` in all (see the module docs). Read in the tenant's transaction; raises on a database
+    error, so a failed read never closes an alert."""
+    alert = await repos.alerts.get(tenant_id, alert_id)
+    entities = alert.entities if isinstance(alert.entities, Mapping) else {}
+    found = await repos.alerts.open_threats_sharing_entities(
+        tenant_id,
+        hosts=_values(entities, "hosts"),
+        users=[user for user in _values(entities, "users") if not _built_in(user)],
+        since=(now or datetime.now(UTC)) - REOPEN_WINDOW,
+        exclude_alert_id=alert_id,
+        threat_assessments=sorted(THREAT_ASSESSMENTS),
+        limit=MAX_RELATED_OPEN,
+    )
+    return {
+        "threats": [other.id for other in found if other.threat],
+        "in_progress": [other.id for other in found if not other.threat],
+    }
 
 
 async def link_related_model_closes(

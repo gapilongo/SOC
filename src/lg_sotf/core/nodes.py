@@ -24,7 +24,7 @@ from lg_sotf.agents.base import AgentContext
 from lg_sotf.agents.registry import AgentSet
 from lg_sotf.core.benign_learning import forget_benign_learning
 from lg_sotf.core.graph import WorkflowState
-from lg_sotf.core.retro_reopen import enqueue_requeued, judged_threat, refold, reopen_counted
+from lg_sotf.core.retro_reopen import enqueue_requeued, judged_threat, refold, related_open, reopen_counted
 from lg_sotf.core.state import (
     AlertSummary,
     AnalystInput,
@@ -312,11 +312,23 @@ class WorkflowNodes:
         }
 
     async def decide(self, state: WorkflowState) -> Dict[str, Any]:
-        """Route on the analysed alert, with the tenant's model-led closure tier as it is now (``off`` if unset)."""
-        tenant = await self.deps.repos.tenants.get(state["tenant_id"])
+        """Route on the analysed alert, with the tenant's model-led closure tier as it is now (``off`` if unset).
+
+        At the tier, a model-led close is also decided on the related alerts as the database holds them at this
+        moment (an open threat on the same host or user, a serious alert still in progress on the same host),
+        never on what a model wrote about them (AI-E3.16). The digest is kept in the alert's summary."""
+        tenant_id, alert_id = state["tenant_id"], state["alert_id"]
+        tenant = await self.deps.repos.tenants.get(tenant_id)
         tier = closure.autonomy_tier(tenant.settings)
-        decision = routing.decide(state, self.deps.thresholds, tier).as_dict()
-        return {"decision": decision, EVENT_KEY: {**decision, "autonomy_tier": tier}}
+        checked: Dict[str, Any] = {}
+        event: Dict[str, Any] = {}
+        if tier == closure.MODEL_CLOSE_TIER:
+            related = await related_open(self.deps.repos, tenant_id, alert_id)
+            await self.deps.repos.alerts.update(tenant_id, alert_id, summary={"related_open": related})
+            checked = {closure.RELATED_OPEN: related}
+            event = {"related_open_threats": related["threats"], "related_in_progress": related["in_progress"]}
+        decision = routing.decide({**state, **checked}, self.deps.thresholds, tier).as_dict()
+        return {"decision": decision, EVENT_KEY: {**decision, "autonomy_tier": tier, **event}}
 
     async def escalate(self, state: WorkflowState) -> Dict[str, Any]:
         tenant_id, alert_id = state["tenant_id"], state["alert_id"]

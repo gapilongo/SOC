@@ -100,6 +100,8 @@ REASON_WEIGHTS: Dict[str, int] = {
     "response_review": 1,
     "group_review": 1,
     "false_positive_review": 0,
+    # The models judged it benign, but an open threat shares its host or user (lg_sotf.domain.closure).
+    "related_open_threat": 1,
     # An analyst labelled an auto-closed alert malicious in a blind audit (lg_sotf.services.blind_audit).
     "blind_audit": 5,
 }

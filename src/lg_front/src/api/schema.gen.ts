@@ -2173,6 +2173,11 @@ export interface components {
                 llm_usage?: {
                     [key: string]: unknown;
                 };
+                /** @description The related alerts that hold back a close on the models' word, as stored when the alert was decided: ids of the open threats on the same host or user, and of the high or critical alerts in progress on the same host. */
+                related_open?: {
+                    in_progress?: string[];
+                    threats?: string[];
+                };
                 reopened?: {
                     [key: string]: string | null;
                 };
@@ -2427,6 +2432,11 @@ export interface components {
                 }[];
                 llm_usage?: {
                     [key: string]: unknown;
+                };
+                /** @description The related alerts that hold back a close on the models' word, as stored when the alert was decided: ids of the open threats on the same host or user, and of the high or critical alerts in progress on the same host. */
+                related_open?: {
+                    in_progress?: string[];
+                    threats?: string[];
                 };
                 reopened?: {
                     [key: string]: string | null;

@@ -1292,6 +1292,24 @@
                 "additionalProperties": true,
                 "type": "object"
               },
+              "related_open": {
+                "description": "The related alerts that hold back a close on the models' word, as stored when the alert was decided: ids of the open threats on the same host or user, and of the high or critical alerts in progress on the same host.",
+                "properties": {
+                  "in_progress": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "threats": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "type": "object"
+              },
               "reopened": {
                 "additionalProperties": {
                   "anyOf": [
@@ -2266,6 +2284,24 @@
               },
               "llm_usage": {
                 "additionalProperties": true,
+                "type": "object"
+              },
+              "related_open": {
+                "description": "The related alerts that hold back a close on the models' word, as stored when the alert was decided: ids of the open threats on the same host or user, and of the high or critical alerts in progress on the same host.",
+                "properties": {
+                  "in_progress": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "threats": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
                 "type": "object"
               },
               "reopened": {
