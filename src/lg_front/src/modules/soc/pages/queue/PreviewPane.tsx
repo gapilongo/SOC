@@ -16,7 +16,7 @@ import { can } from '../../../../auth/roles';
 import { useToast } from '../../../../components/Toast';
 import { cx } from '../../../../components/ui';
 import { formatDuration, shortId } from '../../../../lib/format';
-import { escalationHref } from '../../lib/links';
+import { caseHref } from '../../lib/links';
 import { QButton, qbuttonClass } from './controls';
 import { OutcomeMark, SeverityBars } from './marks';
 import { dueIn, lookAlike, rowOutcome, rowReason } from './model';
@@ -120,7 +120,7 @@ function Preview({ e, now, canClaim, userId, onClaim, claiming }: { e: Escalatio
         ))}
       </dl>
       <div className="mt-3 flex flex-wrap gap-2">
-        <Link to={escalationHref(e)} className={qbuttonClass('primary')}>
+        <Link to={caseHref(e.id)} className={qbuttonClass('primary')}>
           Open <kbd className="border-on-accent/50 text-on-accent">Enter</kbd>
         </Link>
         {canClaim && (

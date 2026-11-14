@@ -11,7 +11,7 @@
  * action (ActionTarget).
  */
 
-import { useId } from 'react';
+import { useId, type ReactNode } from 'react';
 
 import { text } from '../../api/fields';
 import type { ProposedActionOut } from '../../api/types';
@@ -56,7 +56,21 @@ function Label({ children }: { children: string }) {
   return <span className="mr-2 inline-block min-w-[92px] font-mono text-2xs font-medium uppercase tracking-label text-muted min-[900px]:hidden">{children}</span>;
 }
 
-function Row({ a, planned, checked, disabled, onToggle }: { a: ProposedActionOut; planned: boolean; checked: boolean; disabled: boolean; onToggle: (on: boolean) => void }) {
+function Row({
+  a,
+  planned,
+  checked,
+  disabled,
+  onToggle,
+  decide,
+}: {
+  a: ProposedActionOut;
+  planned: boolean;
+  checked: boolean;
+  disabled: boolean;
+  onToggle: (on: boolean) => void;
+  decide?: ReactNode;
+}) {
   const id = useId();
   const target = text(a.target);
   const blocked = a.guardrail?.verdict === 'blocked' || a.role_lock === 'disabled' || a.without_preapproval === 'blocked' || a.status === 'blocked' || a.status === 'rejected';
@@ -107,6 +121,7 @@ function Row({ a, planned, checked, disabled, onToggle }: { a: ProposedActionOut
         {planned ? (
           <span data-status={a.status ?? undefined} className={blocked ? undefined : 'text-body'}>
             {a.status ? (STATUS_WORDS[a.status] ?? humanize(a.status)) : 'Not recorded'}
+            {decide}
           </span>
         ) : allowed ? (
           <label htmlFor={id} className={cx('inline-flex items-center gap-1.5 text-body min-[900px]:whitespace-nowrap', disabled ? 'cursor-not-allowed' : 'cursor-pointer')}>
@@ -142,6 +157,7 @@ export function ResponseTable({
   selected,
   onChange,
   disabled,
+  decide,
 }: {
   actions: ProposedActionOut[];
   /** The actions are on the ledger (`response.source` is `plan`): each shows its status, none can be ticked. */
@@ -151,6 +167,8 @@ export function ResponseTable({
   onChange: (next: Set<string>) => void;
   /** The caller cannot record the decision now: the plan is read-only. */
   disabled: boolean;
+  /** planned: what the caller may do about an action now (approve or reject one that waits), under its status. */
+  decide?: (action: ProposedActionOut) => ReactNode;
 }) {
   return (
     <table data-rows="free" className="block w-full border-collapse min-[900px]:table">
@@ -181,6 +199,7 @@ export function ResponseTable({
             planned={planned}
             checked={Boolean(a.approval_entry && selected.has(a.approval_entry))}
             disabled={disabled}
+            decide={planned ? decide?.(a) : undefined}
             onToggle={(on) => {
               if (!a.approval_entry) return;
               const next = new Set(selected);

@@ -8,7 +8,7 @@ the platform shell and the overview. Nothing here is product code; the engineers
 | [`console-v2.html`](console-v2.html) | The clickable prototype. One file, inline CSS and JavaScript, fonts embedded, no network request. Open it in a browser. |
 | [`screens/`](screens/) | Each screen in light and dark at 1440 and 390 px, plus five interaction states. |
 | [`screenshots.cjs`](screenshots.cjs) | Re-takes the screenshots and checks the prototype (see section 6). |
-| [`build/`](build/) | The built console, not the prototype: ten pages before and after the console-wide look (PRD-2.13, #425), light and dark at 1440 px. `<page>-<theme>-1440-before.webp` and `-after.webp`. |
+| [`build/`](build/) | The built console, not the prototype: ten pages before and after the console-wide look (PRD-2.13, #425), light and dark at 1440 px. `<page>-<theme>-1440-before.webp` and `-after.webp`. Also the Overview, the shell and the case page as built (`case-<theme>-<width>.webp`), each with the script that takes them. |
 
 Screens switch by hash: `#queue`, `#investigation`, `#case`, `#approvals`, `#overview`, `#shell`. `?theme=light` or
 `?theme=dark` pins a theme; without it the file follows the system setting, and the button in the top bar cycles
@@ -248,6 +248,34 @@ proposals in the New column, the API's names are the ones to build on:
 | Flag | none | `POST /alerts/{id}/flag` with `reason`; adds the alert to the next blind-audit sample |
 | Timeline | `GET /alerts/{id}/events` per alert | `GET /cases/{key}/timeline`: merged, each entry with `actor` and a plain sentence |
 | Pending response | `GET /actions?alert_id=` (`ActionOut.status`) | Filter by `case_key` |
+
+**Built (PRD-2.9, #374):** `GET /cases/{id}` returns the read model (`Case` in `docs/openapi.json`; fields in
+`docs/api.md`, "Case view") and the page is at `/cases/<id>`. A case is today's escalation with its alerts, so
+the key is the escalation's id and no table was added. `build/case-*.webp` shows the page with this scenario
+(light and dark, 1440 and 390 px); `build/case-shots.cjs` retakes them against `npm run dev` with the API
+answered from the backend's own assembly of `tests/fixtures/case.py`. Where the API's names differ from the
+proposals in the New column, the API's names are the ones to build on:
+
+| Proposal above | In the API |
+|---|---|
+| `key`, `title`, `summary`, `link_reason`, `opened_by` | `id` (the escalation's id) and `title` (the primary alert's). No readable key and no summary yet (`not_available`). `reason` says why the case is with a person; each linked alert says why it was linked (`alerts[].link.reason`) |
+| `closed_by` (`ai_evidence`, `ai_model`, ...), `closed_by_ref`, `close_reason` | `alerts[].closed_by.kind` (`ai`, `suppression_rule`, `cached_verdict`, `analyst`) with `alerts[].category` (`ai_closed_evidence`, `ai_closed_audit`); the reference is typed per kind (`analyst`, `rule_id` and `rule_name`, `source_alert_id`); `reason` is `{code, sentence}`; an AI close adds `policy` and `tier` |
+| `linked` (`related_threat`) | `alerts[].role` (`linked`, `reopened`, ...) with `link` or `reopened` |
+| `GET /cases/{key}/timeline` | `timeline` on the read model |
+| `GET /actions?case_key=` | `actions` on the read model |
+
+| On the page | Shown as | What it waits for |
+|---|---|---|
+| "CASE-2291" | The escalation's id, shortened | A readable case reference |
+| The statement "Nine alerts on one host and one user in 20 hours" | The counts: "9 alerts: 3 with a person, 1 being investigated, 5 closed." | A case summary |
+| Reopen and Flag on a closed alert, with a required reason | Left out | `POST /alerts/{id}/reopen` and `POST /alerts/{id}/flag` with `reason` (today's `POST /alerts/{id}/reprocess` is for admins, takes no reason and lets the AI close the alert again) |
+| A reason on approve and reject, batch approval of identical actions | The dialog of the Approvals page, one action at a time, no reason | `reason` on `POST /actions/{id}/approve` and `/reject`; the approval inbox story |
+| "Evidence pack" of the case | "Review the evidence" opens the investigation view of the primary alert, which exports that alert's record | A pack over the case's alerts |
+| Ticket | Left out of the header | Tickets by case on the read model (`GET /tickets` lists them by escalation today) |
+| Suppression rule: "created 12 Sep, reviewed 2 Nov, expires 2 Feb" | The rule's name | Rule dates on the read model; a review date does not exist |
+| Entity context ("Windows 11, finance department") | The value and how many alerts name it | Asset and identity context |
+| The Case tab of the decision page, the closed-by column and filter of the Alerts closed view | Not built: the queue opens the case page instead of the decision page, and the list needs `closed_by` on `GET /alerts` | `closed_by` on `AlertOut` and as a filter |
+| The rail's Cases entry | Not built: there is no list of cases besides the Queue | A case list |
 
 ### Approval inbox
 

@@ -13,7 +13,7 @@ import { escalationOwner, escalationSeverity, escalationTitle, formatEntities } 
 import type { EscalationOut } from '../../api/types';
 import { VirtualTable, type Column, type RowState, type VirtualTableApi } from '../../../../components/VirtualTable';
 import { cx } from '../../../../components/ui';
-import { escalationHref } from '../../lib/links';
+import { caseHref } from '../../lib/links';
 import { DueIn, OutcomeMark, SeverityBars } from './marks';
 import { ROW_HEIGHT, STACKED_ROW_HEIGHT, dueIn, lookAlike, rowOutcome, rowWhy, type QueueDensity } from './model';
 
@@ -58,7 +58,7 @@ function LookAlikeCount({ e }: { e: EscalationOut }) {
 function TitleLink({ e }: { e: EscalationOut }) {
   // Not a tab stop: the row is, and Enter opens it. The link serves the mouse (and "open in a new tab").
   return (
-    <Link to={escalationHref(e)} tabIndex={-1} className="font-medium text-fg hover:underline">
+    <Link to={caseHref(e.id)} tabIndex={-1} className="font-medium text-fg hover:underline">
       {escalationTitle(e)}
     </Link>
   );

@@ -67,7 +67,7 @@ async function renderQueue(rows: EscalationOut[] = items(), { role = 'analyst', 
     <>
       <Routes>
         <Route path="/queue" element={<QueuePage />} />
-        <Route path="/escalations/:id" element={<p>decision page</p>} />
+        <Route path="/cases/:key" element={<p>case page</p>} />
       </Routes>
       <LocationProbe />
     </>,
@@ -118,7 +118,7 @@ describe('the queue: what needs a person', () => {
     await renderQueue();
     await rows();
     const first = row('Item a');
-    expect(within(first).getByRole('link', { name: 'Item a' })).toHaveAttribute('href', '/escalations/a');
+    expect(within(first).getByRole('link', { name: 'Item a' })).toHaveAttribute('href', '/cases/a');
     expect(first).toHaveTextContent('The planned response did not complete; a person decides what happens next. The dump was written from a PowerShell started by Word.');
     expect(first.querySelector('[data-severity="critical"]')).toHaveTextContent('Critical');
     expect(first.querySelector('[data-outcome="threat"]')).toHaveTextContent('Likely malicious');
@@ -260,7 +260,7 @@ describe('the queue: preview', () => {
     expect(pane).toHaveTextContent('Written by the model.');
     expect(pane).toHaveTextContent('The planned response did not complete');
     expect(pane).toHaveTextContent(/Overdue by 4m/);
-    expect(within(pane).getByRole('link', { name: 'Open Enter' })).toHaveAttribute('href', '/escalations/a');
+    expect(within(pane).getByRole('link', { name: 'Open Enter' })).toHaveAttribute('href', '/cases/a');
     // Already yours: nothing to claim.
     expect(within(pane).queryByRole('button', { name: /Claim/ })).not.toBeInTheDocument();
   });
@@ -321,8 +321,8 @@ describe('the queue: keyboard', () => {
     await user.keyboard('k');
     await waitFor(() => expect(a).toHaveAttribute('tabindex', '0'));
     await user.keyboard('j{Enter}');
-    expect(await screen.findByText('decision page')).toBeInTheDocument();
-    expect(screen.getByTestId('location')).toHaveTextContent('/escalations/b');
+    expect(await screen.findByText('case page')).toBeInTheDocument();
+    expect(screen.getByTestId('location')).toHaveTextContent('/cases/b');
   });
 
   it('Enter opens the highlighted row even when no row has focus', async () => {
@@ -330,8 +330,8 @@ describe('the queue: keyboard', () => {
     await renderQueue();
     await rows();
     await user.keyboard('{Enter}');
-    expect(await screen.findByText('decision page')).toBeInTheDocument();
-    expect(screen.getByTestId('location')).toHaveTextContent('/escalations/a');
+    expect(await screen.findByText('case page')).toBeInTheDocument();
+    expect(screen.getByTestId('location')).toHaveTextContent('/cases/a');
   });
 
   it('Space shows and hides the preview from a focused row, without opening it', async () => {
@@ -399,8 +399,8 @@ describe('the queue: keyboard', () => {
     // Enter opens the cursor row as well.
     fireEvent.keyDown(d, { key: 'k' });
     fireEvent.keyDown(d, { key: 'Enter' });
-    expect(await screen.findByText('decision page')).toBeInTheDocument();
-    expect(screen.getByTestId('location')).toHaveTextContent('/escalations/c');
+    expect(await screen.findByText('case page')).toBeInTheDocument();
+    expect(screen.getByTestId('location')).toHaveTextContent('/cases/c');
   });
 
   it('claims the selected rows in one request with C, and reports each result', async () => {

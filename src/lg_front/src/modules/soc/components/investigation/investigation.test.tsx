@@ -474,6 +474,14 @@ describe('TrackRecord', () => {
 });
 
 describe('StepList', () => {
+  it('puts what a step is about under its sentence when the page gives it (the case timeline names the alert)', () => {
+    const two = ESCALATED_INVESTIGATION.steps.slice(0, 2);
+    const { container } = render(<StepList steps={two} detail={(i) => (i === 1 ? <small>about the second</small> : null)} />);
+    const rows = [...container.querySelectorAll('li[data-actor]')];
+    expect(rows[0].querySelector('small')).toBeNull();
+    expect(rows[1]).toHaveTextContent(`${two[1].text}about the second`);
+  });
+
   const steps: PlainStepOut[] = [
     ...ESCALATED_INVESTIGATION.steps,
     { ts: '2026-11-16T12:00:00Z', actor: 'person', text: 'An analyst decided: true positive.', produced: null },
