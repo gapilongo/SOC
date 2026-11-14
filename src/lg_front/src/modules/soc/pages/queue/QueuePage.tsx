@@ -277,10 +277,10 @@ export default function QueuePage() {
   return (
     <section aria-labelledby={`${ids}-title`} className="flex flex-col">
       <div className="mb-1.5 flex flex-wrap items-end gap-x-4 gap-y-2">
-        <h1 id={`${ids}-title`} className="text-xl font-semibold leading-tight tracking-[-0.01em] text-fg">
+        <h1 id={`${ids}-title`} className="text-xl font-semibold text-fg">
           Queue
         </h1>
-        <p className="min-w-0 flex-[1_1_320px] text-[13.5px] text-secondary">
+        <p className="min-w-0 flex-[1_1_320px] text-ctl text-secondary">
           {base.isSuccess ? leadSentence(base.items, counts.all, now) : base.isError ? 'The queue could not be loaded.' : 'Loading what needs a person.'}
         </p>
         <div className="flex flex-wrap items-center gap-2">
@@ -298,7 +298,7 @@ export default function QueuePage() {
       {selected.length > 0 ? (
         <BatchBar selected={selected} capped={capped} claiming={bulkClaim.isPending} claimError={bulkClaim.error} onClaim={claimSelected} onClear={clearSelection} onResult={setResult} />
       ) : (
-        <section aria-label="Filters" className="flex min-h-[38px] flex-wrap items-center gap-2 py-0.5">
+        <section aria-label="Filters" className="flex min-h-9 flex-wrap items-center gap-2 py-0.5">
           <Chip label="Sort" value="Deadline, soonest first" />
           <FilterChip label="Severity" options={SEVERITY_OPTIONS} value={view.filters.severity} anyLabel="any" onChange={(v) => setFilters({ ...view.filters, severity: v })} />
           <FilterChip label="Outcome" options={OUTCOME_OPTIONS} value={view.filters.outcome} anyLabel="any" onChange={(v) => setFilters({ ...view.filters, outcome: v })} />

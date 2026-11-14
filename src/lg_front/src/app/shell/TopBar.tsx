@@ -35,7 +35,7 @@ export function LiveIndicator() {
         : undefined;
   return (
     <span className="mr-1.5 inline-flex min-w-0 items-center gap-1.5 text-xs text-secondary" role="status" aria-live="polite" title={hint}>
-      <span className={cx('h-[7px] w-[7px] flex-none rounded-full', color)} aria-hidden="true" />
+      <span className={cx('h-2 w-2 flex-none rounded-full', color)} aria-hidden="true" />
       {/* Narrow screens show the dot only (the word stays for screen readers), so the scope keeps the room. */}
       <span className="sr-only min-[861px]:not-sr-only min-[861px]:truncate">{label}</span>
       {hint && <span className="sr-only">. {hint}</span>}
@@ -88,7 +88,7 @@ export const TopBar = forwardRef<
         aria-expanded={menuOpen}
         aria-controls="rail-drawer"
         onClick={onOpenMenu}
-        className={cx(QUIET, 'grid h-[30px] w-[30px] flex-none place-items-center touch:h-11 touch:w-11 min-[861px]:hidden')}
+        className={cx(QUIET, 'grid h-ctl w-ctl flex-none place-items-center touch:h-11 touch:w-11 min-[861px]:hidden')}
       >
         <Menu className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
       </button>
@@ -98,7 +98,7 @@ export const TopBar = forwardRef<
         onClick={onSearch}
         aria-keyshortcuts="Control+K"
         className={cx(
-          'flex h-[30px] w-[30px] flex-none items-center justify-center gap-2 rounded-control border border-transparent text-left text-ctl text-muted hover:border-control touch:h-11 touch:w-11',
+          'flex h-ctl w-ctl flex-none items-center justify-center gap-2 rounded-control border border-transparent text-left text-ctl text-muted hover:border-control touch:h-11 touch:w-11',
           'min-[861px]:w-auto min-[861px]:max-w-[520px] min-[861px]:flex-1 min-[861px]:justify-start min-[861px]:bg-raised-2 min-[861px]:px-2',
         )}
       >

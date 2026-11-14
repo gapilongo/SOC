@@ -3,11 +3,11 @@
  *
  * An MSSP sets one value (`brand.accent` of the runtime configuration). The
  * hover, link, focus and selection colours are derived from it, checked for
- * WCAG AA contrast, and written as custom properties on `<html>`: the
- * `--brand-*` tokens of console v2, and the `--c-*` tokens that read them, so
- * every component that uses `bg-accent`, `text-link` or `bg-selected` follows
- * without knowing a brand exists. Severity, state and verdict colours are
- * never touched.
+ * WCAG AA contrast, and written on `<html>` as the `--brand-*` tokens that
+ * tokens.css reads for the accent, the links, the focus ring and a selected
+ * row, in both themes. Every component that uses `bg-accent`, `text-link` or
+ * `bg-selected` follows without knowing a brand exists. Severity, state and
+ * verdict colours are never touched.
  *
  * An accent that fails a check is refused: nothing is applied, the product's
  * own colours stay, and the failing pair is named. With no accent set
@@ -16,7 +16,7 @@
 
 import { useEffect } from 'react';
 
-import { useTheme, type ResolvedTheme } from './theme';
+import type { ResolvedTheme } from './theme';
 
 export type Rgb = readonly [number, number, number];
 
@@ -99,9 +99,9 @@ export function deriveBrand(accentHex: string): { tokens: BrandTokens; problems:
 
 const triplet = (c: Rgb) => c.join(' ');
 
-/** The custom properties a brand sets, for the theme in use. */
-export function brandProperties(tokens: BrandTokens, theme: ResolvedTheme): Record<string, string> {
-  const brand = {
+/** The custom properties a brand sets: the `--brand-*` block of tokens.css, for both themes at once. */
+export function brandProperties(tokens: BrandTokens): Record<string, string> {
+  return {
     '--brand-accent': triplet(tokens.accent),
     '--brand-accent-hover': triplet(tokens.accentHover),
     '--brand-on-accent': triplet(tokens.onAccent),
@@ -110,35 +110,25 @@ export function brandProperties(tokens: BrandTokens, theme: ResolvedTheme): Reco
     '--brand-selected-light': triplet(tokens.selected.light),
     '--brand-selected-dark': triplet(tokens.selected.dark),
   };
-  return {
-    ...brand,
-    '--c-accent': brand['--brand-accent'],
-    '--c-accent-hover': brand['--brand-accent-hover'],
-    '--c-on-accent': brand['--brand-on-accent'],
-    '--c-link': triplet(tokens.link[theme]),
-    '--c-focus': triplet(tokens.link[theme]),
-    '--c-selected': triplet(tokens.selected[theme]),
-  };
 }
 
 /**
  * Apply `accent` (`#RRGGBB`, or null for the product's own colours) to `root`. Returns the failing
  * contrast pairs; when there are any, nothing is applied.
  */
-export function applyBrand(accent: string | null, theme: ResolvedTheme, root: HTMLElement = document.documentElement): string[] {
+export function applyBrand(accent: string | null, root: HTMLElement = document.documentElement): string[] {
   if (!accent) return [];
   const { tokens, problems } = deriveBrand(accent);
   if (problems.length > 0) return problems;
   // Set through the CSSOM, which the Content-Security-Policy (style-src 'self') allows.
-  for (const [name, value] of Object.entries(brandProperties(tokens, theme))) root.style.setProperty(name, value);
+  for (const [name, value] of Object.entries(brandProperties(tokens))) root.style.setProperty(name, value);
   return [];
 }
 
-/** Keeps the brand's colours applied as the theme changes. Call once, under the ThemeProvider. */
+/** Applies the brand's colours once the app starts. */
 export function useBrandAccent(accent: string | null): void {
-  const { resolved } = useTheme();
   useEffect(() => {
-    const problems = applyBrand(accent, resolved);
+    const problems = applyBrand(accent);
     if (problems.length > 0) console.warn(`The brand accent ${accent} is not used: ${problems.join('; ')}.`);
-  }, [accent, resolved]);
+  }, [accent]);
 }

@@ -124,7 +124,7 @@ function parseBrand(raw: unknown): Brand {
   const accent = str(o.accent);
   if (name.length > 40) throw new Error('config.brand.name is longer than 40 characters');
   if (logoUrl && !/^\/(?!\/)[A-Za-z0-9._~/-]*$/.test(logoUrl)) throw new Error('config.brand.logoUrl must be a path on this site, such as /brand/logo.svg');
-  if (accent && !/^#[0-9a-f]{6}$/i.test(accent)) throw new Error('config.brand.accent must be a colour such as #2F6FE4');
+  if (accent && !/^#[0-9a-f]{6}$/i.test(accent)) throw new Error('config.brand.accent must be a colour written as # and six hex digits');
   return {
     name: name || PRODUCT_NAME,
     // Another name runs on the product; the product itself says what it is for.

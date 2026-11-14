@@ -15,14 +15,14 @@ function RailCount({ count }: { count: NavCount }) {
   if (n === undefined) return null;
   const meaning = count.meaning(n);
   return (
-    <span className="ml-auto font-mono text-[11.5px] font-medium tabular-nums text-fg" title={`${n} ${meaning}`}>
+    <span className="ml-auto font-mono text-2xs font-medium tabular-nums text-fg" title={`${n} ${meaning}`}>
       {n}
       <VisuallyHidden> {meaning}</VisuallyHidden>
     </span>
   );
 }
 
-const ITEM = 'flex h-[30px] items-center gap-[9px] border-l-2 pl-3 pr-3.5 touch:min-h-11';
+const ITEM = 'flex min-h-ctl items-center gap-2 border-l-2 py-1.5 pl-3 pr-3.5 touch:min-h-ctl-touch';
 
 function RailLink({ item, locked, onNavigate }: { item: NavItem; locked: boolean; onNavigate?: () => void }) {
   const { to, label, icon: Icon, count } = item;
@@ -78,9 +78,9 @@ export function Rail({
     <nav aria-label="Main" className="flex h-full min-h-0 flex-col text-ctl">
       <Link to="/" onClick={onNavigate} className="flex h-12 flex-none items-center gap-2.5 border-b border-subtle px-3.5">
         <BrandMark brand={brand} />
-        <span className="min-w-0 leading-[1.15]">
+        <span className="min-w-0 leading-tight">
           <span className="block truncate font-semibold text-fg">{brand.name}</span>
-          <span className="block truncate text-[10.5px] text-muted">{brand.tagline}</span>
+          <span className="block truncate text-2xs text-muted">{brand.tagline}</span>
         </span>
       </Link>
       <div className="min-h-0 flex-1 overflow-y-auto pb-3 pt-1.5">
@@ -91,7 +91,7 @@ export function Rail({
               <h2 id={headingId} className="eyebrow flex items-center gap-1.5 whitespace-nowrap px-3.5 pb-1 pt-3">
                 {g.title}
                 {g.locked && (
-                  <span className="ml-auto rounded-[2px] border border-strong px-1 py-0.5 font-mono text-[9.5px] font-medium leading-none tracking-[0.05em] text-secondary">
+                  <span className="ml-auto rounded-tag border border-strong px-1 py-0.5 font-mono text-2xs font-medium leading-none tracking-label text-secondary">
                     Not licensed
                   </span>
                 )}

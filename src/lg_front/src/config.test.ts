@@ -55,6 +55,6 @@ describe('runtime config', () => {
     // The Content-Security-Policy allows images from this site only.
     expect(() => parseConfig({ brand: { logoUrl: 'https://cdn.example/logo.svg' } })).toThrow(/a path on this site/);
     expect(() => parseConfig({ brand: { logoUrl: '//cdn.example/logo.svg' } })).toThrow(/a path on this site/);
-    expect(() => parseConfig({ brand: { accent: 'teal' } })).toThrow(/a colour such as #2F6FE4/);
+    expect(() => parseConfig({ brand: { accent: 'teal' } })).toThrow(/a colour written as # and six hex digits/);
   });
 });

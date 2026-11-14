@@ -74,11 +74,11 @@ function NoticeBell({ notices, tenantLabel }: { notices: readonly Listed[]; tena
         aria-expanded={open}
         aria-controls={open ? popId : undefined}
         onClick={() => (open ? close() : setOpen(true))}
-        className="relative grid h-[30px] w-[30px] place-items-center rounded-control text-secondary hover:bg-raised-2 hover:text-fg touch:h-11 touch:w-11"
+        className="relative grid h-ctl w-ctl place-items-center rounded-control text-secondary hover:bg-raised-2 hover:text-fg touch:h-11 touch:w-11"
       >
         <Bell className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
         {n > 0 && (
-          <span aria-hidden="true" className="absolute right-0 top-px h-[15px] min-w-[15px] rounded-full bg-fg px-[3px] text-center text-[10px] font-semibold leading-[15px] text-canvas">
+          <span aria-hidden="true" className="absolute right-0 top-px h-4 min-w-4 rounded-full bg-fg px-1 text-center text-2xs font-semibold leading-4 text-canvas">
             {n}
           </span>
         )}
@@ -88,7 +88,7 @@ function NoticeBell({ notices, tenantLabel }: { notices: readonly Listed[]; tena
           id={popId}
           role="dialog"
           aria-label="Notifications"
-          className="absolute right-0 top-full z-50 mt-1.5 w-[400px] max-w-[calc(100vw-24px)] rounded-[4px] bg-raised shadow-popover max-[860px]:fixed max-[860px]:right-3 max-[860px]:top-11"
+          className="absolute right-0 top-full z-50 mt-1.5 w-[400px] max-w-[calc(100vw-24px)] rounded-card bg-raised shadow-popover max-[860px]:fixed max-[860px]:right-3 max-[860px]:top-11"
         >
           <p className="eyebrow px-3 pb-1.5 pt-2.5">Needs an act</p>
           {n === 0 && <p className="border-t border-subtle px-3 py-2.5 text-ctl text-secondary">Nothing needs you right now in {tenantLabel}.</p>}
@@ -98,7 +98,7 @@ function NoticeBell({ notices, tenantLabel }: { notices: readonly Listed[]; tena
               const { icon: Icon, tone } = MARK[kind];
               return (
                 <li key={key} className="border-t border-subtle">
-                  <Link to={to} onClick={() => close(false)} className="grid grid-cols-[16px_minmax(0,1fr)] gap-x-2 gap-y-0.5 px-3 py-[9px] text-ctl hover:bg-raised-2">
+                  <Link to={to} onClick={() => close(false)} className="grid grid-cols-[16px_minmax(0,1fr)] gap-x-2 gap-y-0.5 px-3 py-2 text-ctl hover:bg-raised-2">
                     <Icon className={cx('mt-0.5 h-3.5 w-3.5', tone)} strokeWidth={2} aria-hidden="true" />
                     <span className="text-fg">{text}</span>
                     <span className="col-start-2 text-xs text-muted">{[tenantLabel, detail].filter(Boolean).join(' · ')}</span>

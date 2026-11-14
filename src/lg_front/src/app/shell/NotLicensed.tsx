@@ -24,10 +24,10 @@ export function NotLicensed({ module }: { module: Pick<ModuleManifest, 'title' |
   return (
     <div className="grid max-w-[1100px] gap-x-8 gap-y-5 py-2 min-[861px]:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
       <div>
-        <span className="rounded-[2px] border border-strong px-1.5 py-[3px] font-mono text-[10.5px] font-medium uppercase leading-none tracking-[0.05em] text-secondary">
+        <span className="rounded-tag border border-strong px-1.5 py-0.5 font-mono text-2xs font-medium uppercase leading-none tracking-label text-secondary">
           Not licensed
         </span>
-        <h1 className="my-1.5 text-lg font-semibold leading-snug tracking-[-0.01em] text-fg">
+        <h1 className="my-1.5 text-lg font-semibold leading-snug text-fg">
           {module.title} is not part of this installation&apos;s licence.
         </h1>
         <p className="text-ctl text-body">

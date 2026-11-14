@@ -127,13 +127,13 @@ export function FilterChip({
         onClick={() => (open ? close(false) : openList())}
         onKeyDown={onButtonKey}
         className={cx(
-          'inline-flex h-[34px] max-w-full items-center gap-1.5 rounded-control border bg-raised px-2.5 text-ctl text-secondary touch:min-h-11',
+          'inline-flex h-ctl max-w-full items-center gap-1.5 rounded-control border bg-raised px-2 text-ctl text-secondary touch:min-h-ctl-touch',
           'hover:bg-raised-2',
           value.length ? 'border-link' : 'border-control',
         )}
       >
         {label}:<span className="truncate font-medium text-fg">{summary}</span>
-        <ChevronDown className="h-3.5 w-3.5 flex-none" strokeWidth={2} aria-hidden="true" />
+        <ChevronDown className="h-3.5 w-3.5 flex-none" strokeWidth={1.5} aria-hidden="true" />
       </button>
       {open && (
         <ul
@@ -145,7 +145,7 @@ export function FilterChip({
           aria-multiselectable={multiple || undefined}
           aria-activedescendant={options[active] ? optionId(active) : undefined}
           onKeyDown={onListKey}
-          className="absolute left-0 z-40 mt-1 max-h-72 min-w-[12rem] overflow-y-auto rounded-card border border-strong bg-raised-2 p-1.5 shadow-popover focus:outline-none"
+          className="absolute left-0 z-40 mt-1 max-h-72 min-w-48 overflow-y-auto rounded-control bg-raised py-1 shadow-popover focus:outline-none"
         >
           {options.map((o, i) => {
             const selected = value.includes(o.value);
@@ -164,8 +164,9 @@ export function FilterChip({
                 }}
                 onMouseEnter={() => setActive(i)}
                 className={cx(
-                  'flex min-h-9 cursor-pointer items-center gap-2 rounded-control px-2.5 text-ctl text-fg touch:min-h-11',
-                  i === active && 'bg-selected outline outline-2 -outline-offset-2 outline-focus',
+                  'flex min-h-ctl cursor-pointer items-center gap-2 px-3 text-ctl touch:min-h-ctl-touch',
+                  selected ? 'font-semibold text-fg' : 'text-body',
+                  i === active && 'bg-selected text-fg outline outline-2 -outline-offset-2 outline-focus',
                 )}
               >
                 <span className={cx('flex h-4 w-4 flex-none items-center justify-center', !selected && 'invisible')} aria-hidden="true">

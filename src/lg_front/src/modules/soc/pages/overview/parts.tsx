@@ -12,10 +12,10 @@ import { cx } from '../../../../components/ui';
 export function SectionHead({ id, title, note, children }: { id: string; title: string; note?: ReactNode; children?: ReactNode }) {
   return (
     <div className="mb-1 flex flex-wrap items-baseline gap-x-3.5 gap-y-1.5">
-      <h2 id={id} className="text-[15px] font-semibold text-fg">
+      <h2 id={id} className="text-base font-semibold text-fg">
         {title}
       </h2>
-      {note && <p className="min-w-0 text-[12.5px] text-muted">{note}</p>}
+      {note && <p className="min-w-0 text-ctl text-muted">{note}</p>}
       {children && <div className="ml-auto text-ctl">{children}</div>}
     </div>
   );
@@ -23,11 +23,11 @@ export function SectionHead({ id, title, note, children }: { id: string; title: 
 
 /** The small warning chip of a figure that is withheld: "too few for a rate", "not measured yet". */
 export function Withheld({ children }: { children: ReactNode }) {
-  return <span className="whitespace-nowrap rounded-[2px] bg-tint-warn px-1 py-0.5 font-mono text-2xs font-medium leading-none text-warn-fg">{children}</span>;
+  return <span className="whitespace-nowrap rounded-tag bg-tint-warn px-1 py-0.5 font-mono text-2xs font-medium leading-none text-warn-fg">{children}</span>;
 }
 
 /** The mono, upper-case label of a column or of a figure. */
-export const LABEL = 'font-mono text-2xs font-medium uppercase tracking-[0.05em] text-muted';
+export const LABEL = 'font-mono text-2xs font-medium uppercase tracking-label text-muted';
 
 // Tables: hairlines only. Under the `lg` breakpoint a table becomes stacked records (each cell on
 // its own line behind its column name), so a phone never scrolls sideways.
@@ -35,7 +35,7 @@ export const TABLE = 'w-full border-collapse text-left max-lg:block';
 export const THEAD = 'max-lg:sr-only';
 export const TBODY = 'max-lg:block';
 export const TR = 'max-lg:block max-lg:border-b max-lg:border-strong max-lg:py-2.5';
-export const TH = cx(LABEL, 'whitespace-nowrap border-b border-strong px-2.5 py-[7px]');
+export const TH = cx(LABEL, 'whitespace-nowrap border-b border-strong px-2.5 py-1.5');
 const TD = 'break-words border-b border-subtle px-2.5 py-1.5 align-middle text-ctl max-lg:block max-lg:border-0 max-lg:px-0 max-lg:py-0.5';
 /** A count column: right-aligned figures on a wide screen. */
 export const NUM = 'font-semibold tabular-nums text-fg lg:w-[70px] lg:text-right';
@@ -60,9 +60,9 @@ export function Figure({ label, big, muted = false, children, small, state }: { 
   return (
     <div data-figure={state} className="min-w-0 border-subtle py-3 pb-3.5 max-lg:[&:not(:first-child)]:border-t lg:pr-5 lg:[&:not(:first-child)]:border-l lg:[&:not(:first-child)]:pl-5">
       <h3 className={LABEL}>{label}</h3>
-      <p className={cx('mb-1 mt-1.5 text-[22px] font-semibold leading-tight tracking-[-0.015em] tabular-nums', muted ? 'text-secondary' : 'text-fg')}>{big}</p>
-      {children && <p className="text-[12.5px] text-body">{children}</p>}
-      {small && <div className="mt-[5px] text-xs text-muted [&>p+p]:mt-1">{small}</div>}
+      <p className={cx('mb-1 mt-1.5 text-2xl font-semibold leading-tight tabular-nums', muted ? 'text-secondary' : 'text-fg')}>{big}</p>
+      {children && <p className="text-ctl text-body">{children}</p>}
+      {small && <div className="mt-1 text-xs text-muted [&>p+p]:mt-1">{small}</div>}
     </div>
   );
 }

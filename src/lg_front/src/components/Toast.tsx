@@ -1,8 +1,7 @@
-import { X } from 'lucide-react';
+import { AlertTriangle, X } from 'lucide-react';
 import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import { describeError } from '../api/client';
-import { cx } from './ui';
 
 interface Toast {
   id: number;
@@ -52,7 +51,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={api}>
       {children}
-      <div className="pointer-events-none fixed bottom-4 right-4 z-[60] flex w-[min(24rem,calc(100vw-2rem))] flex-col gap-2">
+      <div className="pointer-events-none fixed inset-x-3 bottom-5 z-[60] mx-auto flex max-w-sm flex-col gap-2">
         <div aria-live="polite" role="status" className="flex flex-col gap-2">
           {toasts
             .filter((t) => t.tone !== 'error')
@@ -74,25 +73,20 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
 function ToastView({ toast, onDismiss }: { toast: Toast; onDismiss: (id: number) => void }) {
   return (
-    <div
-      className={cx(
-        'pointer-events-auto flex items-start gap-2 rounded-control border px-3 py-2 text-sm shadow-lg',
-        toast.tone === 'error' && 'border-danger bg-tint-danger text-danger-fg',
-        toast.tone === 'success' && 'border-state-ok/60 bg-tint-ok text-ok-fg',
-        toast.tone === 'info' && 'border-control bg-raised-2 text-fg',
-      )}
-    >
+    // One look for every toast: the sheet inverted. An error says so with its mark and stays longer.
+    <div data-tone={toast.tone} className="pointer-events-auto flex items-start gap-2 rounded-control bg-fg px-3 py-2 text-ctl text-canvas shadow-popover">
+      {toast.tone === 'error' && <AlertTriangle className="mt-0.5 h-4 w-4 flex-none" strokeWidth={1.5} aria-hidden="true" />}
       <div className="min-w-0 flex-1">
         <p>{toast.message}</p>
-        {toast.requestId && <p className="mt-0.5 font-mono text-xs opacity-80">Request ID: {toast.requestId}</p>}
+        {toast.requestId && <p className="mt-0.5 font-mono text-xs">Request ID: {toast.requestId}</p>}
       </div>
       <button
         type="button"
         onClick={() => onDismiss(toast.id)}
         aria-label="Dismiss notification"
-        className="rounded p-0.5 hover:bg-fg/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+        className="rounded p-0.5 hover:bg-canvas/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-canvas"
       >
-        <X className="h-4 w-4" aria-hidden="true" />
+        <X className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
       </button>
     </div>
   );

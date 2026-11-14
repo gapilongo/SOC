@@ -2,40 +2,70 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * The console's base look (design: docs/design/console-v2): a flat sheet, hairlines for structure,
+ * monospace capitals for labels. Everything here reads the tokens of src/theme/tokens.css.
+ */
 @layer base {
   html {
     -webkit-text-size-adjust: 100%;
   }
   body {
-    @apply bg-canvas font-sans text-sm text-fg antialiased;
+    @apply bg-canvas font-sans text-sm text-body antialiased;
     line-height: 1.45;
+    /* Inter: single-storey a, round quotes. */
+    font-feature-settings: 'cv11' 1, 'ss03' 1;
   }
-  /* Focus: a 2 px ring in the focus colour with a 2 px offset, everywhere. */
+  code,
+  kbd,
+  pre,
+  samp,
+  .font-mono {
+    font-feature-settings: normal;
+  }
+  /* Focus: a 2 px ring in the focus colour, everywhere. */
   :focus-visible {
     outline: 2px solid rgb(var(--c-focus));
-    outline-offset: 2px;
+    outline-offset: 1px;
   }
   ::placeholder {
     color: rgb(var(--c-muted));
     opacity: 1;
   }
+  /* A key of the keyboard, as printed on it. */
   kbd {
-    @apply rounded border border-strong px-1 font-mono text-2xs text-body;
+    @apply inline-flex items-center justify-center rounded border border-b-2 border-strong px-1 font-mono text-2xs font-medium leading-none text-secondary;
+    min-width: 18px;
+    height: 18px;
+  }
+  /* The highlighter: the decisive characters of what a tool returned, and nothing else. */
+  mark {
+    @apply rounded-sm bg-mark text-mark-fg;
+    padding: 0 2px;
+  }
+  /* Column headings are labels: monospace capitals over a rule. A page sets only their padding and alignment. */
+  thead th {
+    @apply border-b border-strong font-mono text-2xs font-medium uppercase tracking-label text-muted;
   }
 }
 
 @layer components {
-  /* Eyebrow: 11 / 600 caps section label. */
+  /* Eyebrow: the 11 px monospace label above a section. */
   .eyebrow {
-    @apply text-2xs font-semibold uppercase tracking-[0.06em] text-eyebrow;
+    @apply font-mono text-2xs font-medium uppercase tracking-eyebrow text-muted;
   }
 }
 
-/* Table row density: compact by default; "Comfortable" adds room (src/theme/density.tsx). */
-:root[data-density='comfortable'] tbody td,
-:root[data-density='comfortable'] tbody th {
-  padding-top: 0.75rem;
-  padding-bottom: 0.75rem;
+/*
+ * Row density (src/theme/density.tsx): a table cell is at least one row high and pads by the density,
+ * whatever the page wrote: dense 24 px, compact 28 px (default), comfortable 44 px. A table that lays its
+ * rows out itself (a record that stacks on a phone) opts out with `data-rows="free"`.
+ */
+:root table:not([data-rows='free']) tbody td,
+:root table:not([data-rows='free']) tbody th {
+  height: var(--row-h);
+  padding-top: var(--cell-py);
+  padding-bottom: var(--cell-py);
 }
 
 @media (prefers-reduced-motion: reduce) {

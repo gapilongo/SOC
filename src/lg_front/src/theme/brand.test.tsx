@@ -12,14 +12,18 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { applyBrand, brandProperties, contrast, deriveBrand, parseHex, useBrandAccent, type Rgb } from './brand';
-import { ThemeProvider } from './theme';
 
 const CSS = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'tokens.css'), 'utf8');
 
-/** `--c-<name>` of the dark (first) and the light rule of tokens.css. */
-function token(name: string): { dark: Rgb; light: Rgb } {
-  const [dark, light] = [...CSS.matchAll(new RegExp(`--c-${name}:\\s*(\\d+)\\s+(\\d+)\\s+(\\d+)\\s*;`, 'g'))].map((m) => [Number(m[1]), Number(m[2]), Number(m[3])] as const);
-  return { dark, light };
+/** Every value of a custom property of tokens.css that is a colour triplet, in the file's order. */
+function values(property: string): Rgb[] {
+  return [...CSS.matchAll(new RegExp(`${property}:\\s*(\\d+)\\s+(\\d+)\\s+(\\d+)\\s*;`, 'g'))].map((m) => [Number(m[1]), Number(m[2]), Number(m[3])] as const);
+}
+
+/** `--c-<name>` in the light rule (the first in tokens.css) and in the dark one. */
+function token(name: string): { light: Rgb; dark: Rgb } {
+  const [light, dark] = values(`--c-${name}`);
+  return { light, dark };
 }
 
 /** The three brands of the console v2 design: the product's blue, a teal and a rust. */
@@ -51,7 +55,7 @@ describe('brand accent', () => {
     // The hover is darker than the accent, never another hue.
     expect(contrast(tokens.accentHover, [255, 255, 255])).toBeGreaterThan(contrast(tokens.accent, [255, 255, 255]));
     for (const theme of ['light', 'dark'] as const) {
-      // Links are text (4.5:1), the focus ring a control (3:1), on every surface a link sits on today.
+      // Links are text (4.5:1), the focus ring a control (3:1), on every surface a link sits on.
       for (const surface of ['canvas', 'sidebar', 'raised', 'raised-2']) {
         expect(contrast(tokens.link[theme], token(surface)[theme]), `${accent} link on ${surface}, ${theme}`).toBeGreaterThanOrEqual(4.5);
       }
@@ -62,9 +66,12 @@ describe('brand accent', () => {
   it('derives the product\'s own link colours from the product\'s accent, within a shade', () => {
     const { tokens } = deriveBrand('#2F6FE4');
     for (const theme of ['light', 'dark'] as const) {
-      const own = token('link')[theme];
+      const [own] = values(`--brand-link-${theme}`);
       tokens.link[theme].forEach((v, i) => expect(Math.abs(v - own[i]), `${theme} channel ${i}`).toBeLessThanOrEqual(24));
+      // The selection is the accent over the page, exactly as the token file has it.
+      expect(tokens.selected[theme]).toEqual(values(`--brand-selected-${theme}`)[0]);
     }
+    expect(tokens.accent).toEqual(values('--brand-accent')[0]);
   });
 
   it('puts dark text on a light accent', () => {
@@ -77,64 +84,45 @@ describe('brand accent', () => {
     // Neither white nor dark text reaches 4.5:1 on a mid grey.
     expect(deriveBrand('#777777').problems).toEqual(['text on the accent is 4.48:1 and needs 4.5:1']);
     const root = document.createElement('div');
-    expect(applyBrand('#777777', 'light', root)).toEqual(['text on the accent is 4.48:1 and needs 4.5:1']);
+    expect(applyBrand('#777777', root)).toEqual(['text on the accent is 4.48:1 and needs 4.5:1']);
     expect(root.getAttribute('style')).toBeNull();
   });
 
-  it('sets the brand tokens and the tokens that read them, for the theme in use', () => {
+  it('sets the brand tokens that tokens.css reads, and nothing else', () => {
     const { tokens } = deriveBrand('#0F766E');
-    const light = brandProperties(tokens, 'light');
-    const dark = brandProperties(tokens, 'dark');
-    expect(light['--brand-accent']).toBe('15 118 110');
-    expect(light['--c-accent']).toBe('15 118 110');
-    expect(light['--c-on-accent']).toBe('255 255 255');
-    expect(light['--c-link']).toBe(light['--brand-link-light']);
-    expect(dark['--c-link']).toBe(dark['--brand-link-dark']);
-    expect(light['--c-focus']).toBe(light['--c-link']);
-    expect(light['--c-selected']).toBe(light['--brand-selected-light']);
-    expect(dark['--c-selected']).toBe(dark['--brand-selected-dark']);
+    const set = brandProperties(tokens);
+    expect(set['--brand-accent']).toBe('15 118 110');
+    expect(set['--brand-on-accent']).toBe('255 255 255');
+    // Every property it sets is one the token file declares and reads for the accent, links, focus and selection.
+    for (const name of Object.keys(set)) {
+      expect(values(name), name).toHaveLength(1);
+      expect(CSS, name).toContain(`var(${name})`);
+    }
     // Severity, state and verdict colours are not a brand's to set.
-    expect(Object.keys(light).filter((k) => /sev|state|danger|warn|ok|mark/.test(k))).toEqual([]);
+    expect(Object.keys(set).filter((k) => !k.startsWith('--brand-'))).toEqual([]);
 
     const root = document.createElement('div');
-    expect(applyBrand('#0F766E', 'dark', root)).toEqual([]);
-    expect(root.style.getPropertyValue('--c-accent')).toBe('15 118 110');
-    expect(root.style.getPropertyValue('--c-link')).toBe(dark['--c-link']);
+    expect(applyBrand('#0F766E', root)).toEqual([]);
+    expect(root.style.getPropertyValue('--brand-accent')).toBe('15 118 110');
+    expect(root.style.getPropertyValue('--brand-link-dark')).toBe(set['--brand-link-dark']);
   });
 
   it('leaves the token file alone when no accent is set', () => {
     const root = document.createElement('div');
-    expect(applyBrand(null, 'light', root)).toEqual([]);
+    expect(applyBrand(null, root)).toEqual([]);
     expect(root.getAttribute('style')).toBeNull();
   });
 
-  it('applies the accent to the page and follows the theme', () => {
-    window.localStorage.setItem('lg-sotf.theme', 'light');
-    const { unmount } = render(
-      <ThemeProvider>
-        <Accent accent="#B4471B" />
-      </ThemeProvider>,
-    );
-    const light = document.documentElement.style.getPropertyValue('--c-link');
-    expect(document.documentElement.style.getPropertyValue('--c-accent')).toBe('180 71 27');
-    unmount();
-    window.localStorage.setItem('lg-sotf.theme', 'dark');
-    render(
-      <ThemeProvider>
-        <Accent accent="#B4471B" />
-      </ThemeProvider>,
-    );
-    expect(document.documentElement.style.getPropertyValue('--c-link')).not.toBe(light);
+  it('applies the accent to the page', () => {
+    render(<Accent accent="#B4471B" />);
+    expect(document.documentElement.style.getPropertyValue('--brand-accent')).toBe('180 71 27');
+    expect(document.documentElement.style.getPropertyValue('--brand-link-light')).not.toBe('');
   });
 
   it('warns and keeps the product colours when the configured accent fails', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-    render(
-      <ThemeProvider>
-        <Accent accent="#777777" />
-      </ThemeProvider>,
-    );
+    render(<Accent accent="#777777" />);
     expect(warn).toHaveBeenCalledWith('The brand accent #777777 is not used: text on the accent is 4.48:1 and needs 4.5:1.');
-    expect(document.documentElement.style.getPropertyValue('--c-accent')).toBe('');
+    expect(document.documentElement.style.getPropertyValue('--brand-accent')).toBe('');
   });
 });

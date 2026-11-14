@@ -185,7 +185,7 @@ function DateField({ label, value, onChange }: { label: string; value: string | 
         type="datetime-local"
         value={isoToLocalInput(value)}
         onChange={(e) => onChange(localInputToIso(e.target.value))}
-        className={cx(FIELD_CLASS, 'h-[34px] w-auto px-2 touch:min-h-11')}
+        className={cx(FIELD_CLASS, 'h-ctl w-auto px-2 touch:min-h-11')}
       />
     </label>
   );
@@ -322,7 +322,7 @@ export default function AlertsPage() {
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search titles"
                 aria-describedby="alert-search-hint"
-                className={cx(FIELD_CLASS, 'h-[34px] pl-8 touch:min-h-11')}
+                className={cx(FIELD_CLASS, 'h-ctl pl-8 touch:min-h-11')}
               />
             </label>
             <span id="alert-search-hint" className="sr-only">

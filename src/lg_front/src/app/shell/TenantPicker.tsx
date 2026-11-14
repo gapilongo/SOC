@@ -93,7 +93,7 @@ export default function TenantPicker({ principal, label }: { principal: Principa
           id={`${listId}-pop`}
           role="dialog"
           aria-label="Choose the tenant"
-          className="absolute left-0 top-full z-50 mt-1.5 w-80 max-w-[calc(100vw-24px)] rounded-[4px] bg-raised pb-1.5 shadow-popover"
+          className="absolute left-0 top-full z-50 mt-1.5 w-80 max-w-[calc(100vw-24px)] rounded-card bg-raised pb-1.5 shadow-popover"
         >
           <div className="flex items-center justify-between px-3 pb-1.5 pt-2.5">
             <span className="eyebrow">Show work for</span>
@@ -138,7 +138,7 @@ export default function TenantPicker({ principal, label }: { principal: Principa
                 onClick={() => pick(o)}
                 onMouseEnter={() => setActive(i)}
                 className={cx(
-                  'flex min-h-[30px] cursor-pointer items-center gap-2 px-3 py-1 text-ctl',
+                  'flex min-h-ctl cursor-pointer items-center gap-2 px-3 py-1 text-ctl',
                   i === active ? 'bg-selected text-fg' : 'text-body',
                   o.id === principal.tenantId && 'font-semibold text-fg',
                 )}

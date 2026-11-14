@@ -1,35 +1,36 @@
 /**
  * Colour theme: "system" (the default: follows the operating system's
- * prefers-color-scheme and its changes), light, or dark. The choice is a display
- * preference kept in localStorage (lib/prefs.ts); the resolved theme is set
- * as `<html data-theme>`, which switches the token values in tokens.css.
+ * prefers-color-scheme and its changes), light or dark. The choice is a
+ * display preference kept in localStorage (lib/prefs.ts) and remembered; the
+ * resolved theme is set as `<html data-theme>`, which switches the token
+ * values in tokens.css.
  *
- * public/theme-boot.js applies the stored choice before the first paint, so a
- * light-theme user does not see a dark flash; this module owns it afterwards.
+ * public/theme-boot.js applies the stored choice before the first paint, so
+ * nobody sees a flash of the other theme; this module owns it afterwards.
  */
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 
 import { readPref, writePref } from '../lib/prefs';
 
-/** In the order the shell's theme control steps through them. */
 export const THEME_PREFERENCES = ['system', 'light', 'dark'] as const;
 export type ThemePreference = (typeof THEME_PREFERENCES)[number];
 export type ResolvedTheme = 'dark' | 'light';
 
-const LIGHT_QUERY = '(prefers-color-scheme: light)';
+// Light unless the system asks for dark: the same rule as tokens.css and public/theme-boot.js.
+const DARK_QUERY = '(prefers-color-scheme: dark)';
 
 export function parseThemePreference(value: string | null | undefined): ThemePreference {
   return (THEME_PREFERENCES as readonly string[]).includes(value ?? '') ? (value as ThemePreference) : 'system';
 }
 
-export function resolveTheme(preference: ThemePreference, systemPrefersLight: boolean): ResolvedTheme {
-  if (preference === 'system') return systemPrefersLight ? 'light' : 'dark';
+export function resolveTheme(preference: ThemePreference, systemPrefersDark: boolean): ResolvedTheme {
+  if (preference === 'system') return systemPrefersDark ? 'dark' : 'light';
   return preference;
 }
 
-function lightMedia(): MediaQueryList | null {
-  return typeof window.matchMedia === 'function' ? window.matchMedia(LIGHT_QUERY) : null;
+function darkMedia(): MediaQueryList | null {
+  return typeof window.matchMedia === 'function' ? window.matchMedia(DARK_QUERY) : null;
 }
 
 export function applyTheme(theme: ResolvedTheme, root: HTMLElement = document.documentElement): void {
@@ -46,17 +47,17 @@ const ThemeContext = createContext<ThemeApi | null>(null);
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [preference, setPreferenceState] = useState<ThemePreference>(() => parseThemePreference(readPref('theme')));
-  const [systemLight, setSystemLight] = useState(() => lightMedia()?.matches ?? false);
+  const [systemDark, setSystemDark] = useState(() => darkMedia()?.matches ?? false);
 
   useEffect(() => {
-    const media = lightMedia();
+    const media = darkMedia();
     if (!media) return;
-    const onChange = (e: MediaQueryListEvent) => setSystemLight(e.matches);
+    const onChange = (e: MediaQueryListEvent) => setSystemDark(e.matches);
     media.addEventListener('change', onChange);
     return () => media.removeEventListener('change', onChange);
   }, []);
 
-  const resolved = resolveTheme(preference, systemLight);
+  const resolved = resolveTheme(preference, systemDark);
   useEffect(() => applyTheme(resolved), [resolved]);
 
   const setPreference = useCallback((next: ThemePreference) => {

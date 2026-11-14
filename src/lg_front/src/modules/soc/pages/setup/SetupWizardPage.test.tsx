@@ -138,7 +138,7 @@ describe('first-run setup wizard', () => {
     await user.click(screen.getByRole('radio', { name: /Ollama on this server/ }));
     expect(screen.getByRole('region', { name: 'Settings for Ollama on this server (local)' })).toHaveTextContent('LG_SOTF_LLM__PROVIDER=ollama');
     await user.click(screen.getByRole('button', { name: 'Test model' }));
-    expect(await screen.findByText('both tiers answered')).toBeInTheDocument();
+    expect(await screen.findByText('Both tiers answered')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Save and continue' }));
 
     // 4. Sample alerts until the first verdict.
@@ -189,7 +189,7 @@ describe('first-run setup wizard', () => {
     renderWithSession(<SetupWizardPage />, await signedInSession(api, { role: 'admin', is_platform_admin: true }));
     expect(await screen.findByText('Setup is complete')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Skip setup' })).not.toBeInTheDocument();
-    expect(await screen.findByText('on')).toBeInTheDocument();
+    expect(await screen.findByText('On')).toBeInTheDocument();
   });
 });
 

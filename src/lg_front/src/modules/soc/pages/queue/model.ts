@@ -17,6 +17,7 @@ import type { EscalationFilters } from '../../api/endpoints';
 import { escalationSeverity, finite, readAiReason, readRouting, text, type QueueFigures } from '../../api/fields';
 import type { EscalationOut } from '../../api/types';
 import { formatDuration } from '../../../../lib/format';
+import { ROW_HEIGHT as THEME_ROW_HEIGHT } from '../../../../theme/density';
 import { routingWhy } from '../escalations/labels';
 import { filtersFromParams } from '../escalations/queueParams';
 
@@ -237,8 +238,8 @@ export type QueueDensity = (typeof DENSITIES)[number];
 
 export const DENSITY_LABELS: Record<QueueDensity, string> = { dense: 'Dense', compact: 'Compact', relaxed: 'Two lines' };
 
-/** Row height per density (px); a stacked record on a narrow screen has its own. */
-export const ROW_HEIGHT: Record<QueueDensity, number> = { dense: 24, compact: 28, relaxed: 44 };
+/** Row height per density (px): the `--row-h-*` design tokens (24, 28 and 44 px). A stacked record on a narrow screen has its own. */
+export const ROW_HEIGHT: Record<QueueDensity, number> = { dense: THEME_ROW_HEIGHT.dense, compact: THEME_ROW_HEIGHT.compact, relaxed: THEME_ROW_HEIGHT.comfortable };
 export const STACKED_ROW_HEIGHT = 92;
 
 export function parseQueueDensity(value: string | null | undefined): QueueDensity {

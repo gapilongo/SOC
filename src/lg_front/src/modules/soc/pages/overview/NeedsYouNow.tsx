@@ -31,11 +31,11 @@ const TITLE_LINK = 'font-medium text-fg underline decoration-control underline-o
 
 function Need({ n, title, action, children }: { n: ReactNode; title: string; action: ReactNode; children: ReactNode }) {
   return (
-    <li className="grid grid-cols-[56px_minmax(0,1fr)] items-center gap-x-4 border-b border-subtle py-[11px] md:grid-cols-[76px_minmax(0,1fr)_auto]">
-      <span className="text-2xl font-semibold leading-none tracking-[-0.02em] tabular-nums text-fg md:text-[30px]">{n}</span>
+    <li className="grid grid-cols-[56px_minmax(0,1fr)] items-center gap-x-4 border-b border-subtle py-2.5 md:grid-cols-[76px_minmax(0,1fr)_auto]">
+      <span className="text-2xl font-semibold leading-none tabular-nums text-fg md:text-display md:leading-none">{n}</span>
       <div className="min-w-0">
-        <p className="text-[15px] font-medium text-fg">{title}</p>
-        <div className="mt-px break-words text-[12.5px] text-secondary">{children}</div>
+        <p className="text-base font-medium text-fg">{title}</p>
+        <div className="mt-px break-words text-ctl text-secondary">{children}</div>
       </div>
       {action}
     </li>
@@ -44,7 +44,7 @@ function Need({ n, title, action, children }: { n: ReactNode; title: string; act
 
 function Action({ to, primary, children }: { to: string; primary: boolean; children: ReactNode }) {
   return (
-    <Link to={to} className={buttonClass(primary ? 'primary' : 'secondary', 'sm', 'col-start-2 mt-1.5 justify-self-start md:col-start-3 md:mt-0')}>
+    <Link to={to} className={buttonClass(primary ? 'primary' : 'secondary', 'md', 'col-start-2 mt-1.5 justify-self-start md:col-start-3 md:mt-0')}>
       {children}
     </Link>
   );

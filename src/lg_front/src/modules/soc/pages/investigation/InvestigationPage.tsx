@@ -70,16 +70,16 @@ import { useInvestigation } from './useInvestigation';
 function DocSection({ n, title, note, right, children }: { n: string; title: string; note?: ReactNode; right?: ReactNode; children: ReactNode }) {
   const id = useId();
   return (
-    <section aria-labelledby={id} className="grid grid-cols-1 pt-[18px] min-[900px]:grid-cols-[40px_minmax(0,1fr)]">
-      <div aria-hidden="true" className="hidden font-mono text-2xs font-medium leading-5 tracking-[0.04em] text-muted min-[900px]:block">
+    <section aria-labelledby={id} className="grid grid-cols-1 pt-4 min-[900px]:grid-cols-[40px_minmax(0,1fr)]">
+      <div aria-hidden="true" className="hidden font-mono text-2xs font-medium leading-5 tracking-label text-muted min-[900px]:block">
         {n}
       </div>
       <div className="min-w-0">
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-strong pb-2">
-          <h2 id={id} className="text-[15px] font-semibold leading-5 text-fg">
+          <h2 id={id} className="text-base font-semibold leading-5 text-fg">
             {title}
           </h2>
-          {note && <span className="text-[12.5px] text-muted">{note}</span>}
+          {note && <span className="text-ctl text-muted">{note}</span>}
           {right && <span className="ml-auto flex flex-wrap items-center gap-x-3.5 gap-y-1">{right}</span>}
         </div>
         {children}
@@ -168,7 +168,7 @@ function Subject({ alert }: { alert: AlertDetailOut }) {
             <Link
               to={entityHref(value)}
               title={`Alerts whose title names ${value}`}
-              className="inline-flex max-w-full rounded-[2px] hover:underline"
+              className="inline-flex max-w-full rounded-tag hover:underline"
             >
               <FactChip label={label} mono>
                 {value}
@@ -283,7 +283,7 @@ function SlaChip({ e }: { e: EscalationOut }) {
   return (
     <span
       className={cx(
-        'inline-flex min-h-[22px] items-center gap-[5px] whitespace-nowrap rounded-[2px] bg-raised-2 px-[7px] text-xs tabular-nums',
+        'inline-flex min-h-ctl-sm items-center gap-1 whitespace-nowrap rounded-tag bg-raised-2 px-1.5 text-xs tabular-nums',
         sla.state === 'ok' ? 'text-secondary' : 'font-semibold text-warn',
       )}
       title={e.sla_deadline ? `Deadline ${formatDateTime(e.sla_deadline)}` : undefined}
@@ -444,16 +444,16 @@ function Investigation({ alertId }: { alertId: string }) {
         )}
       </nav>
       <div className="mb-3.5 flex flex-wrap items-end gap-x-4 gap-y-2">
-        <h1 className="min-w-0 break-words text-xl font-semibold leading-[1.2] tracking-[-0.01em] text-fg">{a.title}</h1>
+        <h1 className="min-w-0 break-words text-xl font-semibold text-fg">{a.title}</h1>
         <div className="flex flex-wrap items-center gap-2 min-[900px]:ml-auto">
           <SeverityBars value={a.severity} />
           {e && active && <SlaChip e={e} />}
           {owner && <FactChip label="Owner">{owner.kind === 'you' ? 'you' : owner.label}</FactChip>}
-          <Button size="sm" aria-pressed={hidden} disabled={withheld} onClick={() => setBlind((on) => !on)}>
+          <Button aria-pressed={hidden} disabled={withheld} onClick={() => setBlind((on) => !on)}>
             {hidden ? 'Show the verdict' : 'Hide the verdict'}
             <Keycap className="hidden min-[900px]:inline-flex">V</Keycap>
           </Button>
-          <a href="#evidence-record" className="inline-flex min-h-8 items-center whitespace-nowrap rounded-control border border-control bg-raised px-3 py-1 text-ctl font-medium text-fg hover:bg-raised-2 touch:min-h-11">
+          <a href="#evidence-record" className="inline-flex min-h-ctl items-center whitespace-nowrap rounded-control border border-control bg-raised px-2.5 text-ctl font-medium text-fg hover:bg-raised-2 touch:min-h-11">
             Evidence record
           </a>
         </div>
@@ -464,8 +464,8 @@ function Investigation({ alertId }: { alertId: string }) {
       </div>
 
       {/* 01 */}
-      <div className="grid grid-cols-1 border-b border-strong pb-[18px] pt-1 min-[900px]:grid-cols-[40px_minmax(0,1fr)] min-[1200px]:grid-cols-[40px_minmax(0,1fr)_328px]">
-        <div aria-hidden="true" className="hidden font-mono text-2xs font-medium leading-5 tracking-[0.04em] text-muted min-[900px]:block">
+      <div className="grid grid-cols-1 border-b border-strong pb-4 pt-1 min-[900px]:grid-cols-[40px_minmax(0,1fr)] min-[1200px]:grid-cols-[40px_minmax(0,1fr)_328px]">
+        <div aria-hidden="true" className="hidden font-mono text-2xs font-medium leading-5 tracking-label text-muted min-[900px]:block">
           01
         </div>
         <div className="min-w-0">
@@ -490,7 +490,7 @@ function Investigation({ alertId }: { alertId: string }) {
           aria-labelledby="track-h"
           className="mt-3.5 border-t border-subtle pt-3 min-[900px]:col-start-2 min-[1200px]:col-start-3 min-[1200px]:ml-7 min-[1200px]:mt-0 min-[1200px]:border-l min-[1200px]:border-t-0 min-[1200px]:pl-5 min-[1200px]:pt-0"
         >
-          <h2 id="track-h" className="mb-1.5 font-mono text-2xs font-medium uppercase leading-[1.3] tracking-[0.06em] text-muted">
+          <h2 id="track-h" className="mb-1.5 font-mono text-2xs font-medium uppercase leading-tight tracking-eyebrow text-muted">
             Track record of this outcome
           </h2>
           {hidden ? (

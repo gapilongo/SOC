@@ -8,6 +8,7 @@ the platform shell and the overview. Nothing here is product code; the engineers
 | [`console-v2.html`](console-v2.html) | The clickable prototype. One file, inline CSS and JavaScript, fonts embedded, no network request. Open it in a browser. |
 | [`screens/`](screens/) | Each screen in light and dark at 1440 and 390 px, plus five interaction states. |
 | [`screenshots.cjs`](screenshots.cjs) | Re-takes the screenshots and checks the prototype (see section 6). |
+| [`build/`](build/) | The built console, not the prototype: ten pages before and after the console-wide look (PRD-2.13, #425), light and dark at 1440 px. `<page>-<theme>-1440-before.webp` and `-after.webp`. |
 
 Screens switch by hash: `#queue`, `#investigation`, `#case`, `#approvals`, `#overview`, `#shell`. `?theme=light` or
 `?theme=dark` pins a theme; without it the file follows the system setting, and the button in the top bar cycles
@@ -303,7 +304,7 @@ answered by the script. What is built on today's API, and what waits:
 | Scope | One tenant: shown to everyone, chosen by a platform admin, part of the address as `/s/<tenant>/...` (a reload, a new tab and a shared link keep it; a record's page gives way to its list) | "All tenants" and tenant groups (`/s/all`, `/s/g/<group>`): the API answers for one tenant at a time (#377). They are not listed until it offers them |
 | Search | Pages and commands from the module manifests; alerts by title (`GET /alerts?q=`, the last 30 days) with their tenant; tenants for a platform admin. A command is a link to the page where the act is confirmed | Entities and cases: there is no `GET /search` and no case API, and an entity search over alert titles would report "nothing" for a host that is in no title |
 | Notifications | Escalations past their deadline, a deadline within 15 minutes, approvals waiting on the person (`DashboardOut`), a source the API calls failing or degraded (`SourceOut.health`, admins) | "An AI close was reopened by the safety net" (#369), "blind-audit sample ready", read state and "Mark all read" (`GET /notifications`) |
-| Brand | One `brand` object in the runtime configuration: name, logo (a path on the UI's host), one accent; derived colours are set through the tokens and checked for contrast, a failing accent is refused with the pair named | A brand per tenant and the settings page that saves it (backend); container variables for it. `theme/tokens.css` does not read `--brand-*` yet (#425), so the shell also sets the `--c-*` tokens they feed |
+| Brand | One `brand` object in the runtime configuration: name, logo (a path on the UI's host), one accent; derived colours are set through the tokens and checked for contrast, a failing accent is refused with the pair named | A brand per tenant and the settings page that saves it (backend); container variables for it |
 | Theme | Follows the system by default; one control steps System, Light, Dark | |
 
 | Element | Has | New |

@@ -276,8 +276,8 @@ Full list in the [changelog](CHANGELOG.md).
   of the public API only): a live Overview that puts the analyst's own work
   first, an alert queue with filters and a side panel per alert, an
   escalation queue with a decision page per escalation, approvals,
-  suppressions, reports and tenant administration, in a dark (default),
-  light or system theme. Served by a non-root nginx container under a
+  suppressions, reports and tenant administration, in a light or dark
+  theme that follows the system setting unless the user picks one. Served by a non-root nginx container under a
   strict Content-Security-Policy. Access tokens are kept in memory only.
   Shipped in the compose stack (`PROFILES=frontend`) and the Helm chart
   (`frontend.enabled`).

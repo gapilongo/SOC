@@ -33,7 +33,7 @@ export interface QueueSelection {
   setAll: (rows: readonly EscalationOut[], on: boolean) => void;
 }
 
-const HEADER = 'border-b border-strong bg-canvas font-mono text-2xs font-medium uppercase tracking-[0.05em] text-muted';
+const HEADER = 'border-b border-strong bg-canvas font-mono text-2xs font-medium uppercase tracking-label text-muted';
 
 function rowClass(_row: EscalationOut, { active, selected }: RowState): string {
   return cx(
@@ -48,7 +48,7 @@ function LookAlikeCount({ e }: { e: EscalationOut }) {
   const group = lookAlike(e);
   if (!group) return null;
   return (
-    <span title={`${group.size} look-alike alerts`} className="ml-1.5 inline-block rounded-sm bg-fg px-[5px] align-[1px] font-mono text-2xs font-semibold text-canvas">
+    <span title={`${group.size} look-alike alerts`} className="ml-1.5 inline-block rounded-sm bg-fg px-1 align-[1px] font-mono text-2xs font-semibold text-canvas">
       ×{group.size}
       <span className="sr-only"> look-alikes</span>
     </span>
@@ -141,7 +141,7 @@ export function QueueTable({
 }) {
   const stacked = width < STACKED_BELOW;
   const roomy = width >= ROOMY_FROM;
-  const text = density === 'dense' ? 'text-[12.5px] leading-[18px]' : 'text-ctl';
+  const text = density === 'dense' ? 'text-xs' : 'text-ctl';
   const select = selection.enabled ? [selectColumn(rows, selection)] : [];
 
   const columns: Column<EscalationOut>[] = stacked
@@ -159,7 +159,7 @@ export function QueueTable({
                 <LookAlikeCount e={e} />
               </span>
               <span className="truncate text-muted">{rowWhy(e)}</span>
-              <span className="flex items-center justify-between gap-2 text-[12.5px]">
+              <span className="flex items-center justify-between gap-2 text-ctl">
                 <SeverityBars value={escalationSeverity(e)} />
                 <DueIn due={dueIn(e.sla_deadline, now)} />
               </span>
@@ -178,10 +178,10 @@ export function QueueTable({
             </>
           ),
           width: '104px',
-          className: 'text-[12.5px]',
+          className: 'text-ctl',
           render: (e) => <DueIn due={dueIn(e.sla_deadline, now)} />,
         },
-        { key: 'severity', header: 'Severity', width: '94px', className: 'text-[12.5px]', render: (e) => <SeverityBars value={escalationSeverity(e)} /> },
+        { key: 'severity', header: 'Severity', width: '94px', className: 'text-ctl', render: (e) => <SeverityBars value={escalationSeverity(e)} /> },
         {
           key: 'item',
           header: 'What needs you, and why',
@@ -222,7 +222,7 @@ export function QueueTable({
           key: 'outcome',
           header: roomy ? 'Outcome so far' : <span className="sr-only">Outcome so far</span>,
           width: roomy ? '176px' : '34px',
-          className: cx('text-[12.5px]', !roomy && '!px-0 text-center'),
+          className: cx('text-ctl', !roomy && '!px-0 text-center'),
           render: (e) => <OutcomeMark outcome={rowOutcome(e)} text={roomy ? 'short' : 'none'} />,
         },
         ...(width >= OWNER_FROM

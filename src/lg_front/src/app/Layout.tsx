@@ -90,7 +90,7 @@ export function Layout() {
       >
         Skip to main content
       </a>
-      <aside className="fixed inset-y-0 left-0 hidden w-[220px] border-r border-subtle bg-sidebar min-[861px]:block">
+      <aside className="fixed inset-y-0 left-0 hidden w-rail border-r border-subtle bg-sidebar min-[861px]:block">
         <Rail groups={NAV_GROUPS} tenantLabel={tenantLabel} onSignOut={onSignOut} />
       </aside>
 
@@ -111,7 +111,7 @@ export function Layout() {
               data-autofocus
               aria-label="Close the menu"
               onClick={() => setMenuOpen(false)}
-              className="absolute right-2 top-[9px] grid h-[30px] w-[30px] place-items-center rounded-control text-secondary hover:bg-raised-2 hover:text-fg touch:h-11 touch:w-11"
+              className="absolute right-2 top-2.5 grid h-ctl w-ctl place-items-center rounded-control text-secondary hover:bg-raised-2 hover:text-fg touch:h-11 touch:w-11"
             >
               <X className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
             </button>
@@ -119,7 +119,7 @@ export function Layout() {
         </div>
       )}
 
-      <div className="flex min-h-screen min-w-0 flex-col min-[861px]:pl-[220px]">
+      <div className="flex min-h-screen min-w-0 flex-col min-[861px]:pl-rail">
         <TopBar
           ref={menuButtonRef}
           registry={REGISTRY}

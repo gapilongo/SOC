@@ -23,13 +23,13 @@ import { useAuth } from '../../auth/AuthContext';
 const TenantPicker = lazy(() => import('./TenantPicker'));
 
 export const BOX =
-  'inline-flex h-[30px] min-w-0 max-w-[150px] items-center gap-[7px] rounded-control border border-control bg-raised px-[9px] text-ctl font-medium text-fg min-[861px]:max-w-[260px] touch:min-h-11';
+  'inline-flex h-ctl min-w-0 max-w-[150px] items-center gap-1.5 rounded-control border border-control bg-raised px-2 text-ctl font-medium text-fg min-[861px]:max-w-[260px] touch:min-h-11';
 
 export function Current({ label }: { label: string }) {
   return (
     <>
       <Building2 className="h-4 w-4 flex-none" strokeWidth={1.5} aria-hidden="true" />
-      <span className="sr-only font-mono text-[10.5px] uppercase leading-none tracking-[0.05em] text-muted min-[861px]:not-sr-only">Tenant</span>
+      <span className="sr-only font-mono text-2xs uppercase leading-none tracking-label text-muted min-[861px]:not-sr-only">Tenant</span>
       <span className="truncate" data-testid="tenant-name">
         {label}
       </span>

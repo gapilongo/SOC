@@ -47,13 +47,13 @@ const STATUS_WORDS: Record<string, string> = {
   blocked: 'Blocked',
 };
 
-const TH = 'whitespace-nowrap border-b border-strong px-2.5 py-[7px] text-left font-mono text-2xs font-medium uppercase tracking-[0.05em] text-muted first:pl-0';
-const TD = 'block px-0 py-0.5 align-top text-ctl min-[900px]:table-cell min-[900px]:border-b min-[900px]:border-subtle min-[900px]:px-2.5 min-[900px]:py-[7px] min-[900px]:first:pl-0';
+const TH = 'whitespace-nowrap border-b border-strong px-2.5 py-1.5 text-left font-mono text-2xs font-medium uppercase tracking-label text-muted first:pl-0';
+const TD = 'block px-0 py-0.5 align-top text-ctl min-[900px]:table-cell min-[900px]:border-b min-[900px]:border-subtle min-[900px]:px-2.5 min-[900px]:py-1.5 min-[900px]:first:pl-0';
 const SMALL = 'block text-xs text-muted';
 
 /** The column name before a value, for the stacked records of a narrow screen. */
 function Label({ children }: { children: string }) {
-  return <span className="mr-2 inline-block min-w-[92px] font-mono text-[10.5px] font-medium uppercase tracking-[0.05em] text-muted min-[900px]:hidden">{children}</span>;
+  return <span className="mr-2 inline-block min-w-[92px] font-mono text-2xs font-medium uppercase tracking-label text-muted min-[900px]:hidden">{children}</span>;
 }
 
 function Row({ a, planned, checked, disabled, onToggle }: { a: ProposedActionOut; planned: boolean; checked: boolean; disabled: boolean; onToggle: (on: boolean) => void }) {
@@ -90,13 +90,13 @@ function Row({ a, planned, checked, disabled, onToggle }: { a: ProposedActionOut
         {!a.guardrail ? (
           <span className="text-muted">Not checked again</span>
         ) : a.guardrail.verdict === 'passed' ? (
-          <span className="inline-flex items-center gap-[5px] whitespace-nowrap text-[12.5px] text-body">
-            <Glyph name="tick" className="h-[11px] w-[11px] text-state-ok" />
+          <span className="inline-flex items-center gap-1 whitespace-nowrap text-ctl text-body">
+            <Glyph name="tick" className="h-3 w-3 text-state-ok" />
             Passed
           </span>
         ) : (
-          <span className="inline-flex items-center gap-[5px] whitespace-nowrap text-[12.5px] text-danger-fg">
-            <Glyph name="cannot" className="h-[11px] w-[11px]" />
+          <span className="inline-flex items-center gap-1 whitespace-nowrap text-ctl text-danger-fg">
+            <Glyph name="cannot" className="h-3 w-3" />
             Blocked
           </span>
         )}
@@ -153,7 +153,7 @@ export function ResponseTable({
   disabled: boolean;
 }) {
   return (
-    <table className="block w-full border-collapse min-[900px]:table">
+    <table data-rows="free" className="block w-full border-collapse min-[900px]:table">
       <thead className="sr-only min-[900px]:not-sr-only min-[900px]:table-header-group">
         <tr>
           <th scope="col" className={TH}>

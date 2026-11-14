@@ -6,7 +6,7 @@ import { cx } from './ui';
 
 export function Stepper({ steps, current, label }: { steps: readonly string[]; current: number; label: string }) {
   return (
-    <ol aria-label={label} className="mb-5 flex flex-wrap gap-2">
+    <ol aria-label={label} className="mb-4 flex flex-wrap gap-1.5">
       {steps.map((step, i) => {
         const done = i < current;
         const active = i === current;
@@ -15,14 +15,14 @@ export function Stepper({ steps, current, label }: { steps: readonly string[]; c
             key={step}
             aria-current={active ? 'step' : undefined}
             className={cx(
-              'flex items-center gap-2 rounded-control border px-2.5 py-1 text-xs',
-              active ? 'border-focus bg-raised font-semibold text-fg' : 'border-subtle text-secondary',
+              'flex min-h-ctl items-center gap-2 rounded-control border px-2 text-xs',
+              active ? 'border-fg bg-raised font-semibold text-fg' : 'border-strong text-secondary',
             )}
           >
             <span
               className={cx(
-                'flex h-5 w-5 flex-none items-center justify-center rounded-full border text-xs tabular-nums',
-                done ? 'border-ok-fg text-ok-fg' : 'border-control',
+                'flex h-4 w-4 flex-none items-center justify-center rounded-tag border font-mono text-2xs tabular-nums',
+                done ? 'border-ok-fg text-ok-fg' : active ? 'border-fg bg-fg text-canvas' : 'border-control',
               )}
               aria-hidden="true"
             >

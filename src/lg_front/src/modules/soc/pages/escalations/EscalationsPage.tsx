@@ -91,8 +91,8 @@ function Views({ params, breaching }: { params: URLSearchParams; breaching: numb
                 to={{ pathname: '/escalations', search: search ? `?${search}` : '' }}
                 aria-current={on ? 'page' : undefined}
                 className={cx(
-                  '-mb-px inline-flex h-[38px] items-center gap-2 whitespace-nowrap border-b-2 px-3 text-ctl font-medium touch:min-h-11',
-                  on ? 'border-accent text-fg' : 'border-transparent text-secondary hover:text-fg',
+                  '-mb-px inline-flex h-8 items-center gap-1.5 whitespace-nowrap border-b-2 px-2.5 text-ctl touch:min-h-11',
+                  on ? 'border-fg font-semibold text-fg' : 'border-transparent text-secondary hover:text-fg',
                 )}
               >
                 {v.label}
@@ -174,7 +174,7 @@ export default function EscalationsPage() {
         />
         <FilterChip label="Level" options={ESCALATION_LEVELS.map((l) => ({ value: l, label: l }))} value={filters.level ?? []} onChange={(v) => update({ level: v })} />
         {groupFilter && (
-          <span className="inline-flex h-[34px] items-center gap-1.5 rounded-control border border-link bg-raised pl-2.5 pr-1 text-ctl text-secondary">
+          <span className="inline-flex h-ctl items-center gap-1.5 rounded-control border border-link bg-raised pl-2 pr-0.5 text-ctl text-secondary">
             Rule: <span className="max-w-[18rem] truncate font-medium text-fg">{filters.rule ?? 'any'}</span>
             <Button size="sm" variant="quiet" className="min-h-7 px-1.5" aria-label="Remove the rule filter" onClick={() => update({ source_id: undefined, rule: undefined })} icon={<X className="h-3.5 w-3.5" aria-hidden="true" />} />
           </span>

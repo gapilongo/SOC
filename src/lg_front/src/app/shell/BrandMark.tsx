@@ -17,7 +17,7 @@ export function brandInitials(name: string): string {
 export function BrandMark({ brand }: { brand: Brand }) {
   if (brand.logoUrl) return <img src={brand.logoUrl} alt="" className="h-6 w-6 flex-none object-contain" />;
   return (
-    <span aria-hidden="true" className="grid h-6 w-6 flex-none place-items-center rounded-[2px] bg-accent text-2xs font-bold tracking-[0.02em] text-on-accent">
+    <span aria-hidden="true" className="grid h-6 w-6 flex-none place-items-center rounded-tag bg-accent text-2xs font-bold text-on-accent">
       {brand.name === PRODUCT_NAME ? <Activity className="h-3.5 w-3.5" strokeWidth={2.25} /> : brandInitials(brand.name)}
     </span>
   );

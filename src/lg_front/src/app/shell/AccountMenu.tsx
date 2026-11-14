@@ -105,11 +105,11 @@ export function AccountMenu({ tenantLabel, onSignOut }: { tenantLabel: string; o
         aria-controls={open ? menuId : undefined}
         onClick={() => (open ? close() : show('first'))}
         onKeyDown={onButtonKey}
-        className="flex w-full items-center gap-[9px] px-3.5 py-2.5 text-left hover:bg-raised-2 touch:min-h-11"
+        className="flex w-full items-center gap-2 px-3.5 py-2.5 text-left hover:bg-raised-2 touch:min-h-11"
       >
         {/* The visible text is the accessible name (WCAG 2.5.3), after the word that says what the button is. */}
         <span className="sr-only">Account: </span>
-        <span className="grid h-[26px] w-[26px] flex-none place-items-center rounded-full border border-strong bg-raised-2 text-[10.5px] font-semibold text-fg">
+        <span className="grid h-6 w-6 flex-none place-items-center rounded-full border border-strong bg-raised-2 text-2xs font-semibold text-fg">
           {initials(principal.email)}
         </span>
         <span className="min-w-0 leading-tight">
@@ -125,7 +125,7 @@ export function AccountMenu({ tenantLabel, onSignOut }: { tenantLabel: string; o
           aria-label="Account"
           tabIndex={-1}
           onKeyDown={onMenuKey}
-          className="absolute bottom-full left-2 z-50 mb-1 flex w-60 flex-col gap-0.5 rounded-[4px] bg-raised p-1.5 shadow-popover"
+          className="absolute bottom-full left-2 z-50 mb-1 flex w-60 flex-col gap-0.5 rounded-card bg-raised p-1.5 shadow-popover"
         >
           <div className="mb-1 border-b border-subtle px-2.5 pb-2 pt-1.5">
             <div className="truncate text-ctl font-medium text-fg">{email}</div>

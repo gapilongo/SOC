@@ -212,6 +212,7 @@ describe('search and commands', () => {
       'DoTheme: follow the systemdisplay setting',
       'DoTheme: lightdisplay setting',
       'DoTheme: darkdisplay setting',
+      'DoRows: densedisplay setting',
       'DoRows: compactdisplay setting',
       'DoRows: comfortabledisplay setting',
       'DoSingle-key shortcuts: turn offdisplay setting',
@@ -267,6 +268,9 @@ describe('search and commands', () => {
     await user.click(opener);
     await user.keyboard('>rows compact{Enter}');
     expect(document.documentElement.dataset.density).toBe('compact');
+    await user.click(opener);
+    await user.keyboard('>rows dense{Enter}');
+    expect(document.documentElement.dataset.density).toBe('dense');
     await user.click(opener);
     await user.keyboard('>single{Enter}');
     expect(await screen.findByText('Single-key shortcuts are off. Ctrl K, Tab and Enter always work.')).toBeInTheDocument();

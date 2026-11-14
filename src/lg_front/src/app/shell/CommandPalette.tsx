@@ -124,6 +124,7 @@ export default function CommandPalette({
       { id: 'set:theme:system', kind: 'Do', title: 'Theme: follow the system', detail: 'display setting', act: () => setPreference('system') },
       { id: 'set:theme:light', kind: 'Do', title: 'Theme: light', detail: 'display setting', act: () => setPreference('light') },
       { id: 'set:theme:dark', kind: 'Do', title: 'Theme: dark', detail: 'display setting', act: () => setPreference('dark') },
+      { id: 'set:rows:dense', kind: 'Do', title: 'Rows: dense', detail: 'display setting', act: () => setDensity('dense') },
       { id: 'set:rows:compact', kind: 'Do', title: 'Rows: compact', detail: 'display setting', act: () => setDensity('compact') },
       { id: 'set:rows:comfortable', kind: 'Do', title: 'Rows: comfortable', detail: 'display setting', act: () => setDensity('comfortable') },
       {
@@ -198,7 +199,7 @@ export default function CommandPalette({
         role="dialog"
         aria-modal="true"
         aria-label="Search and commands"
-        className="absolute left-1/2 top-[12vh] w-[620px] max-w-[calc(100vw-24px)] -translate-x-1/2 overflow-hidden rounded-[4px] bg-raised shadow-popover"
+        className="absolute left-1/2 top-[12vh] w-[620px] max-w-[calc(100vw-24px)] -translate-x-1/2 overflow-hidden rounded-card bg-raised shadow-popover"
       >
         <input
           type="text"
@@ -217,7 +218,7 @@ export default function CommandPalette({
           placeholder={`${searchPrompt(registry, principal)}. Type > for commands`}
           autoComplete="off"
           spellCheck={false}
-          className="block h-[46px] w-full border-b border-subtle bg-transparent px-3.5 text-[15px] text-fg focus:outline-none focus-visible:outline-none"
+          className="block h-12 w-full border-b border-subtle bg-transparent px-3.5 text-base text-fg focus:outline-none focus-visible:outline-none"
         />
         <ul id={listId} role="listbox" aria-label="Results" aria-busy={searching} className="max-h-[52vh] overflow-y-auto pb-1.5 pt-1">
           {items.map((item, i) => (
@@ -233,7 +234,7 @@ export default function CommandPalette({
               onMouseEnter={() => setActive(i)}
               className={cx('flex min-h-8 cursor-pointer items-center gap-2 px-3 py-1 text-ctl', i === at ? 'bg-selected text-fg' : 'text-body')}
             >
-              <span className="w-[58px] flex-none font-mono text-[10.5px] font-medium uppercase leading-none tracking-[0.05em] text-muted">{item.kind}</span>
+              <span className="w-[58px] flex-none font-mono text-2xs font-medium uppercase leading-none tracking-label text-muted">{item.kind}</span>
               <span className="min-w-0">{item.title}</span>
               {item.detail && <span className="ml-auto min-w-0 flex-none pl-2 text-right text-xs text-muted max-[860px]:hidden">{item.detail}</span>}
             </li>
@@ -246,7 +247,7 @@ export default function CommandPalette({
         <p role="status" className="sr-only">
           {status}
         </p>
-        <div className="flex flex-wrap gap-x-3.5 gap-y-1 border-t border-subtle px-3 py-[7px] text-xs text-muted">
+        <div className="flex flex-wrap gap-x-3.5 gap-y-1 border-t border-subtle px-3 py-1.5 text-xs text-muted">
           <span>
             <kbd>↑</kbd> <kbd>↓</kbd> move
           </span>
