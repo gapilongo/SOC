@@ -22,9 +22,12 @@ edited afterwards except to mark it superseded by a newer one.
 | [0012](0012-redis-streams-queue.md) | Redis Streams work queue with DLQ | Accepted |
 | [0013](0013-configuration-through-settings.md) | Configuration only through `lg_sotf.settings` | Accepted |
 | [0014](0014-investigation-skills.md) | Investigate with versioned skills, and earn AI closure per skill and tenant (amended 2026-11-14: harness v1 on decision policy v3) | Accepted |
+| 0015 | Frontend module model: a manifest per service, one registry, an enforced boundary | Reserved (ARCH-E10.1) |
+| [0016](0016-vulnerability-operations-center.md) | Add the Vulnerability Operations Center as the first platform module, on objects shared with the SOC | Accepted |
 
 Earlier design documents: [MCP architecture](../design/mcp-architecture.md)
 (read, safe writes and proposals over MCP; decisions are human-only) and the
 [refactor roadmap](../design/refactor-roadmap.md), which these ADRs implement.
 ADR 0014's stories and build order are in
-[investigation-skills-stories.md](../design/investigation-skills-stories.md).
+[investigation-skills-stories.md](../design/investigation-skills-stories.md); ADR 0016's are in
+[voc-stories.md](../design/voc-stories.md).

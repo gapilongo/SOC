@@ -110,6 +110,20 @@ eval-cassettes: ## Record the committed evaluation cassettes again (fake model) 
 eval-corpus-cassettes: ## Record the corpus_v1 cassettes again (fake model, about 4 min) against `make test-services`
 	$(TEST_SERVICES_ENV) LG_SOTF_RECORD_CASSETTES=1 $(PYTHON) -m pytest tests/integration/eval/test_corpus_v1_eval.py
 
+# The CI evaluation gate (scripts/ci/eval_gate.py, docs/evaluation.md "Evaluation gate in CI") on the test services.
+EVAL_GATE_ENV = LG_SOTF_DATABASE__URL=postgresql://soc:ci_only_password@127.0.0.1:55433/soc_test \
+	LG_SOTF_REDIS__URL=redis://127.0.0.1:56380/7
+
+.PHONY: eval-gate
+eval-gate: ## Run CI's evaluation gate (fake model, committed baselines; about 1 min) against `make test-services`
+	$(EVAL_GATE_ENV) $(PYTHON) -m lg_sotf.cli migrate
+	$(EVAL_GATE_ENV) $(PYTHON) scripts/ci/eval_gate.py pr
+
+.PHONY: eval-baselines
+eval-baselines: ## Record the evaluation gate's baselines again (after an intended behaviour change) against `make test-services`
+	$(EVAL_GATE_ENV) $(PYTHON) -m lg_sotf.cli migrate
+	$(EVAL_GATE_ENV) $(PYTHON) scripts/ci/eval_gate.py pr --update-baselines
+
 .PHONY: test-services-down
 test-services-down: ## Stop and remove the test services (their data was on tmpfs)
 	$(TEST_COMPOSE) down -v

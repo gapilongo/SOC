@@ -79,6 +79,16 @@ document. Locally: `OASDIFF=scripts/ci/oasdiff.sh python scripts/ci/check_api_co
 <base.json> docs/openapi.json` (Docker), or a local oasdiff binary's path; with `OASDIFF` set,
 `tests/unit/api/test_api_stability.py` runs the same checks.
 
+`eval-gate` runs `scripts/ci/eval_gate.py pr`: `lg-sotf eval` on the synthetic
+and phishing sets with the fake model, against each set's thresholds and its
+committed baseline. One more missed attack, or one fewer benign alert closed,
+than the baseline fails the build. Locally: `make test-services eval-gate`;
+after an intended behaviour change, `make eval-baselines` and commit the
+result. The nightly workflow's `real-model-eval` job runs the same sets through
+a pinned EU or local model and keeps the scorecard as an artifact; it is
+skipped until the model is configured. See
+[evaluation.md](evaluation.md#evaluation-gate-in-ci).
+
 ## The test services
 
 The integration tier needs a **plain** PostgreSQL role: superusers and roles
@@ -136,6 +146,15 @@ deletes it afterwards. Each session creates its own reader users (a role
 with read access to `wazuh-alerts-*` only, and a user with no role), with
 passwords generated at run time. Alerts loaded into the lab therefore never
 change what a test sees.
+
+`tests/live/wazuh/test_guided_setup.py` runs the guided setup checks
+([onboarding.md](onboarding.md#guided-wazuh-setup)) against the lab: a wrong
+password, a user without a role, a pattern that matches nothing, a time field
+that is not mapped, a handshake without the CA and under another host name,
+a closed port, and clocks that disagree. `tests/fixtures/wazuh_lab/fake.py`
+(`FakeWazuhIndexer`) answers those cases the way the lab does, for the tests
+that cannot start it: `tests/integration/e2e/test_guided_wazuh.py` walks the
+guided flow over HTTP against it.
 
 ### Loading more alerts
 
