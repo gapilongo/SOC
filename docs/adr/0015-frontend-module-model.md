@@ -139,7 +139,7 @@ implementations and two copies each of the timeline and the entity list.
   The cache is in memory only, so nothing persisted is affected.
 * The tenant switcher and the acting-tenant banner are now lazy chunks,
   loaded only for platform admins. The first load is smaller (initial
-  JavaScript 432.6 kB, 137.0 kB gzip, against 437.3 kB and 138.2 kB before);
+  JavaScript 434.1 kB, 137.5 kB gzip, against 438.8 kB and 138.7 kB before);
   a platform admin sees the plain tenant name for a moment before the
   switcher appears.
 * Picking one look where the copies differed is visible in three places:

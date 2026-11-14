@@ -9,6 +9,6 @@
   "src/components/ui/": { "statements": 98.3, "branches": 93.0, "functions": 97.2, "lines": 98.2 },
   "src/app/shell/": { "statements": 99.0, "branches": 92.2, "functions": 99.0, "lines": 99.0 },
   "src/core/": { "statements": 99.0, "branches": 99.0, "functions": 99.0, "lines": 99.0 },
-  "src/modules/soc/": { "statements": 81.8, "branches": 79.4, "functions": 72.8, "lines": 81.8 },
+  "src/modules/soc/": { "statements": 82.6, "branches": 79.9, "functions": 74.0, "lines": 82.6 },
   "src/modules/soc/api/": { "statements": 94.2, "branches": 98.4, "functions": 90.7, "lines": 93.4 }
 }
