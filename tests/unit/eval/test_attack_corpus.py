@@ -114,13 +114,30 @@ def test_alerts_carry_the_4_14_rule_metadata_and_a_wazuh_shape(items: List[EvalI
         assert canonical.title == rule["description"]
 
 
+def _context_events(name: str) -> List[Dict[str, Any]]:
+    lines = gzip.decompress((DATASET.parent / name).read_bytes()).decode("utf-8").splitlines()
+    return [doc for doc in map(json.loads, lines) if "_meta" not in doc]
+
+
 def test_the_telemetry_does_not_give_the_label_away(items: List[EvalItem]) -> None:
-    for item in items:
-        text = json.dumps(item.alert).lower()
-        assert "atomic" not in text and "redteam" not in text and "red team" not in text, item.id
+    # The alerts of both datasets, and the context events an investigation reads next to them (AI-E1.10).
+    documents = {item.id: item.alert for item in items}
+    documents.update({item.id: item.alert for item in load_dataset(DATASET.parent / "corpus_skills_v1.jsonl.gz").items})
+    for name in ("corpus_v1_events.jsonl.gz", "corpus_skills_v1_events.jsonl.gz"):
+        events = _context_events(name)
+        assert events, name
+        documents.update({f"{name}:{doc['id']}": doc for doc in events})
+        for doc in events:  # an event is a Wazuh document, never a dataset item: no label, tag or note travels with it
+            assert not {"expected", "tags", "notes", "family", "split", "labels"} & set(doc), doc["id"]
+    assert len(documents) > 1300
+    for name, alert in documents.items():
+        text = json.dumps(alert).lower()
+        assert "atomic" not in text and "redteam" not in text and "red team" not in text, name
         # Rule texts are Wazuh's own ("...execute of malicious software"); the event itself carries no label.
-        event = json.dumps({k: v for k, v in item.alert.items() if k != "rule"}).lower()
-        assert "malicious" not in event and "benign" not in event and "lookalike" not in event, item.id
+        event = json.dumps({k: v for k, v in alert.items() if k != "rule"}).lower()
+        assert "malicious" not in event and "benign" not in event and "lookalike" not in event, name
+        for word in ("attack", "skills:", "context-abuse", "early-stage", "csk1-", "cv1-"):
+            assert word not in event, (name, word)
 
 
 def test_sources_hold_exactly_what_the_scenarios_reference() -> None:
