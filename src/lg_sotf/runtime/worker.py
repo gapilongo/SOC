@@ -62,6 +62,7 @@ from lg_sotf.runtime.shutdown import cancel_and_wait, wait_or_stop
 from lg_sotf.security.redaction import safe_error_text
 from lg_sotf.services.folded import settle_folded
 from lg_sotf.settings import Settings
+from lg_sotf.tools.wazuh.tools import Backends
 
 log = get_logger(__name__)
 
@@ -748,8 +749,13 @@ def worker_pool_size(settings: Settings) -> int:
     return max(settings.database.pool_max, min(settings.worker.concurrency // 2, MAX_DERIVED_POOL))
 
 
-async def run_worker(settings: Settings, *, metrics_host: str, metrics_port: int) -> None:
-    """Process entry point for ``lg-sotf worker``: wire dependencies, serve health, run until signalled."""
+async def run_worker(
+    settings: Settings, *, metrics_host: str, metrics_port: int, evidence: Optional[Backends] = None
+) -> None:
+    """Process entry point for ``lg-sotf worker``: wire dependencies, serve health, run until signalled.
+
+    ``evidence`` is the telemetry store the command line built when ``investigation.evidence_backend`` is
+    ``event_store`` (evaluation and development); otherwise the engine reads each tenant's own indexer."""
     from lg_sotf.core.workflow import WorkflowEngine
     from lg_sotf.queue.events import EventBus
     from lg_sotf.queue.redis import create_redis
@@ -766,7 +772,9 @@ async def run_worker(settings: Settings, *, metrics_host: str, metrics_port: int
     try:
         await db.open()
         events = EventBus(redis, settings)
-        engine = await WorkflowEngine.create(settings=settings, db=db, redis=redis, events=events, secret_box=box)
+        engine = await WorkflowEngine.create(
+            settings=settings, db=db, redis=redis, events=events, secret_box=box, evidence=evidence
+        )
         consumer = StreamConsumer(redis, settings, worker_id)
         worker = Worker(settings, db, redis, engine, consumer, events, worker_id=worker_id)
         shutdown = GracefulShutdown(worker.request_stop, on_force=cancel_current_task())

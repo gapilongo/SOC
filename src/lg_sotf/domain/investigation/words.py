@@ -18,9 +18,16 @@ from lg_sotf.domain.investigation.model import ClosedByKind, Direction, StepActo
 
 __all__ = [
     "BLOCKER_SENTENCES",
+    "CITATION_FINDINGS",
     "CLOSE_REASONS",
     "DECIDE_SENTENCES",
     "EVENT_STEPS",
+    "EVIDENCE_REASONS",
+    "EVIDENCE_STEP",
+    "EVIDENCE_TOOL_TITLES",
+    "SKIPPED_LOOKUP_REASONS",
+    "UNKNOWN_EVIDENCE_REASON",
+    "UNKNOWN_SKIP_REASON",
     "FACT_TITLES",
     "LOOKUP_CLAIMS",
     "LOOKUP_STATUS_SENTENCES",
@@ -210,6 +217,58 @@ FACT_TITLES: Final[Mapping[str, str]] = {
     "prevalence": "How widely this is seen at this customer",
 }
 
+#: What an evidence lookup of a playbook does, by tool name (``lg_sotf.tools.wazuh.tools``): the title of a
+#: lookup that was skipped, so no observation names it.
+EVIDENCE_TOOL_TITLES: Final[Mapping[str, str]] = {
+    "wazuh.host_activity": FACT_TITLES["host_activity"],
+    "wazuh.logon_fanout": FACT_TITLES["logon_fanout"],
+    "wazuh.prevalence": FACT_TITLES["prevalence"],
+    "wazuh.process_lineage": FACT_TITLES["process_lineage"],
+}
+
+#: The evidence lookups before the deeper analysis (``lg_sotf.agents.investigation.executor``), as a plain step.
+EVIDENCE_STEP: Final = Step("code", "Looked up the customer's own event data around the alert.")
+#: Why the analysis ran without the evidence lookups, or why none ran: the executor's stop reasons, then the
+#: reasons the view derives for an alert without a stored investigation.
+EVIDENCE_REASONS: Final[Mapping[str, str]] = {
+    "budget_steps": "The evidence lookups reached their limit on the number of lookups, so the analysis ran without them.",
+    "budget_wall": "The evidence lookups reached their time limit, so the analysis ran without them.",
+    "budget_tokens": "The evidence lookups reached their token limit, so the analysis ran without them.",
+    "budget_usd": "The evidence lookups reached their spending limit, so the analysis ran without them.",
+    "circuit_open": (
+        "The source's event data did not answer, so the remaining lookups were skipped and the analysis ran "
+        "without them."
+    ),
+    "no_facts": "The evidence lookups returned no fact, so the analysis ran as it does without them.",
+    "no_run_id": "This run started before evidence lookups existed, so none ran.",
+    "error": "The evidence lookups failed, so the analysis ran without them.",
+    "no_evidence_tools": "No evidence lookups exist for this alert's source.",
+    "switched_off": "Evidence lookups were not switched on for this customer when the alert was analysed.",
+    "not_analysed": "No deeper analysis ran for this alert, so no evidence lookup ran.",
+}
+UNKNOWN_EVIDENCE_REASON: Final = "The evidence lookups did not complete, so the analysis ran without them."
+
+#: Why a lookup of the playbook was skipped (``StepRecord.reason`` of a skipped step).
+SKIPPED_LOOKUP_REASONS: Final[Mapping[str, str]] = {
+    "no_binding": "The alert does not carry the value this lookup needs.",
+    "binding_refused": "The alert's value for this lookup is not well-formed, so it was not sent.",
+    "circuit_open": "Skipped: the source's event data had stopped answering.",
+    "budget_steps": "Skipped: the lookups had reached their limit.",
+    "budget_wall": "Skipped: the lookups had reached their time limit.",
+    "budget_tokens": "Skipped: the lookups had reached their token limit.",
+    "budget_usd": "Skipped: the lookups had reached their spending limit.",
+}
+UNKNOWN_SKIP_REASON: Final = "The lookup was skipped."
+
+#: What is wrong with a claim's citation (``lg_sotf.domain.ledger.CitationCode``), in plain words.
+CITATION_FINDINGS: Final[Mapping[str, str]] = {
+    "unknown_fact": "It cites an observation this investigation did not record.",
+    "altered_fact": "It cites an observation whose record no longer matches what was recorded.",
+    "not_benign_evidence": "It cites a lookup that found nothing or failed, which is not evidence that something is benign.",
+    "incomplete_fact": "It cites an incomplete observation: nothing can be concluded from what it does not show.",
+    "no_citation": "The model named no observation for it.",
+}
+
 #: Provider result statuses (``lg_sotf.tools.enrichment.base.Status``) that mean the lookup could not be made,
 #: as ``(kind, sentence)``; ``kind`` is ``no_source`` or ``tool_failed``.
 LOOKUP_STATUS_SENTENCES: Final[Mapping[str, Tuple[Literal["no_source", "tool_failed"], str]]] = {
@@ -268,13 +327,14 @@ class PendingField(NamedTuple):
 PENDING_HARNESS: Final[Tuple[PendingField, ...]] = (
     PendingField(
         "claims[].observation_ids",
-        "The model does not cite observations yet, so only claims the rules derive from a lookup name one.",
+        "The model names the observations a claim rests on only where the evidence lookups ran. Elsewhere only "
+        "claims the rules derive from a lookup name one.",
         201,
     ),
     PendingField(
         "claims[].check",
-        "No checker compares claims with observations yet: a claim is supported only when a lookup backs it, "
-        "and none is ever rejected.",
+        "A cited claim is checked only for whether its observations exist and can carry it. No checker "
+        "compares what a claim says with what they show yet, and none is ever rejected.",
         207,
     ),
     PendingField(
@@ -284,14 +344,15 @@ PENDING_HARNESS: Final[Tuple[PendingField, ...]] = (
     ),
     PendingField(
         "observations",
-        "Only reputation and history lookups are recorded. Typed facts from the source's own event data come "
-        "with the evidence tools.",
+        "Typed facts from the source's own event data are recorded for Wazuh alerts of a customer that "
+        "switched the evidence lookups on. Elsewhere only reputation and history lookups are.",
         200,
     ),
     PendingField(
         "not_established.not_checked",
-        "Without a playbook the list names only the lookups today's analysis could have made.",
-        205,
+        "The list names the default playbook's lookups that were skipped and the lookups today's analysis "
+        "could have made. Playbooks for a kind of detection add their own.",
+        199,
     ),
     PendingField(
         "steps",

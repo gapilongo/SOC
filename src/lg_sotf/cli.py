@@ -98,10 +98,19 @@ _metrics_port = click.option(
 @_metrics_port
 def worker(metrics_host: str, metrics_port: int) -> None:
     """Consume the alert queue and run workflows."""
+    from lg_sotf.eval.wazuh_events import telemetry_backends
     from lg_sotf.runtime.worker import run_worker
 
     settings = _prepare()
-    _run(run_worker(settings, metrics_host=metrics_host, metrics_port=metrics_port))
+    # investigation.evidence_backend=event_store (evaluation and development): the evidence tools answer from
+    # the dataset files the settings name. Otherwise this is None and they read each tenant's own indexer.
+    try:
+        evidence = telemetry_backends(settings)
+    except (ValueError, OSError) as exc:
+        raise click.ClickException(f"investigation.event_store_files: {exc}") from None
+    if evidence is not None:
+        click.echo(f"evidence backend: event store ({len(evidence)} synthetic documents), not the tenants' indexers", err=True)
+    _run(run_worker(settings, metrics_host=metrics_host, metrics_port=metrics_port, evidence=evidence))
 
 
 @cli.command()

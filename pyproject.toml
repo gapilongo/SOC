@@ -95,6 +95,7 @@ lg_sotf = [
     "db/alembic.ini",
     "db/migrations/script.py.mako",
     "db/migrations/versions/*.py",
+    "agents/investigation/skills/*.yaml",
 ]
 
 # ---------------------------------------------------------------------------

@@ -25,6 +25,14 @@ the previous assessment is new input per step; earlier thoughts are not
 re-sent. Lookup targets are restricted to candidate ids built from
 indicators extracted from the alert, so injected text cannot make the agent
 look up (or send to a third party) arbitrary values.
+
+Evidence (AI-E3.3). When the investigation executor collected facts for the
+alert (``AnalysisRunContext.evidence``, the fact ledger's view of the run),
+they are part of every step's ``tool_data`` block, as untrusted data like the
+lookups, and the step uses the ``analysis.react_step_cited`` template: the
+same instructions plus :data:`CITE_TASK`, and an answer that also lists
+``claims`` with the ledger ids each one cites. Without evidence nothing
+changes: the template, its hash and the prompt are the ones above.
 """
 
 from __future__ import annotations
@@ -32,12 +40,12 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Literal, Mapping, Optional
+from typing import TYPE_CHECKING, Annotated, Any, Callable, Dict, List, Literal, Mapping, Optional, cast
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, BeforeValidator, Field
 
 from lg_sotf.agents.base import AgentContext, LLMResult
-from lg_sotf.llm.registry import register_prompt
+from lg_sotf.llm.registry import PromptTemplate, register_prompt
 from lg_sotf.llm.schema import clipped_list, clipped_str, lenient_literal
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.security.redaction import redact_text
@@ -99,6 +107,47 @@ class InvestigationStep(BaseModel):
 
 STEP_PROMPT = register_prompt("analysis.react_step", system=SYSTEM_PROMPT, task=STEP_TASK, schema=InvestigationStep)
 
+MAX_CLAIMS = 6
+MAX_CLAIM_CHARS = 300
+MAX_CITES = 10
+MAX_CITE_CHARS = 80
+CITE_TASK = (
+    "The tool_data block also holds evidence: observations that code collected for this alert from the "
+    "organisation's own event data, each with an id (such as 'host:0'), an outcome (success, empty or failed) "
+    "and whether it is complete. Also return claims: the few statements your verdict rests on, each with text "
+    "(one sentence), supports ('malicious' or 'benign') and cites (the ids of the observations that show it, "
+    "copied exactly from evidence). Never invent an id. An empty, failed or incomplete observation shows that "
+    "something is not known, never that nothing happened."
+)
+
+
+class Claim(BaseModel):
+    """One statement a verdict rests on and the ledger ids it cites. Code checks the ids; none is trusted."""
+
+    text: clipped_str(MAX_CLAIM_CHARS)  # type: ignore[valid-type]
+    supports: lenient_literal("malicious", "benign")  # type: ignore[valid-type]
+    cites: clipped_list(MAX_CITES, item_chars=MAX_CITE_CHARS)  # type: ignore[valid-type]
+
+
+def _first_claims(value: Any) -> Any:
+    return list(value)[:MAX_CLAIMS] if isinstance(value, (list, tuple)) else value
+
+
+Claims = Annotated[List[Claim], BeforeValidator(_first_claims), Field(default_factory=list, max_length=MAX_CLAIMS)]
+
+
+class CitedStep(InvestigationStep):
+    """A ReAct step of an alert that has evidence: the assessment, and the claims it rests on."""
+
+    claims: Claims
+
+
+CITED_STEP_PROMPT = register_prompt(
+    "analysis.react_step_cited", system=SYSTEM_PROMPT, task=f"{STEP_TASK} {CITE_TASK}", schema=CitedStep
+)
+# A cited step is an InvestigationStep: the loop reads it as one (a template is invariant in its schema).
+_CITED_STEP = cast("PromptTemplate[InvestigationStep]", CITED_STEP_PROMPT)
+
 
 @dataclass(frozen=True)
 class Candidate:
@@ -144,6 +193,8 @@ class AnalysisRunContext:
     alert: Mapping[str, Any]
     candidates: Dict[str, Candidate]
     alert_block: Dict[str, Any] = field(default_factory=dict)
+    evidence: Optional[Dict[str, Any]] = None
+    """The fact ledger's view of the run's investigation, for ``tool_data``. ``None``: no evidence, today's prompt."""
     observations: List[Observation] = field(default_factory=list)
     assessments: List[InvestigationStep] = field(default_factory=list)
     thoughts: List[str] = field(default_factory=list)
@@ -162,7 +213,7 @@ class AnalysisRunContext:
 
     def tool_data(self) -> Dict[str, Any]:
         previous = self.assessments[-1] if self.assessments else None
-        return {
+        data: Dict[str, Any] = {
             "observations": [o.prompt_view() for o in self.observations],
             "previous_assessment": (
                 {"threat_score": previous.threat_score, "certainty": previous.certainty, "verdict": previous.verdict}
@@ -171,6 +222,9 @@ class AnalysisRunContext:
             ),
             "not_yet_looked_up": self.remaining(),
         }
+        if self.evidence is not None:
+            data["evidence"] = self.evidence
+        return data
 
 
 def stabilised(previous: InvestigationStep, current: InvestigationStep, delta: int) -> bool:
@@ -228,7 +282,7 @@ class ReActReasoner:
             llm = await agent.call_llm(
                 run.agent_ctx,
                 tier="deep",
-                prompt=STEP_PROMPT,
+                prompt=STEP_PROMPT if run.evidence is None else _CITED_STEP,
                 untrusted=run.alert_block,
                 context=run.tool_data(),
                 cache_untrusted=True,

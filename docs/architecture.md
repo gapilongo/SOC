@@ -300,7 +300,10 @@ Rules:
   * The Wazuh evidence tools (`tools/wazuh/`, INT3.4) are four query
     templates on the tenant's own Wazuh indexer: `wazuh.host_activity`,
     `wazuh.logon_fanout`, `wazuh.process_lineage` and `wazuh.prevalence`.
-    They are registered tools that the analysis does not call yet. A caller
+    The investigation executor (`agents/investigation/executor.py`,
+    AI-E3.3) calls them before the deep model for a tenant that switched
+    them on, with values bound by code from the alert's detector fields
+    ([evidence-facts.md](evidence-facts.md#the-investigation-executor)). A caller
     gives typed values, never a query; `tools/wazuh/dsl.py` is the allow-list
     every search body is checked against before it is run. Each call answers
     with typed evidence facts and is one trace step of its own. The backend

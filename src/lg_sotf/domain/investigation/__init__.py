@@ -9,6 +9,8 @@ call, no write, no I/O. The service
 * :mod:`.outcome`: the four outcome categories, the reason in plain words, who closed the alert;
 * :mod:`.evidence`: observations with a typed outcome (the recorded lookups, then the run's fact ledger),
   claims, what is not established;
+* :mod:`.harness`: the evidence lookups made before the deeper analysis (what ran, the budgets, why none
+  ran) and the claims the deep model cited them for, with their citation findings;
 * :mod:`.steps`: what the investigation did, without engine node names;
 * :mod:`.words`: every decide code, blocker, close reason and node name as a fixed sentence.
 """
@@ -17,7 +19,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from lg_sotf.domain.investigation import evidence, words
+from lg_sotf.domain.investigation import evidence, harness, words
 from lg_sotf.domain.investigation.facts import (
     MAX_OBSERVATIONS,
     AlertFacts,
@@ -100,17 +102,22 @@ def assemble(facts: InvestigationFacts) -> Investigation:
     recorded = evidence.ledger_observations(facts.ledger)
     listed = recorded[: max(0, MAX_OBSERVATIONS - len(found))]
     ledger_total = max(facts.ledger_total, len(recorded))
+    # The evidence lookups the analysis recorded for itself (or why none ran), and the claims it cited them for.
+    run = harness.evidence_run(alert.summary, alert.view)
     return Investigation(
         alert_id=alert.id,
         tenant_id=alert.tenant_id,
         generated_at=facts.now,
         outcome=outcome(alert, facts.escalation, facts.events, facts.tier),
         summary=summary(alert, facts.escalation),
-        claims=evidence.claims(alert.summary, facts.lookups, found),
+        claims=evidence.claims(alert.summary, facts.lookups, found, harness.cited_claims(alert.summary)),
         observations=found + listed,
         observations_total=len(found) + ledger_total,
         observations_truncated=len(listed) < ledger_total,
-        not_established=evidence.not_established(alert.summary, alert.view, facts.lookups, found, recorded),
+        evidence_run=run,
+        not_established=evidence.not_established(
+            alert.summary, alert.view, facts.lookups, found, recorded, harness.skipped_lookups(run)
+        ),
         steps=steps(alert, facts.events),
         track_record=track_record(outcome_category(alert, facts.escalation, facts.events), facts.track),
         response=facts.response,

@@ -39,7 +39,9 @@ from lg_sotf.domain.investigation.facts import (
     mapping,
     strings,
 )
+from lg_sotf.domain.investigation.harness import CitedClaim
 from lg_sotf.domain.investigation.model import (
+    ClaimFinding,
     Direction,
     InvestigationClaim,
     InvestigationObservation,
@@ -227,25 +229,36 @@ def _backing(code: str, lookups: Sequence[Lookup], found: Sequence[Investigation
 
 
 def claims(
-    summary: Mapping[str, Any], lookups: Sequence[Lookup], found: Sequence[InvestigationObservation]
+    summary: Mapping[str, Any], lookups: Sequence[Lookup], found: Sequence[InvestigationObservation],
+    cited: Sequence[CitedClaim] = (),
 ) -> List[InvestigationClaim]:
-    """The model's claims (unsupported: it cites nothing yet), then the rule claims a lookup backs."""
+    """The deep model's cited claims with their findings, the fast model's claims (unsupported: it cites
+    nothing), then the rule claims a lookup backs.
+
+    A cited claim is ``supported`` when it names an observation the run's ledger holds and code raised no
+    finding on its citations; otherwise ``unsupported``, with the first finding as the reason.
+    """
     triage, analysis = mapping(summary.get("triage")), mapping(summary.get("analysis"))
-    drafts: List[Tuple[str, WrittenBy, Direction, List[str]]] = []
+    drafts: List[Tuple[str, WrittenBy, Direction, List[str], List[ClaimFinding]]] = [
+        (text, "model", direction, ids, findings) for text, direction, ids, findings in cited
+    ]
     for key, direction in _MODEL_CLAIMS:
         for text in strings(triage.get(key), limit=MAX_CLAIMS, chars=MAX_CLAIM_CHARS):
-            drafts.append((text, "model", direction, []))
+            drafts.append((text, "model", direction, [], []))
     indicators = analysis.get("threat_indicators")
     for code, (direction, sentence) in words.LOOKUP_CLAIMS.items():
         if isinstance(indicators, list) and code in indicators:
-            drafts.append((sentence, "rules", direction, _backing(code, lookups, found)))
+            drafts.append((sentence, "rules", direction, _backing(code, lookups, found), []))
     out: List[InvestigationClaim] = []
-    for index, (text, author, direction, ids) in enumerate(drafts[:MAX_CLAIMS], start=1):
-        reason = None if ids else (NO_CITATION if author == "model" else LOOKUP_GONE)
+    for index, (text, author, direction, ids, findings) in enumerate(drafts[:MAX_CLAIMS], start=1):
+        if findings:
+            reason: Optional[str] = findings[0].sentence
+        else:
+            reason = None if ids else (NO_CITATION if author == "model" else LOOKUP_GONE)
         out.append(
             InvestigationClaim(
                 id=f"C-{index:02d}", text=text, written_by=author, direction=direction, observation_ids=ids,
-                check="supported" if ids else "unsupported", check_reason=reason,
+                check="supported" if ids and not findings else "unsupported", check_reason=reason, findings=findings,
             )
         )
     return out
@@ -295,15 +308,18 @@ def _not_checked(summary: Mapping[str, Any], view: Mapping[str, Any], lookups: S
 def not_established(
     summary: Mapping[str, Any], view: Mapping[str, Any], lookups: Sequence[Lookup],
     found: Sequence[InvestigationObservation], recorded: Sequence[InvestigationObservation] = (),
+    skipped: Sequence[NotCheckedItem] = (),
 ) -> NotEstablished:
     """Three lists: checked and found nothing, not checked, could not be checked for this customer.
 
     ``recorded`` are the fact ledger's observations: an empty one found nothing, a failed one could not be
-    checked, and with a ledger the investigation did read the source's event data.
+    checked, and with a ledger the investigation did read the source's event data. ``skipped`` are the
+    playbook's lookups that made no call.
     """
     not_checked = _not_checked(summary, view, lookups)
     if recorded:
         not_checked = [item for item in not_checked if item.what != words.NO_TELEMETRY[0]]
+    not_checked = [*not_checked, *skipped]
     failed = [
         UnavailableItem(what=obs.title, why=words.TOOL_ERROR_SENTENCE, kind="tool_failed", observation_id=obs.id)
         for obs in recorded

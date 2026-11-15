@@ -2,6 +2,7 @@
   "builtins.Exception": [500, "internal_error"],
   "builtins.ValueError": [400, "invalid_request"],
   "fastapi.exceptions.RequestValidationError": [422, "validation_error"],
+  "lg_sotf.agents.investigation.catalog.SkillError": [500, "internal_error"],
   "lg_sotf.api.auth.oidc.OIDCError": [500, "internal_error"],
   "lg_sotf.api.auth.oidc.OIDCUnavailable": [500, "internal_error"],
   "lg_sotf.api.auth.tokens.InvalidToken": [500, "internal_error"],

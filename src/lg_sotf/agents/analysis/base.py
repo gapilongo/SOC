@@ -54,15 +54,19 @@ from typing import TYPE_CHECKING, Any, Dict, List, Mapping, Optional, Sequence, 
 from pydantic import BaseModel, Field
 
 from lg_sotf.agents.analysis.react import (
+    CITE_TASK,
     MAX_ACTION_CHARS,
     MAX_ACTIONS,
     SYSTEM_PROMPT,
     AnalysisRunContext,
     Candidate,
+    Claims,
     InvestigationStep,
     ReActReasoner,
 )
 from lg_sotf.agents.base import AccountedRun, AgentContext, BaseAgent, LLMResult
+from lg_sotf.agents.investigation.claims import checked_claims
+from lg_sotf.agents.investigation.executor import InvestigationRun, SkillInvestigator
 from lg_sotf.agents.triage.base import INJECTION_SIGNAL, agent_refusal, injection_suspected, source_environment
 from lg_sotf.domain.indicators import Indicator, extract_indicators
 from lg_sotf.domain.phishing import (
@@ -73,10 +77,11 @@ from lg_sotf.domain.phishing import (
     evidence_from_triage,
 )
 from lg_sotf.domain.routing import RoutingThresholds
-from lg_sotf.llm.registry import register_prompt
+from lg_sotf.llm.registry import PromptTemplate, register_prompt
 from lg_sotf.llm.schema import clipped_list, clipped_str, lenient_literal
 from lg_sotf.llm.trace import observe
 from lg_sotf.models.alert import model_view
+from lg_sotf.observability.logging import get_logger, log_failure
 from lg_sotf.security.redaction import redact_text
 from lg_sotf.tools.enrichment import (
     EnrichmentResult,
@@ -87,9 +92,18 @@ from lg_sotf.tools.enrichment import (
     public_url,
 )
 from lg_sotf.tools.enrichment.tools import HISTORY_TOOL, enrichment_tools
+from lg_sotf.tools.wazuh.tools import Backends, register_wazuh_tools
 
 if TYPE_CHECKING:
-    from lg_sotf.core.state import AnalysisDigest, AnalysisSummary, LlmRefusal, ToolObservation
+    from lg_sotf.core.state import (
+        AnalysisDigest,
+        AnalysisSummary,
+        InvestigationRecord,
+        LlmRefusal,
+        ToolObservation,
+    )
+
+log = get_logger(__name__)
 
 SEVERITY_BOOST = {"critical": 25, "high": 20, "medium": 10, "low": 0, "info": -10}
 # Classic backdoor/C2 listener ports (8080 is ordinary proxy/alt-HTTP traffic, not evidence).
@@ -149,6 +163,24 @@ class AnalysisVerdict(BaseModel):
 VERDICT_PROMPT = register_prompt("analysis.verdict", system=SYSTEM_PROMPT, task=VERDICT_TASK, schema=AnalysisVerdict)
 
 
+class CitedVerdict(AnalysisVerdict):
+    """The deep-tier verdict of an alert that has evidence: the verdict, and the claims it rests on."""
+
+    claims: Claims
+
+
+# Used only when the investigation executor collected facts for the alert (AI-E3.3): the same instructions
+# plus the citation task. Without evidence the template above, its hash and the prompt are unchanged.
+CITED_VERDICT_PROMPT = register_prompt(
+    "analysis.verdict_cited", system=SYSTEM_PROMPT, task=f"{VERDICT_TASK} {CITE_TASK}", schema=CitedVerdict
+)
+_CITED_VERDICT = cast("PromptTemplate[AnalysisVerdict]", CITED_VERDICT_PROMPT)
+#: What of an investigation's record the graph state and the node's timeline event carry (counts and codes).
+INVESTIGATION_DIGEST_KEYS = (
+    "status", "reason", "skill", "skill_version", "stop_reason", "lookups", "facts", "empty", "failed", "skipped",
+)
+
+
 @dataclass
 class AnalysisResult:
     threat_score: int
@@ -171,6 +203,9 @@ class AnalysisResult:
     history: List[Dict[str, Any]] = field(default_factory=list)
     reasoning: List[str] = field(default_factory=list)
     notes: List[str] = field(default_factory=list)
+    investigation: Optional[Dict[str, Any]] = None
+    """What the investigation executor did for this alert and the model's checked claims
+    (:func:`investigation_record`); ``None`` when no investigation applies (today's path)."""
 
     @property
     def simulated_evidence(self) -> bool:
@@ -198,17 +233,25 @@ class AnalysisResult:
         }
         if self.llm_refusal is not None:
             out["llm_refusal"] = cast("LlmRefusal", self.llm_refusal)
+        if self.investigation is not None:
+            small = {key: self.investigation.get(key) for key in INVESTIGATION_DIGEST_KEYS}
+            claims = self.investigation.get("claims") or []
+            small.update(claim_count=len(claims), citation_findings=sum(len(claim["findings"]) for claim in claims))
+            out["investigation"] = cast("InvestigationRecord", small)
         return out
 
     def summary(self) -> AnalysisSummary:
         """For ``alerts.summary.analysis``: the digest plus the evidence behind it."""
-        return {
+        out: AnalysisSummary = {
             **self.digest(),
             "threat_indicators": self.threat_indicators,
             "tools": cast("List[ToolObservation]", self.observations),
             "history": self.history,
             "reasoning": self.reasoning,
         }
+        if self.investigation is not None:
+            out["investigation"] = cast("InvestigationRecord", self.investigation)
+        return out
 
 
 def _raw(alert: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -485,6 +528,25 @@ def _prompt_block(
     return block
 
 
+async def investigation_record(
+    ctx: AgentContext, investigation: Optional[InvestigationRun], final: Optional[BaseModel]
+) -> Optional[Dict[str, Any]]:
+    """What ``alerts.summary.analysis.investigation`` stores: what the executor did and, when the model was
+    shown the evidence, its claims with their citations checked against the run's ledger. ``None`` without an
+    investigation. A check that cannot be made (the ledger cannot be read) leaves the claims out: findings
+    are a record, and never fail the analysis."""
+    if investigation is None:
+        return None
+    record = investigation.record()
+    claims = getattr(final, "claims", None) if investigation.context is not None else None
+    try:
+        record["claims"] = await checked_claims(ctx, claims or [])
+    except Exception as exc:  # noqa: BLE001 - the citation check never fails the alert's run
+        log_failure(log, "analysis.citation_check_failed", exc, level="warning", error_type=type(exc).__name__)
+        record["claims"] = []
+    return record
+
+
 def _assemble_result(
     final: Optional[Union[InvestigationStep, AnalysisVerdict]],
     refusal: Optional[LLMResult[Any]],
@@ -551,13 +613,22 @@ class AnalysisAgent(BaseAgent):
         config: Optional[Mapping[str, Any]] = None,
         *,
         enrichment: Optional[EnrichmentService] = None,
+        evidence: Optional[Backends] = None,
         **kwargs: Any,
     ) -> None:
+        """``evidence`` resolves where the Wazuh evidence tools read for a run (the tenant's indexer, or a
+        dataset's telemetry). With it the tools are registered and the investigation executor runs before the
+        deep model for the alerts it applies to; without it there is no harness and nothing changes."""
         super().__init__(config, **kwargs)
         self.enrichment = enrichment or EnrichmentService.from_settings(self.settings)
         # Leave the rest of the node budget for the final writes and a margin for one slow call.
         budget_share = float(self.get_config("time_budget_share", 0.6))
         self.tools = enrichment_tools(self.enrichment)
+        self.evidence = evidence
+        self.investigator: Optional[SkillInvestigator] = None
+        if evidence is not None:
+            register_wazuh_tools(self.tools, evidence)
+            self.investigator = SkillInvestigator(self.tools, self.settings)
         self.reasoner = ReActReasoner(
             self.tools,
             max_steps=int(self.get_config("max_iterations", 5)),
@@ -641,7 +712,12 @@ class AnalysisAgent(BaseAgent):
             candidates=candidates,
             analyst_notes=analyst_notes,
         )
-        run = AnalysisRunContext(agent_ctx=ctx, alert=alert, candidates=candidates, alert_block=alert_block)
+        # Evidence first, by code (AI-E3.3): None when no investigation applies. It never raises.
+        investigation = await self.investigator.investigate(ctx, alert) if self.investigator is not None else None
+        run = AnalysisRunContext(
+            agent_ctx=ctx, alert=alert, candidates=candidates, alert_block=alert_block,
+            evidence=investigation.context if investigation is not None else None,
+        )
         final, refusal = await self._reason(ctx, run)
 
         indicators = rule_threat_indicators(
@@ -668,6 +744,7 @@ class AnalysisAgent(BaseAgent):
             "history": history_stored,
             "reasoning": run.thoughts,
             "notes": run.notes,
+            "investigation": await investigation_record(ctx, investigation, final),
         }
         return _assemble_result(
             final, refusal, upstream_refusal(triage, correlation), rule_score, common, agent=self.name
@@ -687,8 +764,9 @@ class AnalysisAgent(BaseAgent):
         llm: LLMResult[AnalysisVerdict] = await self.call_llm(
             ctx,
             tier="deep",
-            prompt=VERDICT_PROMPT,
+            prompt=VERDICT_PROMPT if run.evidence is None else _CITED_VERDICT,
             untrusted=run.alert_block,
+            context=None if run.evidence is None else {"evidence": run.evidence},
             enabled=self.enable_llm,
         )
         run.notes.extend(llm.notes)
@@ -704,3 +782,6 @@ class AnalysisAgent(BaseAgent):
 
     async def cleanup(self) -> None:
         await self.enrichment.aclose()
+        close = getattr(self.evidence, "aclose", None)
+        if close is not None:  # the resolver of the tenants' indexers keeps their clients open
+            await close()

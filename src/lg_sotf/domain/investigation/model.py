@@ -33,6 +33,11 @@ ClaimCheck = Literal["supported", "unsupported", "rejected"]
 ObservationOutcome = Literal["success", "empty", "failed"]
 StepActor = Literal["code", "model", "check", "policy", "person"]
 WrittenBy = Literal["model", "rules"]
+CitationFindingCode = Literal["unknown_fact", "altered_fact", "not_benign_evidence", "incomplete_fact", "no_citation"]
+EvidenceRunStatus = Literal["ran", "degraded", "not_run"]
+EvidenceLookupOutcome = Literal["success", "empty", "failed", "skipped"]
+IndicatorState = Literal["true", "false", "unknown"]
+BudgetKind = Literal["steps", "wall_s", "tokens", "usd"]
 
 
 def _enum(values: Any) -> Dict[str, Any]:
@@ -97,16 +102,38 @@ class InvestigationSummary(_Model):
     )
 
 
+class ClaimFinding(_Model):
+    """What code found wrong with one citation of a claim, against the fact ledger of the claim's own run."""
+
+    code: CitationFindingCode
+    sentence: str = Field(description="The same in plain words (fixed text).")
+    cited: str = Field(
+        description="The id the model cited: data, at most 128 characters. Empty when the claim cites nothing."
+    )
+
+
 class InvestigationClaim(_Model):
     id: str
     text: str = Field(description="A model claim in the model's words (data), or the fixed sentence of a rule claim.")
     written_by: WrittenBy
     direction: Direction = Field(description="What the claim points to.")
-    observation_ids: List[str] = Field(description="The observations the claim rests on.")
+    observation_ids: List[str] = Field(
+        description=(
+            "The observations the claim rests on. For a claim the deep model cited: the ids it named that the "
+            "run's fact ledger holds; an id the ledger did not record is only in findings."
+        )
+    )
     check: ClaimCheck = Field(
-        description="Today: supported when a lookup backs the claim, otherwise unsupported; rejected comes with the checker."
+        description=(
+            "supported: a lookup backs the claim, or every observation the model cited exists and can carry "
+            "it. unsupported: it names no observation, or a citation has a finding. rejected comes with the checker."
+        )
     )
     check_reason: Optional[str] = Field(default=None, description="Why the claim is not supported, in plain words.")
+    findings: List[ClaimFinding] = Field(
+        default_factory=list,
+        description="A cited claim's citation findings (code checked them; nothing is blocked on them yet).",
+    )
 
 
 class ObservationMark(_Model):
@@ -157,6 +184,59 @@ class InvestigationObservation(_Model):
             "returned. Decided by code, never by a model, and never true for an empty or failed observation."
         ),
     )
+
+
+class EvidenceLookup(_Model):
+    """One lookup of the playbook: what became of it and the observations it recorded."""
+
+    evidence_id: str = Field(description="The playbook's name for the lookup; its observations are <evidence_id>:<n>.")
+    tool: str
+    outcome: EvidenceLookupOutcome = Field(
+        description="success, empty or failed: recorded as observations. skipped: no call was made (see reason)."
+    )
+    reason: Optional[str] = Field(default=None, description="Why it failed or was skipped: a fixed code.")
+    observation_ids: List[str] = Field(default_factory=list)
+    complete: bool = Field(default=False, description="Every observation of the lookup is complete.")
+    reused: bool = Field(
+        default=False, description="A resumed or retried run found the call on its ledger and did not send it again."
+    )
+
+
+class EvidenceBudget(_Model):
+    kind: BudgetKind = Field(description="steps: lookups. wall_s: seconds. tokens: model tokens. usd: US dollars.")
+    used: float
+    limit: float
+
+
+class EvidenceIndicator(_Model):
+    """A malicious indicator the playbook declares, over the run's observations. Reported only: nothing is
+    blocked on it yet."""
+
+    id: str
+    state: IndicatorState = Field(description="unknown: the observations cannot show it either way.")
+
+
+class EvidenceRun(_Model):
+    """The evidence lookups made for the alert before the deeper analysis, or why none ran."""
+
+    status: EvidenceRunStatus = Field(
+        description=(
+            "ran: the lookups finished and the deep model was shown their observations. degraded: lookups "
+            "started but the analysis ran without them (see reason). not_run: no lookup was made."
+        )
+    )
+    reason: Optional[InvestigationReason] = Field(
+        default=None, description="degraded or not_run: why, as a code and a fixed sentence. Null when the lookups ran."
+    )
+    playbook_id: Optional[str] = Field(default=None, description="The playbook (skill) that chose the lookups.")
+    playbook_version: Optional[str] = None
+    run_id: Optional[str] = Field(default=None, description="The investigation run whose fact ledger holds the observations.")
+    stop_reason: Optional[str] = Field(
+        default=None, description="finished, a spent budget (budget_steps, budget_wall, ...), circuit_open or error."
+    )
+    lookups: List[EvidenceLookup] = Field(default_factory=list)
+    budgets: List[EvidenceBudget] = Field(default_factory=list, description="What the lookups used of each limit.")
+    indicators: List[EvidenceIndicator] = Field(default_factory=list)
 
 
 class NotCheckedItem(_Model):
@@ -276,6 +356,10 @@ class Investigation(_Model):
             "failed or found nothing is still named under not_established."
         ),
     )
+    evidence_run: EvidenceRun = Field(
+        default=EvidenceRun(status="not_run"),
+        description="The evidence lookups of the alert's newest analysis: what ran, what it used, or why none ran.",
+    )
     not_established: NotEstablished
     steps: List[PlainStep]
     track_record: Optional[OutcomeTrackRecord]
@@ -286,8 +370,13 @@ class Investigation(_Model):
 __all__ = [
     "SCHEMA_VERSION",
     "ClaimCheck",
+    "ClaimFinding",
     "ClosedByKind",
     "Direction",
+    "EvidenceBudget",
+    "EvidenceIndicator",
+    "EvidenceLookup",
+    "EvidenceRun",
     "Investigation",
     "InvestigationClaim",
     "InvestigationClosedBy",

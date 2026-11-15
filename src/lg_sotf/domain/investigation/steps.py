@@ -103,6 +103,25 @@ def _node_step(node: str, data: Mapping[str, Any]) -> Optional[words.Step]:
     return base
 
 
+def evidence_step(event: EventFacts) -> Optional[PlainStep]:
+    """The evidence lookups the analysis node made before the deep model (AI-E3.3), from the counts and
+    codes on its timeline event: what ran, or why the analysis went on without them. ``None`` for an
+    analysis without an investigation."""
+    record = event.data.get("investigation") if event.event_type == "node.completed" and event.node == "analysis" else None
+    if not isinstance(record, Mapping):
+        return None
+    reason = record.get("reason")
+    if record.get("status") == "completed" and reason is None:
+        text = words.EVIDENCE_STEP.text
+    else:
+        text = words.EVIDENCE_REASONS.get(str(reason), words.UNKNOWN_EVIDENCE_REASON)
+    produced = _counted(
+        record, (("lookups", "lookups"), ("facts", "facts"), ("empty", "found nothing"), ("failed", "failed"),
+                 ("skipped", "skipped"), ("citation_findings", "citation findings")),
+    )
+    return PlainStep(ts=event.ts, actor=words.EVIDENCE_STEP.actor, text=text, produced=produced)
+
+
 def plain_step(event: EventFacts) -> Optional[PlainStep]:
     """One timeline event as a plain step; ``None`` for an event this release has no sentence for."""
     if event.event_type == "node.completed":
@@ -126,7 +145,7 @@ def steps(alert: AlertFacts, events: Sequence[EventFacts], *, hidden: bool = Fal
         received = words.EVENT_STEPS[INGESTED]
         out.append(PlainStep(ts=alert.ingested_at, actor=received.actor, text=received.text))
     for event in shown:
+        before = evidence_step(event)  # the lookups ran inside the analysis step, before the model
         step = plain_step(event)
-        if step is not None:
-            out.append(step)
+        out.extend(found for found in (before, step) if found is not None)
     return out[:MAX_STEPS]

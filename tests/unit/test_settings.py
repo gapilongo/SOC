@@ -304,3 +304,22 @@ def test_config_file_named_in_dotenv_is_loaded(tmp_path: Path, monkeypatch: pyte
     s = Settings()
     assert s.routing == {"marker": 1}
     assert s.llm.provider == "fake"
+
+
+def test_the_synthetic_evidence_backend_is_refused_in_production() -> None:
+    """AI-E3.3: the event store answers from a dataset's synthetic telemetry; a production install reads indexers."""
+    base = {
+        "environment": "production",
+        "auth": {"jwt_secret": "x" * 40},
+        "security": {"encryption_keys": "k", "indicator_hmac_key": "h" * 32},
+        "database": {"url": "postgresql://u:strong@db/x"},
+        "llm": {"provider": "fake", "allow_fake": True},
+    }
+    assert Settings(_env_file=None, **base).production_problems() == []
+    store = {"evidence_backend": "event_store", "event_store_files": ["corpus_v1.jsonl.gz"]}
+    problems = Settings(_env_file=None, investigation=store, **base).production_problems()
+    assert problems == ["investigation.evidence_backend=event_store answers from synthetic telemetry: use indexer"]
+    with pytest.raises(ValueError, match="needs investigation.event_store_files"):
+        Settings(_env_file=None, environment="test", investigation={"evidence_backend": "event_store"})
+    with pytest.raises(ValueError):
+        Settings(_env_file=None, environment="test", investigation={"evidence_backend": "indexer", "fallback": "event_store"})

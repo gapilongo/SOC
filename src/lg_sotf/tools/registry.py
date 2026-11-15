@@ -233,6 +233,9 @@ class ToolSpec(BaseModel):
     """The only ``@egress`` boundary the tool may cross (required unless ``egress`` is ``platform``)."""
     trace_name: Optional[str] = Field(default=None, max_length=64)
     """The name traces and cassettes record (default ``name``): kept by tools older than the registry."""
+    price_usd: float = Field(default=0.0, ge=0.0, le=10.0)
+    """What one call costs in US dollars (a metered third-party lookup); 0: free. The registry charges
+    nothing itself: an investigation counts this against its money budget before it calls the tool."""
 
     @model_validator(mode="after")
     def _coherent(self) -> ToolSpec:

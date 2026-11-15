@@ -18,7 +18,7 @@ import re
 import types
 import typing
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple, Type, Union
 
@@ -60,6 +60,7 @@ _MID_CHOICES = {
 }
 _SEVERITY_RE = re.compile(r"severity\W{0,4}(critical|high|medium|low|informational|info)\b")
 _DATA_RE = re.compile(r"<(alert_data|tool_data)>(.*?)</\1>", re.DOTALL)
+_FACT_ID_RE = re.compile(r'(?<!\\)"id":"([a-z][a-z0-9_.-]{0,63}:(?:0|[1-9][0-9]{0,5}))"')
 _EPOCH = datetime(2024, 1, 1, tzinfo=UTC)
 _UUID_NS = uuid.UUID("5b0d7c1e-8a52-4a55-9a7c-2f3b8c0f4d11")
 
@@ -81,6 +82,8 @@ class Signals:
     confidence: int
     malicious: Tuple[str, ...]
     benign: Tuple[str, ...]
+    fact_ids: Tuple[str, ...] = ()
+    """The ids of the evidence observations in ``tool_data``: what a ``cites`` field is filled with."""
 
     @property
     def band(self) -> str:
@@ -126,6 +129,17 @@ def untrusted_text(messages: Sequence[BaseMessage]) -> str:
     human = "\n".join(_message_text(m) for m in messages if isinstance(m, HumanMessage))
     blocks = [body for _tag, body in _DATA_RE.findall(human)]
     return "\n".join(blocks) if blocks else human
+
+
+def read_signals(messages: Sequence[BaseMessage]) -> Signals:
+    """The heuristic reading of a prompt, with the ids of the evidence observations its ``tool_data`` lists.
+
+    An id is read only where the prompt builder wrote one (``"id":"host:0"``); the same characters inside a
+    string an attacker chose are escaped there and do not match.
+    """
+    human = "\n".join(_message_text(m) for m in messages if isinstance(m, HumanMessage))
+    listed = "\n".join(body for tag, body in _DATA_RE.findall(human) if tag == "tool_data")
+    return replace(analyse_text(untrusted_text(messages)), fact_ids=tuple(dict.fromkeys(_FACT_ID_RE.findall(listed))))
 
 
 # --------------------------------------------------------------------------
@@ -237,6 +251,8 @@ def _text(name: str, b: _Bounds, sig: Signals) -> str:
 
 
 def _strings(name: str, b: _Bounds, sig: Signals) -> List[str]:
+    if name == "cites":  # citations: the evidence ids the prompt listed, never an invented one
+        return list(sig.fact_ids)[: b.max_len]
     source = sig.benign if any(h in name for h in ("benign", "fp", "false")) else sig.malicious
     items = list(source)
     if b.min_len is not None and len(items) < b.min_len:
@@ -283,7 +299,8 @@ def _value(name: str, annotation: Any, field: Optional[FieldInfo], sig: Signals,
         if item_type is str:
             items: List[Any] = _strings(name, b, sig)
         else:
-            count = max(b.min_len or 0, 1 if (isinstance(item_type, type) and issubclass(item_type, BaseModel) and depth < 3 and sig.malicious) else 0)
+            wanted = bool(sig.malicious) or (name == "claims" and bool(sig.fact_ids))  # a claim when there is evidence to cite
+            count = max(b.min_len or 0, 1 if (isinstance(item_type, type) and issubclass(item_type, BaseModel) and depth < 3 and wanted) else 0)
             if b.max_len is not None:
                 count = min(count, b.max_len)
             items = [_value(name, item_type, None, sig, depth + 1) for _ in range(count)]
@@ -397,7 +414,7 @@ class FakeChatModel(BaseChatModel):
 
         def _run(input_: LanguageModelInput, config: Optional[RunnableConfig] = None) -> Any:
             messages = self._convert_input(input_).to_messages()
-            sig = analyse_text(untrusted_text(messages))
+            sig = read_signals(messages)
             parsed: Optional[BaseModel] = None
             error: Optional[BaseException] = None
             try:
@@ -548,7 +565,7 @@ class ScriptedChatModel(FakeChatModel):
             else:
                 try:
                     if item is None:
-                        parsed = synthesize(model_schema, analyse_text(untrusted_text(messages)))
+                        parsed = synthesize(model_schema, read_signals(messages))
                     else:
                         data = item.model_dump() if isinstance(item, BaseModel) else dict(item)
                         parsed = model_schema.model_validate(data)

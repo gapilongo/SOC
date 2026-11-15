@@ -2109,6 +2109,48 @@ export interface components {
                     history?: {
                         [key: string]: unknown;
                     }[];
+                    /** @description What the investigation executor did for an alert (AI-E3.3). Absent when no investigation applies. */
+                    investigation?: {
+                        budget?: {
+                            [key: string]: {
+                                [key: string]: number;
+                            };
+                        };
+                        citation_findings?: number;
+                        claim_count?: number;
+                        claims?: {
+                            cites?: string[];
+                            findings?: {
+                                code?: string;
+                                fact_id?: string;
+                            }[];
+                            supports?: string;
+                            text?: string;
+                        }[];
+                        empty?: number;
+                        facts?: number;
+                        failed?: number;
+                        indicators?: {
+                            [key: string]: string;
+                        };
+                        lookups?: number;
+                        reason?: string | null;
+                        run_id?: string | null;
+                        skill?: string;
+                        skill_version?: string;
+                        skipped?: number;
+                        status?: string;
+                        steps?: {
+                            complete?: boolean;
+                            evidence_id?: string;
+                            fact_ids?: string[];
+                            outcome?: string;
+                            reason?: string | null;
+                            reused?: boolean;
+                            tool?: string;
+                        }[];
+                        stop_reason?: string;
+                    };
                     llm_calls?: number;
                     /** @description ``llm_refusal`` in an agent digest: the model declined to assess the alert. */
                     llm_refusal?: {
@@ -2364,6 +2406,48 @@ export interface components {
                     history?: {
                         [key: string]: unknown;
                     }[];
+                    /** @description What the investigation executor did for an alert (AI-E3.3). Absent when no investigation applies. */
+                    investigation?: {
+                        budget?: {
+                            [key: string]: {
+                                [key: string]: number;
+                            };
+                        };
+                        citation_findings?: number;
+                        claim_count?: number;
+                        claims?: {
+                            cites?: string[];
+                            findings?: {
+                                code?: string;
+                                fact_id?: string;
+                            }[];
+                            supports?: string;
+                            text?: string;
+                        }[];
+                        empty?: number;
+                        facts?: number;
+                        failed?: number;
+                        indicators?: {
+                            [key: string]: string;
+                        };
+                        lookups?: number;
+                        reason?: string | null;
+                        run_id?: string | null;
+                        skill?: string;
+                        skill_version?: string;
+                        skipped?: number;
+                        status?: string;
+                        steps?: {
+                            complete?: boolean;
+                            evidence_id?: string;
+                            fact_ids?: string[];
+                            outcome?: string;
+                            reason?: string | null;
+                            reused?: boolean;
+                            tool?: string;
+                        }[];
+                        stop_reason?: string;
+                    };
                     llm_calls?: number;
                     /** @description ``llm_refusal`` in an agent digest: the model declined to assess the alert. */
                     llm_refusal?: {
@@ -3739,6 +3823,27 @@ export interface components {
             /** Thumbprint Sha256 */
             thumbprint_sha256: string;
         };
+        /**
+         * ClaimFinding
+         * @description What code found wrong with one citation of a claim, against the fact ledger of the claim's own run.
+         */
+        ClaimFinding: {
+            /**
+             * Cited
+             * @description The id the model cited: data, at most 128 characters. Empty when the claim cites nothing.
+             */
+            cited: string;
+            /**
+             * Code
+             * @enum {string}
+             */
+            code: "unknown_fact" | "altered_fact" | "not_benign_evidence" | "incomplete_fact" | "no_citation";
+            /**
+             * Sentence
+             * @description The same in plain words (fixed text).
+             */
+            sentence: string;
+        };
         /** ClaimIn */
         ClaimIn: {
             /** Version */
@@ -4235,6 +4340,34 @@ export interface components {
             /** Version */
             version: number;
         };
+        /** EvidenceBudget */
+        EvidenceBudget: {
+            /**
+             * Kind
+             * @description steps: lookups. wall_s: seconds. tokens: model tokens. usd: US dollars.
+             * @enum {string}
+             */
+            kind: "steps" | "wall_s" | "tokens" | "usd";
+            /** Limit */
+            limit: number;
+            /** Used */
+            used: number;
+        };
+        /**
+         * EvidenceIndicator
+         * @description A malicious indicator the playbook declares, over the run's observations. Reported only: nothing is
+         *     blocked on it yet.
+         */
+        EvidenceIndicator: {
+            /** Id */
+            id: string;
+            /**
+             * State
+             * @description unknown: the observations cannot show it either way.
+             * @enum {string}
+             */
+            state: "true" | "false" | "unknown";
+        };
         /** EvidenceIntegrityOut */
         EvidenceIntegrityOut: {
             /**
@@ -4251,6 +4384,44 @@ export interface components {
             signature?: {
                 [key: string]: string;
             } | null;
+        };
+        /**
+         * EvidenceLookup
+         * @description One lookup of the playbook: what became of it and the observations it recorded.
+         */
+        EvidenceLookup: {
+            /**
+             * Complete
+             * @description Every observation of the lookup is complete.
+             * @default false
+             */
+            complete: boolean;
+            /**
+             * Evidence Id
+             * @description The playbook's name for the lookup; its observations are <evidence_id>:<n>.
+             */
+            evidence_id: string;
+            /** Observation Ids */
+            observation_ids: string[];
+            /**
+             * Outcome
+             * @description success, empty or failed: recorded as observations. skipped: no call was made (see reason).
+             * @enum {string}
+             */
+            outcome: "success" | "empty" | "failed" | "skipped";
+            /**
+             * Reason
+             * @description Why it failed or was skipped: a fixed code.
+             */
+            reason: string | null;
+            /**
+             * Reused
+             * @description A resumed or retried run found the call on its ledger and did not send it again.
+             * @default false
+             */
+            reused: boolean;
+            /** Tool */
+            tool: string;
         };
         /**
          * EvidencePackOut
@@ -4341,6 +4512,46 @@ export interface components {
             }[];
             /** Version */
             version: number;
+        };
+        /**
+         * EvidenceRun
+         * @description The evidence lookups made for the alert before the deeper analysis, or why none ran.
+         */
+        EvidenceRun: {
+            /**
+             * Budgets
+             * @description What the lookups used of each limit.
+             */
+            budgets: components["schemas"]["EvidenceBudget"][];
+            /** Indicators */
+            indicators: components["schemas"]["EvidenceIndicator"][];
+            /** Lookups */
+            lookups: components["schemas"]["EvidenceLookup"][];
+            /**
+             * Playbook Id
+             * @description The playbook (skill) that chose the lookups.
+             */
+            playbook_id: string | null;
+            /** Playbook Version */
+            playbook_version: string | null;
+            /** @description degraded or not_run: why, as a code and a fixed sentence. Null when the lookups ran. */
+            reason: components["schemas"]["InvestigationReason"] | null;
+            /**
+             * Run Id
+             * @description The investigation run whose fact ledger holds the observations.
+             */
+            run_id: string | null;
+            /**
+             * Status
+             * @description ran: the lookups finished and the deep model was shown their observations. degraded: lookups started but the analysis ran without them (see reason). not_run: no lookup was made.
+             * @enum {string}
+             */
+            status: "ran" | "degraded" | "not_run";
+            /**
+             * Stop Reason
+             * @description finished, a spent budget (budget_steps, budget_wall, ...), circuit_open or error.
+             */
+            stop_reason: string | null;
         };
         /** FeedbackIn */
         FeedbackIn: {
@@ -4779,6 +4990,16 @@ export interface components {
             /** Claims */
             claims: components["schemas"]["InvestigationClaim"][];
             /**
+             * @description The evidence lookups of the alert's newest analysis: what ran, what it used, or why none ran.
+             * @default {
+             *       "budgets": [],
+             *       "indicators": [],
+             *       "lookups": [],
+             *       "status": "not_run"
+             *     }
+             */
+            evidence_run: components["schemas"]["EvidenceRun"];
+            /**
              * Generated At
              * Format: date-time
              */
@@ -4825,7 +5046,7 @@ export interface components {
         InvestigationClaim: {
             /**
              * Check
-             * @description Today: supported when a lookup backs the claim, otherwise unsupported; rejected comes with the checker.
+             * @description supported: a lookup backs the claim, or every observation the model cited exists and can carry it. unsupported: it names no observation, or a citation has a finding. rejected comes with the checker.
              * @enum {string}
              */
             check: "supported" | "unsupported" | "rejected";
@@ -4840,11 +5061,16 @@ export interface components {
              * @enum {string}
              */
             direction: "malicious" | "benign";
+            /**
+             * Findings
+             * @description A cited claim's citation findings (code checked them; nothing is blocked on them yet).
+             */
+            findings: components["schemas"]["ClaimFinding"][];
             /** Id */
             id: string;
             /**
              * Observation Ids
-             * @description The observations the claim rests on.
+             * @description The observations the claim rests on. For a claim the deep model cited: the ids it named that the run's fact ledger holds; an id the ledger did not record is only in findings.
              */
             observation_ids: string[];
             /**

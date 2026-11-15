@@ -10,6 +10,7 @@ import pytest
 from lg_sotf.agents.analysis.base import AnalysisResult
 from lg_sotf.agents.analysis.react import Candidate, Observation
 from lg_sotf.agents.correlation.base import CorrelationResult
+from lg_sotf.agents.investigation.executor import InvestigationRun, StepRecord
 from lg_sotf.agents.triage.base import TriageResult
 from lg_sotf.core.graph import WorkflowState, build_graph
 from lg_sotf.core.nodes import _escalation_summary
@@ -19,10 +20,14 @@ from lg_sotf.core.state import (
     AnalysisSummary,
     AnalystInput,
     ApprovalInput,
+    CitationFinding,
     CorrelationDigest,
     DecisionDigest,
     EscalationSummary,
     GateDigest,
+    InvestigationClaimRecord,
+    InvestigationRecord,
+    InvestigationStepRecord,
     LlmRefusal,
     PhishingDigest,
     PlanDigest,
@@ -110,9 +115,29 @@ def test_correlation_digest_keys_are_declared() -> None:
     assert_declared(correlation(llm_refusal=dict(REFUSAL)).digest(), CorrelationDigest, complete=True)
 
 
+def investigated() -> Dict[str, Any]:
+    """What the analysis stores of an investigation: the executor's record and the model's checked claims."""
+    run = InvestigationRun(
+        "wazuh.default", "1.0.0", "inv_" + "0" * 32, steps=[StepRecord("host", "wazuh.host_activity", "success")],
+        budget={"steps": {"used": 1, "limit": 8}}, indicators={"high_level_alert_on_host": "false"}, facts=1,
+    )
+    claim = {"text": "t", "supports": "benign", "cites": ["host:0"], "findings": [{"fact_id": "x:1", "code": "unknown_fact"}]}
+    return {**run.record(), "claims": [claim]}
+
+
 def test_analysis_digest_keys_are_declared() -> None:
     assert_declared(analysis().digest(), AnalysisDigest, complete=False)
-    assert_declared(analysis(llm_refusal=dict(REFUSAL)).digest(), AnalysisDigest, complete=True)
+    full = analysis(llm_refusal=dict(REFUSAL), investigation=investigated())
+    assert_declared(full.digest(), AnalysisDigest, complete=True)
+    # The investigation record: the digest carries counts and codes, the summary the steps, budgets and claims.
+    digest, summary = full.digest()["investigation"], full.summary()["investigation"]
+    assert set(digest) | set(summary) == declared(InvestigationRecord)
+    assert not {"steps", "claims", "budget", "indicators", "run_id"} & set(digest)
+    assert (digest["claim_count"], digest["citation_findings"]) == (1, 1)
+    assert set(summary["steps"][0]) == declared(InvestigationStepRecord)
+    assert set(summary["claims"][0]) == declared(InvestigationClaimRecord)
+    assert set(summary["claims"][0]["findings"][0]) == declared(CitationFinding)
+    assert "investigation" not in analysis().digest() and "investigation" not in analysis().summary()
 
 
 def test_phishing_digest_keys_are_declared() -> None:
@@ -136,7 +161,7 @@ def test_analysis_summary_and_tool_observation_keys_are_declared() -> None:
     )
     tool = observation.digest()
     assert_declared(tool, ToolObservation, complete=True)
-    summary = analysis(llm_refusal=dict(REFUSAL), observations=[dict(tool)]).summary()
+    summary = analysis(llm_refusal=dict(REFUSAL), observations=[dict(tool)], investigation=investigated()).summary()
     assert_declared(summary, AnalysisSummary, complete=True)
 
 

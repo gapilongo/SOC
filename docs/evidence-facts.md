@@ -227,8 +227,8 @@ does not know rather than reject the fact.
 
 Every investigation run has a ledger: the list of what its tool calls
 returned, in order. It is the only place a fact gets the `id` a verdict
-cites. The ledger is in place; the investigation that writes to it and lets
-the model cite facts comes in a later release.
+cites. The [investigation executor](#the-investigation-executor) writes to
+it.
 
 - **One ledger per investigation run, not per alert.** A run gets an id
   (`inv_` and 32 hex digits) when the workflow starts on an alert, and keeps
@@ -305,6 +305,109 @@ For engineers: the rules are `lg_sotf.domain.ledger` (pure), the store is
 `facts`). Use `FactLedger.for_run(ctx)`, one per run; it raises for a run
 without an investigation run id. Nothing else may build a ledger entry or
 write the table (`tests/unit/architecture/test_fact_ledger.py`).
+
+## The investigation executor
+
+For a Wazuh alert of a tenant that switched the evidence tools on, code looks
+up facts in the tenant's own Wazuh data before the deep analysis, and the
+deep model is shown them and asked which ones its claims rest on. Every other
+alert is analysed exactly as before.
+
+**Turning it on.** A tenant admin sets `tools.wazuh_indexer.enabled: true`
+(`PATCH /api/v1/tenant/settings`). It is off until then: an absent setting is
+off. The alert must come from a Wazuh source; other sources have no evidence
+tools yet.
+
+**What runs.** The default playbook, `wazuh.default`
+(`src/lg_sotf/agents/investigation/skills/wazuh.default.yaml`, a reviewed
+file validated by a strict model; a file that uses a field this release does
+not implement does not load, and the process does not start):
+
+| Lookup | Tool | Runs when the alert carries |
+|---|---|---|
+| `host` | `wazuh.host_activity`: the host's alerts in the hour up to the alert | the agent's name (every Wazuh alert) |
+| `prevalence` | `wazuh.prevalence`: on how many agents the object was seen over 30 days | a file hash (file integrity), a service's binary path, or a process image |
+| `logons_user` | `wazuh.logon_fanout`: every logon of the account over the day before | an account name (Windows logon events, sshd) |
+| `logons_source` | `wazuh.logon_fanout`: every logon from the address over the day before | a source address |
+
+The values come from fields the detector wrote (`agent.name`, the decoded
+event fields, `syscheck`), each parsed and checked; a value that is absent
+or not well-formed skips its lookup. Nothing comes from the alert's title or
+description, and nothing from a model: the plan is the file, in the file's
+order. The lookups run at once, without waiting for their time windows to
+close; a fact whose window had not closed says `complete: false`.
+
+Each lookup goes through the tool registry and is recorded on the run's
+[fact ledger](#the-fact-ledger) whatever its outcome. The playbook also
+declares two malicious indicators over the host's activity (an alert of a
+class only a person may close, an alert of rule level 12 or higher). They are
+evaluated to `true`, `false` or `unknown` and reported. They do not block a
+close in this release, and the host's window includes the alert itself.
+
+**Budgets.** One investigation may make 8 lookups, take 60 seconds (and never
+more than a quarter of `worker.analysis_timeout_s`), spend 20,000 tokens on
+its own model calls and $0.25. A tenant overrides these in
+`investigation.budget` (`steps`, `wall_s`, `tokens`, `usd`) up to the
+install's `investigation.tenant_max`; a higher value is cut to it. Today the
+plan is fixed, so the executor makes no model call and spends no token, and
+the Wazuh tools cost nothing: the money budget counts the price a tool
+declares in the registry (`price_usd`). After two lookups in a row without an
+answer the rest are skipped (`investigation.breaker_failures`): an indexer
+that is down costs two calls, not a retry storm.
+
+**What the model is given and asked.** When the lookups finished and
+returned at least one fact, the deep model's prompt gains the ledger's view
+(ids, outcomes, completeness, typed fields) in the untrusted `tool_data`
+block, and its instructions gain one paragraph: return the claims the
+verdict rests on, each with the ids of the observations that show it, never
+an invented id, and an empty, failed or incomplete observation shows that
+something is not known. These are two separate prompt templates
+(`analysis.verdict_cited`, `analysis.react_step_cited`); the templates used
+without evidence are unchanged. Code then checks every cited id against the
+ledger of the same run and stores the claims with the findings
+(`unknown_fact`, `not_benign_evidence`, `incomplete_fact`, `no_citation`,
+`altered_fact`). The findings are recorded and shown. They change no verdict
+and no routing in this release.
+
+**When it cannot finish.** The alert's run never fails, closes or escalates
+because of the lookups. In each case below the deep model gets today's
+prompt, and the reason is stored and shown as a step of the investigation:
+
+| Reason | What happened |
+|---|---|
+| `circuit_open` | The indexer did not answer twice in a row (unreachable, credentials refused, no Wazuh source); the rest were skipped |
+| `budget_steps`, `budget_wall`, `budget_tokens`, `budget_usd` | A budget was spent; a lookup still running when the time ran out is cut and recorded as failed |
+| `no_facts` | The lookups finished and none returned a fact |
+| `no_run_id` | The run started before investigation runs had an id (an older release) |
+| `error` | The executor itself failed |
+
+What was looked up before the stop stays on the ledger and in the view.
+
+**Resume and retry.** A lookup whose call is already on the run's ledger is
+not sent again, a failed one included. A step retried after a crash sends
+only the lookups it had not recorded, and an alert analysed again in the
+same run (an analyst asked for more) sends none.
+
+**Shadow runs** make the lookups (they read the tenant's own data and tell
+no third party) and keep the ledger in memory: nothing is written.
+
+**Where the tools read.** `investigation.evidence_backend` names it, and it
+is never guessed. `indexer` (the default): the tenant's own Wazuh indexer,
+found from the alert's source. `event_store`: a dataset's telemetry in
+memory (`investigation.event_store_files`), for evaluation and development;
+it is synthetic, is refused in staging and production, and is announced on
+the worker's standard error when it starts. See
+[evaluation.md](evaluation.md#the-investigation-harness-on-the-corpus).
+
+`GET /api/v1/alerts/{id}/investigation` shows the lookups, the budgets, the
+indicators, the cited claims and their findings under `evidence_run` and
+`claims` ([api.md](api.md)).
+
+For engineers: the executor is
+`lg_sotf.agents.investigation.executor.SkillInvestigator`, called by the
+analysis agent; the format is `lg_sotf.models.skill.SkillSpec`; the view,
+bindings and indicators are `lg_sotf.domain.skill_views` and
+`lg_sotf.domain.skills`; budgets are `lg_sotf.domain.investigation_budget`.
 
 ## For contributors
 
