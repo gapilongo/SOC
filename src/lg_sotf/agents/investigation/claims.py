@@ -11,13 +11,17 @@ act on them are AI-E3.4 and AI-E3.8a.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Protocol, Sequence
+from typing import Any, Dict, List, Optional, Protocol, Sequence
 
 from lg_sotf.agents.base import AgentContext
+from lg_sotf.agents.investigation.executor import InvestigationRun
 from lg_sotf.agents.investigation.ledger import FactLedger
 from lg_sotf.domain.ledger import check_citations
+from lg_sotf.observability.logging import get_logger, log_failure
 
-__all__ = ["CitedClaim", "checked_claims"]
+__all__ = ["CitedClaim", "checked_claims", "investigation_record"]
+
+log = get_logger(__name__)
 
 
 class CitedClaim(Protocol):
@@ -47,3 +51,22 @@ async def checked_claims(ctx: AgentContext, claims: Sequence[CitedClaim]) -> Lis
             "findings": [{"fact_id": problem.fact_id, "code": problem.code} for problem in problems],
         })
     return checked
+
+
+async def investigation_record(
+    ctx: AgentContext, investigation: Optional[InvestigationRun], final: Any
+) -> Optional[Dict[str, Any]]:
+    """What ``alerts.summary.analysis.investigation`` stores: what the executor did and, when the model was
+    shown the evidence, its claims with their citations checked against the run's ledger. ``None`` without an
+    investigation. A check that cannot be made (the ledger cannot be read) leaves the claims out: findings
+    are a record, and never fail the analysis."""
+    if investigation is None:
+        return None
+    record = investigation.record()
+    claims = getattr(final, "claims", None) if investigation.context is not None else None
+    try:
+        record["claims"] = await checked_claims(ctx, claims or [])
+    except Exception as exc:  # noqa: BLE001 - the citation check never fails the alert's run
+        log_failure(log, "investigation.citation_check_failed", exc, level="warning", error_type=type(exc).__name__)
+        record["claims"] = []
+    return record

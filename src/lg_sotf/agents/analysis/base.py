@@ -38,6 +38,15 @@ someone else's address. The benign signal (an internal, fully
 authenticated sender) lowers the rule score further so a benign model
 verdict can be corroborated.
 
+Evidence (AI-E3.3). Before the model, the investigation executor
+(``lg_sotf.agents.investigation.executor``) looks up facts for an alert whose
+source has evidence tools and whose tenant switched them on. When it returned
+facts, the model is shown the run's fact ledger as untrusted tool data and
+returns the claims its verdict rests on with the ids they cite; code checks the
+ids and the result is stored
+(:func:`lg_sotf.agents.investigation.claims.investigation_record`). Nothing here
+reads those findings: the rule assessment and the routing are unchanged.
+
 Refusals. When any model call for the alert was refused (triage,
 correlation or this agent), the verdict is ``inconclusive`` and the digest
 carries ``llm_refusal``, so routing sends the case to an analyst rather than
@@ -65,8 +74,8 @@ from lg_sotf.agents.analysis.react import (
     ReActReasoner,
 )
 from lg_sotf.agents.base import AccountedRun, AgentContext, BaseAgent, LLMResult
-from lg_sotf.agents.investigation.claims import checked_claims
-from lg_sotf.agents.investigation.executor import InvestigationRun, SkillInvestigator
+from lg_sotf.agents.investigation.claims import investigation_record
+from lg_sotf.agents.investigation.executor import SkillInvestigator
 from lg_sotf.agents.triage.base import INJECTION_SIGNAL, agent_refusal, injection_suspected, source_environment
 from lg_sotf.domain.indicators import Indicator, extract_indicators
 from lg_sotf.domain.phishing import (
@@ -81,7 +90,6 @@ from lg_sotf.llm.registry import PromptTemplate, register_prompt
 from lg_sotf.llm.schema import clipped_list, clipped_str, lenient_literal
 from lg_sotf.llm.trace import observe
 from lg_sotf.models.alert import model_view
-from lg_sotf.observability.logging import get_logger, log_failure
 from lg_sotf.security.redaction import redact_text
 from lg_sotf.tools.enrichment import (
     EnrichmentResult,
@@ -102,8 +110,6 @@ if TYPE_CHECKING:
         LlmRefusal,
         ToolObservation,
     )
-
-log = get_logger(__name__)
 
 SEVERITY_BOOST = {"critical": 25, "high": 20, "medium": 10, "low": 0, "info": -10}
 # Classic backdoor/C2 listener ports (8080 is ordinary proxy/alt-HTTP traffic, not evidence).
@@ -205,7 +211,7 @@ class AnalysisResult:
     notes: List[str] = field(default_factory=list)
     investigation: Optional[Dict[str, Any]] = None
     """What the investigation executor did for this alert and the model's checked claims
-    (:func:`investigation_record`); ``None`` when no investigation applies (today's path)."""
+    (``lg_sotf.agents.investigation.claims.investigation_record``); ``None`` when no investigation applies."""
 
     @property
     def simulated_evidence(self) -> bool:
@@ -526,25 +532,6 @@ def _prompt_block(
     if analyst_notes:
         block["analyst_request"] = analyst_notes[:1_000]
     return block
-
-
-async def investigation_record(
-    ctx: AgentContext, investigation: Optional[InvestigationRun], final: Optional[BaseModel]
-) -> Optional[Dict[str, Any]]:
-    """What ``alerts.summary.analysis.investigation`` stores: what the executor did and, when the model was
-    shown the evidence, its claims with their citations checked against the run's ledger. ``None`` without an
-    investigation. A check that cannot be made (the ledger cannot be read) leaves the claims out: findings
-    are a record, and never fail the analysis."""
-    if investigation is None:
-        return None
-    record = investigation.record()
-    claims = getattr(final, "claims", None) if investigation.context is not None else None
-    try:
-        record["claims"] = await checked_claims(ctx, claims or [])
-    except Exception as exc:  # noqa: BLE001 - the citation check never fails the alert's run
-        log_failure(log, "analysis.citation_check_failed", exc, level="warning", error_type=type(exc).__name__)
-        record["claims"] = []
-    return record
 
 
 def _assemble_result(
