@@ -7,8 +7,8 @@ we treat vulnerabilities in it seriously. Thank you for reporting responsibly.
 
 | Version | Supported |
 |---|---|
-| 1.2.x (current release line, see CHANGELOG.md) | Yes: security fixes |
-| 1.1.x and 1.0.x | No: upgrade to 1.2.x |
+| 1.3.x (current release line, see CHANGELOG.md) | Yes: security fixes |
+| 1.2.x, 1.1.x and 1.0.x | No: upgrade to 1.3.x |
 | Earlier proof-of-concept code (before the 0.2.0 rebuild) | No |
 
 Release channels (weekly partner candidates, stable, LTS), their support
