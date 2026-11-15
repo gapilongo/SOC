@@ -29,6 +29,7 @@
   "lg_sotf.db.repos.integrations.IntegrationExists": [409, "conflict"],
   "lg_sotf.domain.connectors.ConnectorConfigError": [400, "invalid_request"],
   "lg_sotf.domain.connectors.LedgerUnavailable": [500, "internal_error"],
+  "lg_sotf.domain.ledger.LedgerError": [500, "internal_error"],
   "lg_sotf.domain.suppression.InvalidRule": [422, "invalid_rule"],
   "lg_sotf.errors.AgentError": [500, "internal_error"],
   "lg_sotf.errors.IngestionError": [500, "internal_error"],

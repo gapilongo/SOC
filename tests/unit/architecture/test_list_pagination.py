@@ -23,6 +23,7 @@ pytestmark = pytest.mark.unit
 
 BOUNDED_LISTS = {
     "ApiKeysRepo.list": "a tenant's API keys, created one by one by its admins",
+    "EvidenceFactsRepo.list_for_run": "one run's fact ledger, at most MAX_RUN_ENTRIES (a ledger records no more)",
     "FeedbackRepo.list_for_alert": "the feedback given on one alert",
     "GrantsRepo.list_for_organisation": "the live grants of one organisation, each given by hand by a customer admin",
     "GrantsRepo.list_for_tenant": "the grants one customer gave, each by hand by its admins",

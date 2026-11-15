@@ -7,7 +7,8 @@ call, no write, no I/O. The service
 :class:`~lg_sotf.domain.investigation.model.Investigation`.
 
 * :mod:`.outcome`: the four outcome categories, the reason in plain words, who closed the alert;
-* :mod:`.evidence`: observations with a typed outcome, claims, what is not established;
+* :mod:`.evidence`: observations with a typed outcome (the recorded lookups, then the run's fact ledger),
+  claims, what is not established;
 * :mod:`.steps`: what the investigation did, without engine node names;
 * :mod:`.words`: every decide code, blocker, close reason and node name as a fixed sentence.
 """
@@ -18,6 +19,7 @@ from typing import Optional
 
 from lg_sotf.domain.investigation import evidence, words
 from lg_sotf.domain.investigation.facts import (
+    MAX_OBSERVATIONS,
     AlertFacts,
     EscalationFacts,
     EventFacts,
@@ -93,6 +95,11 @@ def assemble(facts: InvestigationFacts) -> Investigation:
             pending_harness=_pending(),
         )
     found = evidence.observations(facts.lookups, facts.failed_tools)
+    # The ledger's entries as the service read them: the run's first ones, and every later one without a
+    # fact. The view lists what fits and says when it cut; a failed or empty call stays "not established".
+    recorded = evidence.ledger_observations(facts.ledger)
+    listed = recorded[: max(0, MAX_OBSERVATIONS - len(found))]
+    ledger_total = max(facts.ledger_total, len(recorded))
     return Investigation(
         alert_id=alert.id,
         tenant_id=alert.tenant_id,
@@ -100,8 +107,10 @@ def assemble(facts: InvestigationFacts) -> Investigation:
         outcome=outcome(alert, facts.escalation, facts.events, facts.tier),
         summary=summary(alert, facts.escalation),
         claims=evidence.claims(alert.summary, facts.lookups, found),
-        observations=found,
-        not_established=evidence.not_established(alert.summary, alert.view, facts.lookups, found),
+        observations=found + listed,
+        observations_total=len(found) + ledger_total,
+        observations_truncated=len(listed) < ledger_total,
+        not_established=evidence.not_established(alert.summary, alert.view, facts.lookups, found, recorded),
         steps=steps(alert, facts.events),
         track_record=track_record(outcome_category(alert, facts.escalation, facts.events), facts.track),
         response=facts.response,

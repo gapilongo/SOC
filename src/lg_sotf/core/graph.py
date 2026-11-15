@@ -52,6 +52,7 @@ from lg_sotf.core.state import (
 )
 from lg_sotf.domain import routing
 from lg_sotf.domain.closure import REOPENED
+from lg_sotf.domain.ledger import new_run_id
 from lg_sotf.domain.routing import RoutingThresholds
 from lg_sotf.domain.verdict_key import verdict_key_of
 
@@ -117,6 +118,9 @@ class WorkflowState(TypedDict, total=False):
     close_reason: Optional[str]
     llm_budget_exceeded: bool
     llm_budget_limit: Optional[int]
+    # The investigation run the fact ledger is kept under (lg_sotf.domain.ledger): minted when the run starts,
+    # kept by a resume and a node retry, new when the alert is reprocessed. Runs started before it existed have none.
+    investigation_run_id: Optional[str]
     notes: Annotated[List[str], capped_notes]
 
 
@@ -313,6 +317,7 @@ def initial_state(tenant_id: str, alert: Alert, *, llm_budget_limit: Optional[in
         "close_reason": None,
         "llm_budget_exceeded": False,
         "llm_budget_limit": llm_budget_limit,
+        "investigation_run_id": new_run_id(),
         "notes": [],
     }
 

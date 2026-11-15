@@ -86,6 +86,8 @@ RUNTIME_TABLE_PRIVILEGES: Dict[str, Tuple[str, ...]] = {
     "investigation_steps": ("SELECT", "INSERT"),
     "shadow_effects": ("SELECT", "INSERT"),
     "shadow_verdicts": ("SELECT", "INSERT"),
+    # The fact ledger (migration 0021) is append-only; a trigger refuses updates and deletes as well.
+    "evidence_facts": ("SELECT", "INSERT"),
     # Written through lgsotf_save_organisation (platform admins) only.
     "organisations": ("SELECT",),
     "organisation_members": ("SELECT", "INSERT", "DELETE"),

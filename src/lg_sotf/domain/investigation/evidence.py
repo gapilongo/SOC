@@ -5,6 +5,12 @@ An observation is one tool call with a typed outcome (ADR-0014 Amendment 2):
 found nothing) or ``failed``. An empty or failed observation backs no claim:
 it is listed under "not established" and nothing else reads it.
 
+Observations come from two places. The lookups today's analysis recorded in
+the alert's summary are numbered ``O-01`` onward. The entries of the run's
+fact ledger (:mod:`lg_sotf.domain.ledger`, AI-E3.2) follow under the ids the
+ledger minted, each with its completeness and whether a benign claim may
+cite it.
+
 Claims today come from two places. The fast model's indicators
 (``triage.llm_tp`` and ``llm_fp``) are claims in the model's own words; the
 model cites nothing yet, so they are ``unsupported``. The rule evidence a
@@ -44,6 +50,8 @@ from lg_sotf.domain.investigation.model import (
     UnavailableItem,
     WrittenBy,
 )
+from lg_sotf.domain.ledger import LedgerEntry
+from lg_sotf.security.redaction import redact_text
 
 #: Provider verdicts, worst first.
 VERDICT_ORDER: Tuple[str, ...] = ("malicious", "suspicious", "harmless", "unknown")
@@ -161,6 +169,51 @@ def observations(lookups: Sequence[Lookup], failed_tools: Sequence[TraceRef]) ->
     return out
 
 
+def _fact_lines(value: Mapping[str, Any]) -> List[str]:
+    """A typed fact value, one line per field: a scalar as it is, a list by how many it holds. Lines are data."""
+    lines: List[str] = []
+    for key, item in value.items():
+        if isinstance(item, (list, tuple)):
+            lines.append(f"{key}: {len(item)} listed")
+        elif item is not None and not isinstance(item, Mapping):
+            lines.append(f"{key}: {item}")
+    return lines
+
+
+def _shown(text: Any, limit: int) -> str:
+    """A fact's text as the view shows it: credentials redacted, then cut to ``limit``. Data stays data."""
+    return bounded(redact_text(str(text))[0], limit)
+
+
+def _recorded(entry: LedgerEntry) -> InvestigationObservation:
+    """A ledger entry as an observation, under the id the ledger minted (the id a claim cites)."""
+    fact = mapping(entry.fact)
+    subject, source = mapping(fact.get("subject")), mapping(fact.get("source"))
+    lines = _fact_lines(mapping(fact.get("value")))
+    return InvestigationObservation(
+        id=entry.fact_id,
+        tool=bounded(entry.tool, MAX_CODE_CHARS),
+        title=words.FACT_TITLES.get(entry.kind or "", words.UNKNOWN_LOOKUP_TITLE),
+        kind=bounded(subject.get("type") or "", MAX_CODE_CHARS) or None,
+        target=_shown(subject.get("value") or "", MAX_TARGET_CHARS) or None,
+        sources=[bounded(source["name"], MAX_CODE_CHARS)] if source.get("name") else [],
+        at=entry.as_of,
+        outcome=entry.outcome,
+        excerpt=[ObservationExcerptLine(text=_shown(line, MAX_LINE_CHARS)) for line in lines[:MAX_EXCERPT_LINES]],
+        excerpt_truncated=len(lines) > MAX_EXCERPT_LINES,
+        input_sha256=entry.input_hash,
+        output_sha256=entry.output_hash,
+        complete=entry.complete,
+        fact_kind=bounded(entry.kind, MAX_CODE_CHARS) if entry.kind else None,
+        citable_as_benign_evidence=entry.citable_as_benign_evidence,
+    )
+
+
+def ledger_observations(ledger: Sequence[LedgerEntry]) -> List[InvestigationObservation]:
+    """What the run's fact ledger holds, in the order it was recorded: typed facts, and the calls that gave none."""
+    return [_recorded(entry) for entry in ledger]
+
+
 def _backing(code: str, lookups: Sequence[Lookup], found: Sequence[InvestigationObservation]) -> List[str]:
     """The observations a rule claim rests on: successful lookups of its tool with its verdict."""
     tool, verdict = ("history", "malicious") if code == "prior_malicious_history" else (
@@ -241,11 +294,23 @@ def _not_checked(summary: Mapping[str, Any], view: Mapping[str, Any], lookups: S
 
 def not_established(
     summary: Mapping[str, Any], view: Mapping[str, Any], lookups: Sequence[Lookup],
-    found: Sequence[InvestigationObservation],
+    found: Sequence[InvestigationObservation], recorded: Sequence[InvestigationObservation] = (),
 ) -> NotEstablished:
-    """Three lists: checked and found nothing, not checked, could not be checked for this customer."""
+    """Three lists: checked and found nothing, not checked, could not be checked for this customer.
+
+    ``recorded`` are the fact ledger's observations: an empty one found nothing, a failed one could not be
+    checked, and with a ledger the investigation did read the source's event data.
+    """
+    not_checked = _not_checked(summary, view, lookups)
+    if recorded:
+        not_checked = [item for item in not_checked if item.what != words.NO_TELEMETRY[0]]
+    failed = [
+        UnavailableItem(what=obs.title, why=words.TOOL_ERROR_SENTENCE, kind="tool_failed", observation_id=obs.id)
+        for obs in recorded
+        if obs.outcome == "failed"
+    ]
     return NotEstablished(
-        empty=[obs.id for obs in found if obs.outcome == "empty"],
-        not_checked=_not_checked(summary, view, lookups),
-        unavailable=_unavailable(lookups, found),
+        empty=[obs.id for obs in (*found, *recorded) if obs.outcome == "empty"],
+        not_checked=not_checked,
+        unavailable=_unavailable(lookups, found) + failed,
     )

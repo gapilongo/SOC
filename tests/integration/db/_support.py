@@ -21,6 +21,7 @@ from lg_sotf.db.pool import Database
 from lg_sotf.db.repos import LLMUsageDelta, NewAlert, Repositories
 from lg_sotf.db.repos.outbox import NewOutboxEntry
 from lg_sotf.db.urls import database_name, to_libpq_url
+from lg_sotf.domain.ledger import ToolStep, build_entries
 from lg_sotf.domain.pov import plan_windows
 from lg_sotf.domain.shadow_agreement import Comparison, Verdict
 from lg_sotf.models.trace import NewTraceStep
@@ -101,6 +102,7 @@ async def make_alert(repos: Repositories, tenant_id: str, **kwargs: object) -> s
 
 
 ALL_TABLES = (
+    "evidence_facts",
     "pov_runs",
     "shadow_verdicts",
     "blind_audit_items",
@@ -193,6 +195,7 @@ TENANT_TABLES = (
     "notification_outbox",
     "external_tickets",
     "investigation_steps",
+    "evidence_facts",
     "shadow_effects",
     "shadow_verdicts",
     "organisations",
@@ -255,6 +258,8 @@ async def seed_everything(repos: Repositories, tenant_id: str) -> str:
         [NewTraceStep(agent="analysis", kind="tool", tool="history", input_hash=sha256_hex("in"), outcome="success",
                       started_at=now)],
     )
+    asked = ToolStep("history", "platform.history", 1, sha256_hex("in"), sha256_hex("out"), "empty", True)
+    await repos.evidence_facts.append(tenant_id, alert_id, f"{tenant_id}:{alert_id}", build_entries(asked, [], now))
     run = await repos.blind_audit.create_run(
         tenant_id, since=now - timedelta(days=7), until=now, seed=7, sample_rate=0.02, min_sample=5, fixed_size=None,
         frame_size=1, items=[(alert_id, 1, "benign")], trigger="cli", created_by="seed",
