@@ -11,6 +11,10 @@ alert's summary is matched to its trace step by hash: the input hash when
 the stored target is the one that was sent, else the output hash, keeping
 the order the lookups ran in and preferring the newest analysis.
 
+The fact ledger of the alert's newest investigation run
+(``evidence_facts``, AI-E3.2) is read in the same transaction; its entries
+are listed as observations after the recorded lookups.
+
 An alert that waits for its blind-audit label shows nothing of the AI's
 side, as on every other read.
 """
@@ -38,7 +42,7 @@ from lg_sotf.domain.investigation import (
     outcome_category,
 )
 from lg_sotf.domain.investigation.evidence import lookups_of
-from lg_sotf.domain.investigation.facts import MAX_ACTION_TARGET_CHARS, MAX_STEPS, bounded
+from lg_sotf.domain.investigation.facts import MAX_ACTION_TARGET_CHARS, MAX_OBSERVATIONS, MAX_STEPS, bounded
 from lg_sotf.domain.investigation.model import (
     OutcomeCategory,
     ProposedAction,
@@ -260,6 +264,7 @@ async def investigation(
         newest = await repos.escalations.list(tenant_id, alert_id=alert_id, include_attached=True, limit=1, conn=conn)
         escalation = newest.items[0] if newest.items else None
         trace = await repos.investigation_steps.list_for_alert(tenant_id, alert_id, limit=MAX_TRACE_STEPS, conn=conn)
+        ledger = await repos.evidence_facts.latest_run(tenant_id, alert_id, limit=MAX_OBSERVATIONS, conn=conn)
         tenant = await repos.tenants.get(tenant_id, conn=conn)
         actions = (await repos.actions.list(tenant_id, alert_id=alert_id, limit=MAX_ACTIONS, conn=conn)).items
         facts, escalated = _alert(alert), _escalation(escalation)
@@ -277,5 +282,7 @@ async def investigation(
             tier=decided_tier(events, tenant.settings),
             response=await proposed_response(repos, responses, settings, alert, escalation, actions, role=role),
             track=track,
+            ledger=ledger.entries,
+            ledger_total=ledger.total,
         )
     )

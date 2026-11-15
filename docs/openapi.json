@@ -8359,6 +8359,18 @@
             "title": "Observations",
             "type": "array"
           },
+          "observations_total": {
+            "default": 0,
+            "description": "The recorded lookups listed, plus every entry of the run's fact ledger, listed or not.",
+            "title": "Observations Total",
+            "type": "integer"
+          },
+          "observations_truncated": {
+            "default": false,
+            "description": "The fact ledger holds more entries than are listed (at most 50 observations are). A call that failed or found nothing is still named under not_established.",
+            "title": "Observations Truncated",
+            "type": "boolean"
+          },
           "outcome": {
             "anyOf": [
               {
@@ -8420,6 +8432,8 @@
           "summary",
           "claims",
           "observations",
+          "observations_total",
+          "observations_truncated",
           "not_established",
           "steps",
           "track_record",
@@ -8610,6 +8624,24 @@
             "title": "Cached",
             "type": "boolean"
           },
+          "citable_as_benign_evidence": {
+            "default": false,
+            "description": "A benign claim may rest on this observation: the fact ledger holds it as a typed fact a tool returned. Decided by code, never by a model, and never true for an empty or failed observation.",
+            "title": "Citable As Benign Evidence",
+            "type": "boolean"
+          },
+          "complete": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "From the fact ledger: false when the source cut the result or could not finish it, so nothing can be concluded from what it does not show. Null for a lookup the ledger did not record.",
+            "title": "Complete"
+          },
           "excerpt": {
             "items": {
               "$ref": "#/components/schemas/ObservationExcerptLine"
@@ -8621,6 +8653,18 @@
             "default": false,
             "title": "Excerpt Truncated",
             "type": "boolean"
+          },
+          "fact_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "From the fact ledger: the kind of the typed evidence fact; null without one.",
+            "title": "Fact Kind"
           },
           "id": {
             "title": "Id",
@@ -8727,7 +8771,10 @@
           "excerpt",
           "excerpt_truncated",
           "input_sha256",
-          "output_sha256"
+          "output_sha256",
+          "complete",
+          "fact_kind",
+          "citable_as_benign_evidence"
         ],
         "title": "InvestigationObservation",
         "type": "object"

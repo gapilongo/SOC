@@ -121,6 +121,8 @@ class ShadowRun:
     sink: ShadowSink = field(default_factory=ShadowSink)
     trace: List[Any] = field(default_factory=list)
     """Trace steps the agents recorded (kept here: the trace store is not written in shadow mode)."""
+    ledger: List[Any] = field(default_factory=list)
+    """The run's fact-ledger entries (kept here for the same reason; ``lg_sotf.agents.investigation.ledger``)."""
     llm_calls: int = 0
     llm_tokens: int = 0
     llm_cost_usd: Decimal = Decimal(0)

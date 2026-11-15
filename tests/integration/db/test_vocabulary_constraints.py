@@ -23,6 +23,7 @@ from lg_sotf.db.repos.outbox import OUTBOX_OPERATIONS, OUTBOX_STATUSES
 from lg_sotf.db.repos.sources import SOURCE_HEALTH
 from lg_sotf.db.repos.tenants import TENANT_STATUSES
 from lg_sotf.db.urls import to_libpq_url
+from lg_sotf.domain.ledger import OUTCOMES as LEDGER_OUTCOMES
 from lg_sotf.domain.pov import POV_BACKTEST_STATUSES
 from lg_sotf.models import vocabulary as v
 from lg_sotf.models.trace import STEP_KINDS, STEP_OUTCOMES
@@ -59,6 +60,7 @@ EXPECTED: Dict[Tuple[str, str], Iterable[str]] = {
     ("audit_log", "actor_type"): AUDIT_ACTOR_TYPES,
     ("investigation_steps", "kind"): STEP_KINDS,
     ("investigation_steps", "outcome"): STEP_OUTCOMES,
+    ("evidence_facts", "outcome"): LEDGER_OUTCOMES,
     ("blind_audit_runs", "trigger"): v.AUDIT_TRIGGERS,
     ("blind_audit_runs", "seed_source"): v.SEED_SOURCES,
     ("blind_audit_items", "ai_class"): v.DISPOSITIONS,

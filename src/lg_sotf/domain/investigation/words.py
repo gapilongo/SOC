@@ -21,6 +21,7 @@ __all__ = [
     "CLOSE_REASONS",
     "DECIDE_SENTENCES",
     "EVENT_STEPS",
+    "FACT_TITLES",
     "LOOKUP_CLAIMS",
     "LOOKUP_STATUS_SENTENCES",
     "LOOKUP_TITLES",
@@ -213,6 +214,18 @@ LOOKUP_TITLES: Final[Mapping[str, str]] = {
     "history": "Earlier alerts of this customer for the same entity",
 }
 UNKNOWN_LOOKUP_TITLE: Final = "Lookup"
+
+#: What a typed evidence fact shows, by fact kind (``lg_sotf.models.evidence_fact.FACT_KINDS``): the title of
+#: the observations the fact ledger holds.
+FACT_TITLES: Final[Mapping[str, str]] = {
+    "reputation": "Threat-intelligence reputation",
+    "process_lineage": "The process, its parents and what it started",
+    "sign_in_history": "The user's recent sign-ins",
+    "related_alert": "Another alert on the same entity",
+    "host_activity": "What the host did around the alert",
+    "logon_fanout": "Logons around the alert",
+    "prevalence": "How widely this is seen at this customer",
+}
 
 #: Provider result statuses (``lg_sotf.tools.enrichment.base.Status``) that mean the lookup could not be made,
 #: as ``(kind, sentence)``; ``kind`` is ``no_source`` or ``tool_failed``.

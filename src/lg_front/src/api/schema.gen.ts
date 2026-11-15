@@ -4806,6 +4806,18 @@ export interface components {
             not_established: components["schemas"]["NotEstablished"];
             /** Observations */
             observations: components["schemas"]["InvestigationObservation"][];
+            /**
+             * Observations Total
+             * @description The recorded lookups listed, plus every entry of the run's fact ledger, listed or not.
+             * @default 0
+             */
+            observations_total: number;
+            /**
+             * Observations Truncated
+             * @description The fact ledger holds more entries than are listed (at most 50 observations are). A call that failed or found nothing is still named under not_established.
+             * @default false
+             */
+            observations_truncated: boolean;
             /** @description Null while the alert is still being processed. */
             outcome: components["schemas"]["InvestigationOutcome"] | null;
             /** Pending Harness */
@@ -4907,6 +4919,17 @@ export interface components {
              * @default false
              */
             cached: boolean;
+            /**
+             * Citable As Benign Evidence
+             * @description A benign claim may rest on this observation: the fact ledger holds it as a typed fact a tool returned. Decided by code, never by a model, and never true for an empty or failed observation.
+             * @default false
+             */
+            citable_as_benign_evidence: boolean;
+            /**
+             * Complete
+             * @description From the fact ledger: false when the source cut the result or could not finish it, so nothing can be concluded from what it does not show. Null for a lookup the ledger did not record.
+             */
+            complete: boolean | null;
             /** Excerpt */
             excerpt: components["schemas"]["ObservationExcerptLine"][];
             /**
@@ -4914,6 +4937,11 @@ export interface components {
              * @default false
              */
             excerpt_truncated: boolean;
+            /**
+             * Fact Kind
+             * @description From the fact ledger: the kind of the typed evidence fact; null without one.
+             */
+            fact_kind: string | null;
             /** Id */
             id: string;
             /**

@@ -223,6 +223,89 @@ does not know rather than reject the fact.
 | 1.1.0 | New kinds `host_activity`, `logon_fanout` and `prevalence`. `complete` on every fact. `children` on a process lineage, and `command_template`, `image_name` and `process_guid` on its nodes. Subject types `service` and `command_template`. Every 1.0.0 fact is still valid. |
 | 1.0.0 | First version: `reputation`, `process_lineage`, `sign_in_history`, `related_alert`. |
 
+## The fact ledger
+
+Every investigation run has a ledger: the list of what its tool calls
+returned, in order. It is the only place a fact gets the `id` a verdict
+cites. The ledger is in place; the investigation that writes to it and lets
+the model cite facts comes in a later release.
+
+- **One ledger per investigation run, not per alert.** A run gets an id
+  (`inv_` and 32 hex digits) when the workflow starts on an alert, and keeps
+  it in its state. A run that waits for an analyst and goes on, or a step
+  that is retried after a crash, is the same run with the same ledger. An
+  alert that is processed again is a new run with an empty ledger: it does
+  not inherit the facts of the earlier investigation. A run started by an
+  older release has no id and no ledger.
+- **Code mints the id.** When a tool call returns, the ledger names each
+  typed fact in the answer `<evidence id>:<n>` (`host:0`, `host:1`), numbered
+  within the run. The id a tool wrote is overwritten, and a model never
+  supplies one. A verdict that cites an id the run's ledger does not hold
+  (made up, or another run's, or another tenant's) is told apart by a pure
+  check.
+- **Recording the same call twice adds nothing.** The same call (same
+  evidence id, same tool, same input and output hash) recorded again gets
+  the entries the run already has. A retried step therefore never doubles
+  the ledger.
+- **Every entry is bound to its call:** the tool and its version, the
+  SHA-256 of the call's input and output (the same hashes as the call's step
+  in the investigation trace), the outcome (`success`, `empty`, `failed`),
+  `complete`, and when it was recorded. `content_hash` is a SHA-256 over
+  every field of the entry: the id, the call, the reason, the time and the
+  whole fact. An entry whose id, fact or anything else was changed no longer
+  matches it. A fact is put in the form the database stores (a NUL character
+  replaced, whole numbers as integers) before it is hashed, so a row read
+  back matches its hash exactly when nothing changed.
+- **One meaning of complete.** An entry is `complete` only when the tool's
+  result was complete and the fact itself says `complete: true`. A fact
+  from a result that was cut is stored with `complete: false`.
+- **An empty or failed call is recorded too,** as an entry without a fact.
+  It can be cited to say what could not be checked. It is never evidence
+  that something is benign: `citable_as_benign_evidence` is true only for a
+  `success` entry that holds a typed fact a tool observed. That is computed
+  from the entry, not stored and not set by a model. A fact that a reader
+  model extracted from free text (`source.name` starting with `reader.`) is
+  a lead and never benign evidence either.
+- **A full ledger is recorded, not an error.** A run's ledger holds at most
+  200 entries, and a fact at most 1 MiB. A call that does not fit is one
+  `failed` entry with the reason `ledger_capacity` or `fact_too_large`, so
+  the investigation sees it as evidence it does not have.
+- **Only typed facts enter.** A tool's raw answer (text, provider rows) is
+  not a fact and is not kept. What a prompt may show of the ledger is ids,
+  outcomes and the typed fields, in the untrusted data block, up to a fixed
+  size.
+
+The citation check reports findings; it raises nothing. For any claim:
+`unknown_fact` (the run's ledger did not mint the id) and `altered_fact`
+(the entry no longer matches its hash). For a benign claim also:
+`not_benign_evidence` (it cites an empty or failed call, or a reader's
+fact), `incomplete_fact` (the cited fact is not complete, so nothing can be
+concluded from what it does not show) and `no_citation` (it cites nothing).
+
+Storage:
+
+- **Append-only, per tenant.** The entries are rows of the tenant's
+  `evidence_facts` table under row-level security. Nothing updates or
+  deletes them: the application has no such code, its database role has no
+  such privilege, and a trigger refuses both. They are removed with their
+  alert by retention and by tenant erasure, and are part of the tenant
+  export (`evidence_facts.jsonl`).
+
+- **A shadow run writes nothing.** Its entries stay with the shadow run in
+  memory, shared by every step of that run.
+
+`GET /api/v1/alerts/{id}/investigation` lists the entries of the alert's
+newest run as observations, says when it lists fewer than the run holds,
+and always names a call that failed or found nothing (see
+[api.md](api.md)).
+
+For engineers: the rules are `lg_sotf.domain.ledger` (pure), the store is
+`lg_sotf.db.repos.evidence_facts`, and the investigation's interface is
+`lg_sotf.agents.investigation.ledger.FactLedger` (`for_run`, `record`,
+`facts`). Use `FactLedger.for_run(ctx)`, one per run; it raises for a run
+without an investigation run id. Nothing else may build a ledger entry or
+write the table (`tests/unit/architecture/test_fact_ledger.py`).
+
 ## For contributors
 
 The Pydantic model is the source; the JSON file is generated from it.

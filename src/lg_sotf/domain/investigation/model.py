@@ -140,6 +140,23 @@ class InvestigationObservation(_Model):
     excerpt_truncated: bool = False
     input_sha256: Optional[str] = Field(default=None, description="From the trace store, when it has the call.")
     output_sha256: Optional[str] = None
+    complete: Optional[bool] = Field(
+        default=None,
+        description=(
+            "From the fact ledger: false when the source cut the result or could not finish it, so nothing "
+            "can be concluded from what it does not show. Null for a lookup the ledger did not record."
+        ),
+    )
+    fact_kind: Optional[str] = Field(
+        default=None, description="From the fact ledger: the kind of the typed evidence fact; null without one."
+    )
+    citable_as_benign_evidence: bool = Field(
+        default=False,
+        description=(
+            "A benign claim may rest on this observation: the fact ledger holds it as a typed fact a tool "
+            "returned. Decided by code, never by a model, and never true for an empty or failed observation."
+        ),
+    )
 
 
 class NotCheckedItem(_Model):
@@ -248,6 +265,17 @@ class Investigation(_Model):
     summary: InvestigationSummary
     claims: List[InvestigationClaim]
     observations: List[InvestigationObservation]
+    observations_total: int = Field(
+        default=0,
+        description="The recorded lookups listed, plus every entry of the run's fact ledger, listed or not.",
+    )
+    observations_truncated: bool = Field(
+        default=False,
+        description=(
+            "The fact ledger holds more entries than are listed (at most 50 observations are). A call that "
+            "failed or found nothing is still named under not_established."
+        ),
+    )
     not_established: NotEstablished
     steps: List[PlainStep]
     track_record: Optional[OutcomeTrackRecord]

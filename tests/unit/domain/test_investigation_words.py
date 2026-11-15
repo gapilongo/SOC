@@ -19,6 +19,7 @@ from lg_sotf.core.nodes import WorkflowNodes
 from lg_sotf.core.retro_reopen import REOPEN_ACTION
 from lg_sotf.domain import closure, routing
 from lg_sotf.domain.investigation import words
+from lg_sotf.models.evidence_fact import FACT_KINDS
 from lg_sotf.models.vocabulary import BENIGN_DECISIONS
 from lg_sotf.services import escalation, folded
 from lg_sotf.tools.enrichment.base import Status
@@ -149,6 +150,12 @@ def test_every_lookup_status_is_typed() -> None:
     """A provider status is ``ok`` (success), ``not_found`` (empty) or a reason the lookup could not be made."""
     assert sorted(set(get_args(Status)) - {"ok", "not_found"} - set(words.LOOKUP_STATUS_SENTENCES)) == []
     assert {kind for kind, _ in words.LOOKUP_STATUS_SENTENCES.values()} == {"no_source", "tool_failed"}
+
+
+def test_every_fact_kind_has_a_title() -> None:
+    """An observation from the fact ledger is titled by the kind of its fact, in plain words."""
+    assert set(words.FACT_TITLES) == set(FACT_KINDS)
+    assert all(title[0].isupper() and "_" not in title and "{" not in title for title in words.FACT_TITLES.values())
 
 
 def _sentences() -> List[str]:
