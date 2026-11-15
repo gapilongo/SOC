@@ -148,9 +148,22 @@ complete list of what the models are asked to do (`lg_sotf.llm.registry`).
 | Correlation | `correlation.assess` | fast | A rating of how related alerts (indicator sightings) change the picture; at most one call per alert | None |
 | Analysis, investigation loop | `analysis.react_step` | deep | Per step: its current assessment and either one threat-intelligence or history lookup, or `finish`; bounded steps and wall-clock budget | `reputation` (VirusTotal, AbuseIPDB or an HTTP provider, only with a key and the tenant's consent) and `history` (the tenant's own past alerts) |
 | Analysis, verdict | `analysis.verdict` | deep | Verdict, threat score, certainty, conclusion and recommended actions | None |
+| Analysis with evidence, investigation loop | `analysis.react_step_cited` | deep | As `analysis.react_step`, plus the claims the assessment rests on, each with the ids of the evidence observations it cites. Used only when the evidence lookups returned facts for the alert | As `analysis.react_step`. The evidence lookups themselves are made by code before the model is called; the model chooses none of them |
+| Analysis with evidence, verdict | `analysis.verdict_cited` | deep | As `analysis.verdict`, plus the claims and the observation ids they cite | None |
 | NIS2 narrative (on request) | `nis2.narrative.<stage>` | fast | A short narrative for an incident-report draft, labelled "AI-drafted — review required"; it never fills or changes a field | None |
 | Fallback normaliser (off by default) | `ingestion.normalize` | fast | A canonical alert for an event no parser recognises; values are kept only if they appear in the event, severity is floored at medium, and the alert is never closed automatically | None |
 | Connection test | `llm_check.probe` | fast | A fixed probe answer for `POST /tenant/llm/test` | None |
+
+**Evidence lookups are made by code, not by a model.** For a Wazuh alert of a
+tenant that switched them on, the investigation executor runs the queries of
+a reviewed playbook (`wazuh.default`) against the tenant's own Wazuh data
+before the deep model is called: values come from the alert's detector
+fields, the plan from the file, the limits from the install and the tenant.
+Each result is recorded on the run's fact ledger under an id that code mints.
+The model is shown those observations as untrusted data and asked which ids
+its claims rest on; code then checks every cited id against the ledger. The
+findings are recorded and shown; they do not change routing yet
+([evidence-facts.md](evidence-facts.md#the-investigation-executor)).
 
 **The tools are read-only.** The lookups query reputation services and the
 tenant's own history. Their targets are restricted to indicators the rules

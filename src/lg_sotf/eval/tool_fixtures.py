@@ -159,6 +159,24 @@ def field_values(doc: Mapping[str, Any], path: str) -> List[str]:
     return [str(v) for v in items if v is not None and not isinstance(v, (dict, list))]
 
 
+def load_documents(*paths: Union[str, Path]) -> List[Mapping[str, Any]]:
+    """The Wazuh documents of ``.jsonl`` or ``.jsonl.gz`` files: documents as they are, dataset items by their
+    ``alert``; ``_meta`` lines are skipped."""
+    docs: List[Mapping[str, Any]] = []
+    for path in paths:
+        p = Path(path)
+        raw = p.read_bytes()
+        text = (gzip.decompress(raw) if p.suffix == ".gz" else raw).decode("utf-8")
+        for line in text.splitlines():
+            if not line.strip():
+                continue
+            data = json.loads(line)
+            if "_meta" in data:
+                continue
+            docs.append(data["alert"] if "alert" in data and "rule" not in data else data)
+    return docs
+
+
 @dataclass(frozen=True)
 class EventQuery:
     """One filter: every given condition must hold (``where`` maps a dotted field to one value or any of several)."""
@@ -200,19 +218,7 @@ class EventStore:
     @classmethod
     def load(cls, *paths: Union[str, Path]) -> EventStore:
         """Read ``.jsonl`` or ``.jsonl.gz`` files of Wazuh documents or dataset items (their ``alert``); ``_meta`` is skipped."""
-        docs: List[Mapping[str, Any]] = []
-        for path in paths:
-            p = Path(path)
-            raw = p.read_bytes()
-            text = (gzip.decompress(raw) if p.suffix == ".gz" else raw).decode("utf-8")
-            for line in text.splitlines():
-                if not line.strip():
-                    continue
-                data = json.loads(line)
-                if "_meta" in data:
-                    continue
-                docs.append(data["alert"] if "alert" in data and "rule" not in data else data)
-        return cls(docs)
+        return cls(load_documents(*paths))
 
     def __len__(self) -> int:
         return len(self._docs)

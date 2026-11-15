@@ -284,5 +284,6 @@ async def investigation(
             track=track,
             ledger=ledger.entries,
             ledger_total=ledger.total,
+            ledger_run_id=ledger.entries[0].run_id if ledger.entries else None,
         )
     )

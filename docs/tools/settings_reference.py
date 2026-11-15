@@ -55,6 +55,13 @@ SECTION_INTRO: Dict[str, str] = {
         "Notifications and ticketing (docs/integrations.md): outbox delivery and ticket sync run in the scheduler; "
         "SMTP is configured per install, recipients per integration."
     ),
+    "investigation": (
+        "The investigation harness (ADR 0014): evidence lookups in the customer's own Wazuh data before the deep "
+        "analysis. It runs for a tenant that set `tools.wazuh_indexer.enabled: true` in its settings; see "
+        "[evidence-facts.md](evidence-facts.md#the-investigation-executor)."
+    ),
+    "investigation.budget": "What one investigation may spend. A tenant overrides a value in its `investigation.budget` setting.",
+    "investigation.tenant_max": "The most a tenant's `investigation.budget` override may ask for; a higher value is cut to it.",
     "routing": (
         "Routing policy thresholds (`lg_sotf.domain.routing.RoutingThresholds`). Free-form section: unknown keys "
         "are ignored, values are validated when a worker starts."
@@ -309,6 +316,18 @@ DESCRIPTIONS: Dict[str, str] = {
     "mcp.max_retries": "Retries of a read request on 429/502/503/504 or a connection error (writes are never retried).",
     "mcp.max_response_bytes": "Largest API response the MCP server reads.",
     "mcp.max_output_chars": "Largest tool result handed to the model; longer results are truncated with a note.",
+    # investigation (the evidence lookups before the deep analysis, ADR 0014)
+    "investigation.evidence_backend": "Where the Wazuh evidence tools read: `indexer` (each tenant's own Wazuh indexer, resolved from the alert's source) or `event_store` (a dataset's telemetry in memory, for evaluation and development; synthetic data, refused in staging and production). Never guessed: a process asked for `event_store` that was not given one does not start.",
+    "investigation.event_store_files": "With `evidence_backend: event_store`: the dataset files to load (alerts and context events, `.jsonl` or `.jsonl.gz`). In an environment variable, a JSON list.",
+    "investigation.budget.steps": "Evidence lookups one investigation may make (the ones a resumed run finds on its ledger included).",
+    "investigation.budget.wall_s": "Seconds one investigation may take; never more than a quarter of `worker.analysis_timeout_s`. A lookup still running when they are spent is cut and recorded as failed.",
+    "investigation.budget.tokens": "Model tokens the investigation executor may spend itself (it makes no model call while the plan is fixed).",
+    "investigation.budget.usd": "Money one investigation may spend: the price the tool registry declares for each lookup, plus the executor's own model calls.",
+    "investigation.tenant_max.steps": "The most lookups a tenant's `investigation.budget.steps` may ask for; a higher value is cut to this.",
+    "investigation.tenant_max.wall_s": "The most seconds a tenant's `investigation.budget.wall_s` may ask for.",
+    "investigation.tenant_max.tokens": "The most tokens a tenant's `investigation.budget.tokens` may ask for.",
+    "investigation.tenant_max.usd": "The most money a tenant's `investigation.budget.usd` may ask for.",
+    "investigation.breaker_failures": "Lookups in a row that give no answer before the rest of an investigation's lookups are skipped (the source's event data is taken to be unreachable).",
 }
 
 Row = Tuple[str, str, str, str, str]

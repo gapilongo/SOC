@@ -57,6 +57,7 @@ from lg_sotf.db.urls import to_libpq_url, with_query_params
 from lg_sotf.domain.events import EventPublisher, publish_event
 from lg_sotf.domain.routing import RoutingThresholds
 from lg_sotf.errors import InvalidResumePayload, WorkflowError
+from lg_sotf.ingestion.wazuh_indexer import WazuhIndexers
 from lg_sotf.llm import TokenBudget
 from lg_sotf.models.tenant_settings import token_budget
 from lg_sotf.models.vocabulary import Decision
@@ -69,6 +70,7 @@ from lg_sotf.services.escalation import EscalationService
 from lg_sotf.services.folded import settle_folded
 from lg_sotf.services.response import Connector, ResponseService
 from lg_sotf.settings import Settings
+from lg_sotf.tools.wazuh.tools import Backends
 
 __all__ = [
     "AnalystDecisionPayload",
@@ -166,6 +168,23 @@ def _retry_policies(settings: Settings) -> Dict[str, Any]:
     }
 
 
+def evidence_backends(settings: Settings, secret_box: Optional[SecretBox], given: Optional[Backends]) -> Backends:
+    """Where the Wazuh evidence tools read for a run: never guessed (``investigation.evidence_backend``).
+
+    ``indexer``: the tenant's own Wazuh indexer, resolved from the run's alert and its source. ``event_store``:
+    a dataset's telemetry, which only a process's composition root builds (``lg-sotf worker``, ``lg-sotf
+    eval``) and hands in as ``given``; asked for and not given, the process does not start.
+    """
+    if given is not None:
+        return given
+    if settings.investigation.evidence_backend != "indexer":
+        raise WorkflowError(
+            "investigation.evidence_backend=event_store: the telemetry store is built by `lg-sotf worker` and "
+            "`lg-sotf eval`; this process was not given one"
+        )
+    return WazuhIndexers(settings, secret_box)
+
+
 async def build_node_deps(
     *,
     settings: Settings,
@@ -175,11 +194,14 @@ async def build_node_deps(
     agents: Optional[AgentSet] = None,
     connectors: Optional[Mapping[str, Connector]] = None,
     secret_box: Optional[SecretBox] = None,
+    evidence: Optional[Backends] = None,
 ) -> NodeDeps:
     """The services the workflow nodes run with, agents initialised (see :meth:`WorkflowEngine.create`)."""
     indicator_hmac_key(settings)
     repos = Repositories.create(db)
-    agent_set = agents or AgentSet.build(settings, secret_box=secret_box)
+    agent_set = agents or AgentSet.build(
+        settings, secret_box=secret_box, evidence=evidence_backends(settings, secret_box, evidence)
+    )
     await agent_set.initialize()
     return NodeDeps(
         settings=settings,
@@ -237,6 +259,7 @@ class WorkflowEngine:
         checkpoint_pool_size: Optional[int] = None,
         secret_box: Optional[SecretBox] = None,
         graph_builders: Mapping[int, GraphBuilder] = GRAPH_BUILDERS,
+        evidence: Optional[Backends] = None,
     ) -> WorkflowEngine:
         """Build agents and services, open the checkpointer pool and compile the graphs.
 
@@ -249,11 +272,13 @@ class WorkflowEngine:
         process's (built once by its composition root): the response service
         and analysis enrichment decrypt tenant credentials with it.
         ``graph_builders`` maps each graph version to its builder; the highest
-        version is the current graph.
+        version is the current graph. ``evidence`` is where the Wazuh evidence
+        tools read (:func:`evidence_backends`); ``agents``, when given, were
+        built with their own.
         """
         deps = await build_node_deps(
             settings=settings, db=db, redis=redis, events=events, agents=agents, connectors=connectors,
-            secret_box=secret_box,
+            secret_box=secret_box, evidence=evidence,
         )
         repos, agent_set = deps.repos, deps.agents
         escalations = deps.escalations

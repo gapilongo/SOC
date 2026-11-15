@@ -8,10 +8,8 @@ provider's prompt cache for that agent.
 
 from __future__ import annotations
 
-import os
 import re
 from datetime import timedelta
-from pathlib import Path
 from typing import Any, Callable, Dict, List
 
 import httpx
@@ -25,10 +23,8 @@ from lg_sotf.llm.fake import ScriptedCall
 from lg_sotf.llm.prompting import CONTEXT_TAG, DATA_TAG, SYSTEM_GUARD
 from lg_sotf.settings import Settings
 from lg_sotf.tools.enrichment import EnrichmentService
+from tests.unit.agents._snapshots import check_snapshot, render
 from tests.unit.agents._support import NOW, Related, StoredAlert, factory, fake_repos, scripted, texts
-
-SNAPSHOTS = Path(__file__).parent / "snapshots"
-UPDATE = os.environ.get("LG_SOTF_UPDATE_SNAPSHOTS") == "1"
 
 ALERT: Dict[str, Any] = {
     "id": "alert-0001",
@@ -46,28 +42,6 @@ OTHER_ALERT: Dict[str, Any] = {
     "title": "Different detection entirely",
     "occurred_at": "2026-09-02T23:59:59+00:00",
 }
-
-
-def render(call: ScriptedCall) -> str:
-    parts = []
-    for idx, (message, text) in enumerate(zip(call.messages, texts(call.messages), strict=True)):
-        cache = ""
-        if isinstance(message.content, list) and any(
-            isinstance(b, dict) and b.get("cache_control") for b in message.content
-        ):
-            cache = " [cache_control]"
-        parts.append(f"=== {idx}: {message.type}{cache} ===\n{text}")
-    return f"schema: {call.schema}\n" + "\n".join(parts) + "\n"
-
-
-def check_snapshot(name: str, text: str) -> None:
-    path = SNAPSHOTS / f"{name}.txt"
-    if UPDATE or not path.exists():
-        if not UPDATE:
-            pytest.fail(f"missing snapshot {path}; run with LG_SOTF_UPDATE_SNAPSHOTS=1 to create it")
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text, encoding="utf-8")
-    assert text == path.read_text(encoding="utf-8"), f"prompt changed; see {path}"
 
 
 async def triage_calls(settings: Settings, alert: Dict[str, Any]) -> List[ScriptedCall]:

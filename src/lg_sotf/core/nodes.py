@@ -59,6 +59,10 @@ NodeFn = Callable[[WorkflowState], Awaitable[Dict[str, Any]]]
 AGENT_NODES = frozenset({"triage", "correlation", "analysis"})
 EVENT_KEY = "_event"
 MAX_EVENT_KEYS = 20
+#: What of an investigation the analysis node's timeline event carries: codes and counts (ten keys fit an event).
+INVESTIGATION_EVENT_KEYS = (
+    "status", "reason", "skill", "stop_reason", "lookups", "facts", "empty", "failed", "skipped", "citation_findings",
+)
 
 
 @dataclass
@@ -296,20 +300,26 @@ class WorkflowNodes:
         await self.deps.repos.alerts.update(
             ctx.tenant_id, ctx.alert_id, threat_score=result.threat_score, summary=summary
         )
+        digest = result.digest()
+        event: Dict[str, Any] = {
+            "threat_score": result.threat_score,
+            "rule_threat_score": result.rule_threat_score,
+            "verdict": result.verdict,
+            "llm_used": result.llm_used,
+            "tool_steps": result.tool_steps,
+            "simulated_evidence": result.simulated_evidence,
+        }
+        if "investigation" in digest:
+            # The evidence lookups, or why the analysis ran without them, as a step of the timeline (AI-E3.3).
+            found: Mapping[str, object] = digest["investigation"]
+            event["investigation"] = {key: found.get(key) for key in INVESTIGATION_EVENT_KEYS}
         return {
-            "analysis": result.digest(),
+            "analysis": digest,
             "analysis_runs": int(state.get("analysis_runs", 0)) + 1,
             "more_info_loops": loops,
             "llm_budget_exceeded": ctx.llm_budget_exceeded,
             "notes": result.notes,
-            EVENT_KEY: {
-                "threat_score": result.threat_score,
-                "rule_threat_score": result.rule_threat_score,
-                "verdict": result.verdict,
-                "llm_used": result.llm_used,
-                "tool_steps": result.tool_steps,
-                "simulated_evidence": result.simulated_evidence,
-            },
+            EVENT_KEY: event,
         }
 
     async def decide(self, state: WorkflowState) -> Dict[str, Any]:

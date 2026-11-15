@@ -1212,3 +1212,48 @@ content.
 5.0 (release candidate) moves to a Sigma-based rule format, so the router must not depend on 4.x rule
 ids alone: it keys on rule groups and techniques as well.
 
+## Implementation note: step 3 as built (AI-E3.3, 2026-11-15)
+
+Step 3 of Amendment 1 shipped as a thin slice. Where it differs from the sections above, this is what
+was built and why; nothing here changes a decision of this record.
+
+* **Skill format (section 1).** `SkillSpec` holds only what `wazuh.default` needs: identity,
+  `applies_to.source_types`, `view`, `evidence` (every query `when: always`) and
+  `hypotheses.malicious`. Benign hypotheses and proofs, `close`, `never_close`, `lists`, `settle_min`,
+  a per-skill `budget`, optional evidence, `changelog` and the exported JSON Schema are not in the model
+  yet, and a file that uses them does not load. They arrive with the stories that give them meaning
+  (AI-E3.4, AI-E3.8a, AI-E3.1a). An argument is a binding, a whole number or `{const: ...}`.
+* **Predicates (Amendment 1 point 4).** Three leaf predicates exist, the ones the default skill's
+  indicators use: `any_technique_in`, `any_group_in` and `max_level_ge` (added "with a skill that needs
+  it"), with `all`, `any` and `not`. The others of the list are not implemented yet.
+* **Router (section 2.1).** `select_skill` reads only the format whose normalizer built the alert
+  (`normalizer`, written by the ingestion service). The `detection` block and the ranking by rule id,
+  event id, group and technique come with the first family skill (AI-E3.1a). The view is read from the
+  alert's raw Wazuh document as the workflow state holds it; a raw event too large for the state gives
+  an empty view, and nothing runs.
+* **Where it runs (section 2.2).** The executor is called by the analysis agent before the model, not
+  in place of `ReActReasoner`: the default skill has no hypothesis to choose and no optional query, so
+  today's verdict call (or ReAct loop, when reputation providers are configured) stays, with the
+  ledger's view added to its `tool_data` and two cited prompt templates next to the two existing ones,
+  which keep their text and hash. The stored digest is `AnalysisDigest.investigation`
+  (`lg_sotf.core.state.InvestigationRecord`).
+* **Enablement.** The tenant switch is the evidence tools' own (`tools.wazuh_indexer.enabled`, exactly
+  `true`); the tenant flag `investigation.skills` and shadow promotion are AI-E3.6.
+* **Budgets (section 2.3).** Steps (8), wall clock (60 s, at most a quarter of
+  `worker.analysis_timeout_s`), tokens (20,000) and money ($0.25), overridable per tenant up to the
+  install's `investigation.tenant_max`. The executor makes no model call while the plan is fixed, so
+  the token budget has no spender yet; money is the price a tool declares in the registry
+  (`ToolSpec.price_usd`, 0 for the Wazuh tools). The two-per-tenant cap on concurrent indexer queries
+  is the indexer client's (per source).
+* **Degrading (section 2.3).** The record said a run that cannot finish "finishes with a verdict on what
+  it has and escalates". In this slice a run that does not finish, or returns no fact, gives today's
+  path with the reason recorded, and by itself neither closes nor escalates: the closing rule is not
+  touched until step 4 measures both rules (Amendment 2).
+* **Claims (section 2.3).** A claim is `text`, `supports` (malicious or benign) and `cites`; `ref`,
+  `hypothesis` and the narrative rendered from claims come with the checker. The free conclusion stays.
+* **Indicators.** `wazuh.default` declares two, over the host's activity. They are evaluated and
+  reported, not acted on, and the host's window includes the alert itself: the rule that blocks a close
+  (step 4) has to set the alert's own level and technique aside first.
+* **Amendment 2's additions for this story** (forced verification before finish, loop detection,
+  two-pass calls for open-weight models) concern the planner loop, which this slice does not have.
+

@@ -14,15 +14,20 @@ from typing import Any, Iterator, List, Set, cast, get_args
 
 import pytest
 
+from lg_sotf.agents.investigation import executor
 from lg_sotf.core import nodes
 from lg_sotf.core.nodes import WorkflowNodes
 from lg_sotf.core.retro_reopen import REOPEN_ACTION
 from lg_sotf.domain import closure, routing
-from lg_sotf.domain.investigation import words
+from lg_sotf.domain.investigation import harness, words
+from lg_sotf.domain.investigation.model import CitationFindingCode
+from lg_sotf.domain.investigation_budget import Budget, BudgetLimits
+from lg_sotf.domain.ledger import CitationCode
 from lg_sotf.models.evidence_fact import FACT_KINDS
 from lg_sotf.models.vocabulary import BENIGN_DECISIONS
 from lg_sotf.services import escalation, folded
 from lg_sotf.tools.enrichment.base import Status
+from lg_sotf.tools.wazuh.tools import HOST_ACTIVITY, LOGON_FANOUT, PREVALENCE, PROCESS_LINEAGE
 
 pytestmark = pytest.mark.unit
 
@@ -158,8 +163,31 @@ def test_every_fact_kind_has_a_title() -> None:
     assert all(title[0].isupper() and "_" not in title and "{" not in title for title in words.FACT_TITLES.values())
 
 
+def test_every_reason_the_evidence_lookups_can_give_has_a_sentence() -> None:
+    """AI-E3.3: why the analysis ran without the lookups, why a lookup was skipped, what is wrong with a citation."""
+    derived = {harness.not_run_reason({}, {}), harness.not_run_reason({"analysis": {"verdict": "benign"}}, {}),
+               harness.not_run_reason({"analysis": {"verdict": "benign"}}, {"normalizer": "wazuh"})}
+    assert derived == {"not_analysed", "no_evidence_tools", "switched_off"}
+    assert set(words.EVIDENCE_REASONS) == set(executor.DEGRADED_REASONS) | derived
+    assert set(words.SKIPPED_LOOKUP_REASONS) == set(executor.SKIP_REASONS)
+    # The budget's own answers are among them, whichever limit is hit.
+    limits = BudgetLimits(steps=1, wall_s=1.0, tokens=1, usd=1.0)
+    spent = {Budget(limits, lambda: 0.0).spent(next_usd=2.0)}
+    for charge in ({"steps": 1}, {"tokens": 2}):
+        budget = Budget(limits, lambda: 0.0)
+        budget.charge(**charge)
+        spent.add(budget.spent())
+    ticks = iter([0.0, 5.0])
+    spent.add(Budget(limits, lambda: next(ticks)).spent())
+    assert spent == set(executor.BUDGET_STOPS)
+    assert set(words.CITATION_FINDINGS) == set(get_args(CitationCode)) == set(get_args(CitationFindingCode))
+    assert set(words.EVIDENCE_TOOL_TITLES) == {HOST_ACTIVITY, LOGON_FANOUT, PREVALENCE, PROCESS_LINEAGE}
+
+
 def _sentences() -> List[str]:
     out = [*words.DECIDE_SENTENCES.values(), *words.BLOCKER_SENTENCES.values(), words.UNKNOWN_REASON]
+    out += [*words.EVIDENCE_REASONS.values(), words.EVIDENCE_STEP.text, words.UNKNOWN_EVIDENCE_REASON]
+    out += [*words.SKIPPED_LOOKUP_REASONS.values(), words.UNKNOWN_SKIP_REASON, *words.CITATION_FINDINGS.values()]
     out += [entry.sentence for entry in words.CLOSE_REASONS.values()]
     out += [step.text for table in (words.NODE_STEPS, words.NODE_STEP_VARIANTS, words.EVENT_STEPS) for step in table.values()]
     out += [sentence for _, sentence in words.LOOKUP_STATUS_SENTENCES.values()]

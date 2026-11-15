@@ -28,6 +28,7 @@ __all__ = [
     "DecisionDigest",
     "EscalationSummary",
     "GateDigest",
+    "InvestigationRecord",
     "LlmRefusal",
     "PhishingDigest",
     "PlanDigest",
@@ -113,6 +114,70 @@ class CorrelationDigest(TypedDict, total=False):
     campaign_indicators: List[str]
 
 
+class CitationFinding(TypedDict, total=False):
+    """What is wrong with one citation of a claim (``lg_sotf.domain.ledger.check_citations``)."""
+
+    fact_id: str
+    code: str
+
+
+class InvestigationClaimRecord(TypedDict, total=False):
+    """A claim of the deep model with the ledger ids it cites, as code checked them against the run's ledger."""
+
+    text: str
+    supports: str
+    cites: List[str]
+    findings: List[CitationFinding]
+
+
+class InvestigationStepRecord(TypedDict, total=False):
+    """One query of an investigation's plan: ``outcome`` is ``success``, ``empty``, ``failed`` or ``skipped``."""
+
+    evidence_id: str
+    tool: str
+    outcome: str
+    reason: Optional[str]
+    fact_ids: List[str]
+    complete: bool
+    reused: bool
+
+
+class InvestigationRecord(TypedDict, total=False):
+    """What the investigation executor did for an alert (AI-E3.3). Absent when no investigation applies.
+
+    The analysis digest (graph state, the node's timeline event) carries the counts and codes; the alert's
+    summary (``alerts.summary.analysis.investigation``) also the steps, budgets, indicators and claims.
+    """
+
+    #: ``completed``: the evidence was shown to the deep model. ``degraded``: the analysis ran without it.
+    status: str
+    #: Why the analysis ran without the evidence (``lg_sotf.agents.investigation.executor.DEGRADED_REASONS``).
+    reason: Optional[str]
+    skill: str
+    skill_version: str
+    stop_reason: str
+    lookups: int
+    facts: int
+    empty: int
+    failed: int
+    skipped: int
+    # Digest only: how many claims the model made, and how many citation findings code raised on them.
+    claim_count: int
+    citation_findings: int
+    # Summary only.
+    run_id: Optional[str]
+    steps: List[InvestigationStepRecord]
+    #: ``{steps | wall_s | tokens | usd: {used, limit}}``.
+    budget: Dict[str, Dict[str, float]]
+    #: The skill's malicious indicators over the run's facts: ``true``, ``false`` or ``unknown``. Reported only.
+    indicators: Dict[str, str]
+    claims: List[InvestigationClaimRecord]
+    #: The prompt builder cut the evidence to fit its size limit: the model saw some facts in part.
+    evidence_truncated: bool
+    #: False when the citation check itself failed (the claims are then left out).
+    claims_checked: bool
+
+
 class AnalysisDigest(TypedDict, total=False):
     threat_score: int
     certainty: int
@@ -130,6 +195,7 @@ class AnalysisDigest(TypedDict, total=False):
     stop_reason: Optional[str]
     simulated_evidence: bool
     llm_refusal: LlmRefusal
+    investigation: InvestigationRecord
 
 
 class DecisionDigest(TypedDict, total=False):

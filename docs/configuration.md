@@ -362,6 +362,38 @@ Notifications and ticketing (docs/integrations.md): outbox delivery and ticket s
 | `integrations.smtp_from` | `LG_SOTF_INTEGRATIONS__SMTP_FROM` | string (optional) | unset | Sender address of notification emails. |
 | `integrations.smtp_timeout_s` | `LG_SOTF_INTEGRATIONS__SMTP_TIMEOUT_S` | number | `15.0` | SMTP connection and command timeout. |
 
+### `investigation`
+
+The investigation harness (ADR 0014): evidence lookups in the customer's own Wazuh data before the deep analysis. It runs for a tenant that set `tools.wazuh_indexer.enabled: true` in its settings; see [evidence-facts.md](evidence-facts.md#the-investigation-executor).
+
+| Setting | Environment variable | Type | Default | Description |
+|---|---|---|---|---|
+| `investigation.evidence_backend` | `LG_SOTF_INVESTIGATION__EVIDENCE_BACKEND` | `indexer` \| `event_store` | `indexer` | Where the Wazuh evidence tools read: `indexer` (each tenant's own Wazuh indexer, resolved from the alert's source) or `event_store` (a dataset's telemetry in memory, for evaluation and development; synthetic data, refused in staging and production). Never guessed: a process asked for `event_store` that was not given one does not start. |
+| `investigation.event_store_files` | `LG_SOTF_INVESTIGATION__EVENT_STORE_FILES` | list[string] | `[]` | With `evidence_backend: event_store`: the dataset files to load (alerts and context events, `.jsonl` or `.jsonl.gz`). In an environment variable, a JSON list. |
+| `investigation.breaker_failures` | `LG_SOTF_INVESTIGATION__BREAKER_FAILURES` | integer | `2` | Lookups in a row that give no answer before the rest of an investigation's lookups are skipped (the source's event data is taken to be unreachable). |
+
+### `investigation.budget`
+
+What one investigation may spend. A tenant overrides a value in its `investigation.budget` setting.
+
+| Setting | Environment variable | Type | Default | Description |
+|---|---|---|---|---|
+| `investigation.budget.steps` | `LG_SOTF_INVESTIGATION__BUDGET__STEPS` | integer | `8` | Evidence lookups one investigation may make (the ones a resumed run finds on its ledger included). |
+| `investigation.budget.wall_s` | `LG_SOTF_INVESTIGATION__BUDGET__WALL_S` | number | `60.0` | Seconds one investigation may take; never more than a quarter of `worker.analysis_timeout_s`. A lookup still running when they are spent is cut and recorded as failed. |
+| `investigation.budget.tokens` | `LG_SOTF_INVESTIGATION__BUDGET__TOKENS` | integer | `20000` | Model tokens the investigation executor may spend itself (it makes no model call while the plan is fixed). |
+| `investigation.budget.usd` | `LG_SOTF_INVESTIGATION__BUDGET__USD` | number | `0.25` | Money one investigation may spend: the price the tool registry declares for each lookup, plus the executor's own model calls. |
+
+### `investigation.tenant_max`
+
+The most a tenant's `investigation.budget` override may ask for; a higher value is cut to it.
+
+| Setting | Environment variable | Type | Default | Description |
+|---|---|---|---|---|
+| `investigation.tenant_max.steps` | `LG_SOTF_INVESTIGATION__TENANT_MAX__STEPS` | integer | `16` | The most lookups a tenant's `investigation.budget.steps` may ask for; a higher value is cut to this. |
+| `investigation.tenant_max.wall_s` | `LG_SOTF_INVESTIGATION__TENANT_MAX__WALL_S` | number | `120.0` | The most seconds a tenant's `investigation.budget.wall_s` may ask for. |
+| `investigation.tenant_max.tokens` | `LG_SOTF_INVESTIGATION__TENANT_MAX__TOKENS` | integer | `100000` | The most tokens a tenant's `investigation.budget.tokens` may ask for. |
+| `investigation.tenant_max.usd` | `LG_SOTF_INVESTIGATION__TENANT_MAX__USD` | number | `1.0` | The most money a tenant's `investigation.budget.usd` may ask for. |
+
 ### `routing`
 
 Routing policy thresholds (`lg_sotf.domain.routing.RoutingThresholds`). Free-form section: unknown keys are ignored, values are validated when a worker starts.
