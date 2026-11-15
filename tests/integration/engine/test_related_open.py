@@ -1,134 +1,66 @@
-"""Open threats on the same host or user and a model-led close (AI-E3.16, #435), through the real workflow and
-database.
+"""Related threats and a model-led close (AI-E3.16, #435), through the real workflow and database.
 
 The fake model calls an alert whose text is full of benign words benign at both
 tiers, so at the tier ``auto_full_audit`` it closes on the models' word
 (``tests/integration/engine/test_model_closure.py``). Here the tenant's
-database also holds another alert on the same host or user.
+database also holds another alert on the same host or user
+(``lg_sotf.domain.related``).
 
-* **Held.** The close is withheld when the other alert is open and waits for
-  a response approval, is high or critical and judged a threat by a model, or
-  was confirmed by a person; also while a high or critical alert on the same
-  host is being processed. The held alert joins the threat's open case.
+* **Held.** The close is withheld when the other alert is hold grade (high or
+  critical and judged a threat by a model, waiting for a response approval,
+  or confirmed by a person) and open, for up to seven days; also while a high
+  or critical alert on the same host is being processed. The held alert goes
+  through the ordinary escalation path.
 * **Linked forward.** A low or medium threat only a model stands behind holds
   nothing: the alert closes and is linked to that threat's case at once.
-* **Neither.** A doubt, a closed or old alert, another host and user, a queued
-  alert, another tenant.
+* **Reopened.** The other order of arrival: the alert closes first, then a
+  related alert reaches hold grade and reopens it into its case.
+* **Neither.** A doubt, a failed or stale alert, another host and user, a
+  queued alert, another tenant.
+* **Unchecked.** A read that fails, or too many open threats to compare:
+  the alert goes to an analyst and the run goes on.
 
-The last test replays the demo's attack chain (``scripts/demo/alerts.json``)
+The last tests replay the demo's attack chain (``scripts/demo/alerts.json``)
 with a model that calls the beacon benign for looking like test data, as the
-real model did in #435.
+real model did in #435, in both orders of processing.
 """
 
 from __future__ import annotations
 
-import importlib.util
-import json
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List
 from uuid import UUID
 
 import pytest
 
 from lg_sotf.audit.logger import Actor
-from lg_sotf.core import nodes
+from lg_sotf.core import nodes, retro_reopen
 from lg_sotf.core.retro_reopen import related_open, reopen_counted
-from lg_sotf.core.verdict_cache import VerdictCache
 from lg_sotf.core.workflow import WorkflowEngine
 from lg_sotf.db.repos import Repositories
-from lg_sotf.ingestion.normalizers import get_normalizer
-from lg_sotf.ingestion.normalizers.base import NormalizeContext
 from lg_sotf.llm import fake
 from lg_sotf.services.blind_audit import BlindAuditService
 from lg_sotf.services.escalation import EscalationService
-from lg_sotf.services.review import ReviewService
 from lg_sotf.settings import Settings
 from tests.integration.db._support import TENANT_A, TENANT_B, make_alert
+from tests.integration.engine._related import (
+    BEACON,
+    HOST,
+    MODEL_CLOSE,
+    NOTHING,
+    USER,
+    decided,
+    links,
+    other,
+    persuaded,
+    routine,
+    seed_demo,
+    store_chain,
+    tier_on,
+)
 from tests.integration.engine._support import analyst, decide, threat_alert
 
 pytestmark = pytest.mark.integration
-
-ROUTINE = "Authorized approved expected patch healthcheck, allowlisted and sanctioned"
-HOST, USER = "ws-fin-0142", "jsmith"
-NOTHING = {"threats": [], "in_progress": [], "model_only": []}
-MODEL_CLOSE = ("closed", "benign", "ai_closed:audit_required")
-REPO = Path(__file__).resolve().parents[3]
-# How the workflow brings an alert to each status (lg_sotf.db.repos.alerts.ALERT_TRANSITIONS).
-PATHS: Dict[str, Sequence[str]] = {
-    "new": (),
-    "queued": ("queued",),
-    "processing": ("queued", "processing"),
-    "waiting_human": ("queued", "processing", "waiting_human"),
-    "waiting_approval": ("queued", "processing", "waiting_approval"),
-    "closed": ("queued", "processing", "closed"),
-    "failed": ("queued", "failed"),
-}
-
-
-async def tier_on(repos: Repositories, tenant_id: str = TENANT_A) -> None:
-    await repos.tenants.update_settings(tenant_id, {"ai_closure": {"tier": "auto_full_audit"}})
-
-
-async def routine(
-    repos: Repositories, name: str, *, tenant_id: str = TENANT_A, severity: str = "low",
-    hosts: Sequence[str] = (HOST,), users: Sequence[str] = (), ips: Sequence[str] = (),
-) -> str:
-    """An alert both tiers of the fake model call benign, with no approved benign evidence: only the models close it."""
-    fields: Dict[str, Any] = {
-        "title": ROUTINE, "rule_name": "60106: Windows logon success", "description": ROUTINE,
-        "entities": {"hosts": list(hosts), "users": list(users), "ips": list(ips)},
-        "mitre": {"tactics": ["Initial Access"], "techniques": ["T1078"]},
-    }
-    return await make_alert(
-        repos, tenant_id, source_alert_id=f"e316-{name}", title=ROUTINE, severity=severity, normalized=fields
-    )
-
-
-async def other(
-    repos: Repositories, status: str, *, tenant_id: str = TENANT_A, severity: str = "high",
-    hosts: Sequence[str] = (HOST,), users: Sequence[str] = (), ips: Sequence[str] = (),
-    assessment: Optional[str] = None, verdict: Optional[str] = None, planned: bool = False, case: bool = False,
-    true_positive: bool = False, ingested_at: Optional[datetime] = None,
-) -> str:
-    """Another stored alert of the tenant, at ``status``, with what the workflow would have kept about it: the
-    models' assessments, a response plan (``planned``), an open case of its own (``case``), or an analyst's
-    ``true_positive`` on its case (``true_positive``)."""
-    alert_id = await make_alert(
-        repos, tenant_id, title="Credential dumping from LSASS", severity=severity, ingested_at=ingested_at,
-        normalized={"entities": {"hosts": list(hosts), "users": list(users), "ips": list(ips)}},
-    )
-    for step in PATHS[status]:
-        await repos.alerts.update_status(tenant_id, alert_id, step)
-    summary: Dict[str, Any] = {}
-    if assessment is not None:
-        summary["triage"] = {"threat_assessment": assessment}
-    if verdict is not None:
-        summary["analysis"] = {"verdict": verdict}
-    if planned:  # what the plan_response node keeps when the response policy applied
-        summary["response"] = {"threat_type": "credential_theft", "evidence": "llm_only", "awaiting": 1}
-    if case or true_positive:
-        escalation, _ = await repos.escalations.create_or_attach(tenant_id, alert_id, reason="a model judged it a threat")
-        summary["escalation_id"] = escalation.id
-        if true_positive:
-            await repos.escalations.decide(
-                tenant_id, escalation.id, decision="true_positive", decided_by=UUID(await analyst(repos, tenant_id)),
-                expected_version=escalation.version,
-            )
-    if summary:
-        await repos.alerts.update(tenant_id, alert_id, summary=summary)  # type: ignore[arg-type]
-    return alert_id
-
-
-async def decided(repos: Repositories, alert_id: str, tenant_id: str = TENANT_A) -> Dict[str, Any]:
-    events = (await repos.alert_events.list_for_alert(tenant_id, alert_id, limit=100)).items
-    (event,) = [e for e in events if e.node == "decide"]
-    return dict(event.data)
-
-
-def links(alert: Any) -> List[tuple]:  # type: ignore[type-arg]
-    return [(link["threat_alert_id"], link["escalation_id"]) for link in alert.summary.get("linked") or []]
-
 
 # ------------------------------------------------------------------ held
 
@@ -142,20 +74,27 @@ def links(alert: Any) -> List[tuple]:  # type: ignore[type-arg]
         ("waiting_human", {"assessment": "confirmed_threat", "severity": "critical"}, {"users": [USER]}),
         ("processing", {"assessment": "likely_threat"}, {"users": [USER]}),
         ("queued", {"verdict": "malicious"}, {"hosts": [HOST]}),  # requeued with a verdict a model already gave
-        ("failed", {"verdict": "malicious"}, {"hosts": [HOST]}),
+        # The same host and user under another spelling (short name, FQDN with a trailing dot, domain prefix, UPN).
+        ("waiting_human", {"verdict": "malicious"}, {"hosts": ["WS-FIN-0142.corp.example.com."]}),
+        ("waiting_human", {"verdict": "malicious"}, {"users": ["CORP\\JSmith"]}),
+        ("waiting_human", {"verdict": "malicious"}, {"users": ["jsmith@corp.example.com"]}),
+        # It holds for as long as it is open, up to seven days from its ingestion.
+        ("waiting_human", {"verdict": "malicious", "ingested_at": datetime.now(UTC) - timedelta(days=6)}, {"hosts": [HOST]}),
         # Waiting for a response approval, at any severity and whatever the models said.
         ("waiting_approval", {"severity": "low"}, {"hosts": [HOST]}),
         ("waiting_approval", {"verdict": "inconclusive", "severity": "medium"}, {"users": [USER]}),
-        # Confirmed by a person: an analyst's true positive on its case, although the models called it benign.
+        # Confirmed by a person: an analyst's true positive on its case, although the models called it benign;
+        # also for 24 hours after that decision closed it.
         ("processing", {"true_positive": True, "severity": "medium", "verdict": "benign"}, {"hosts": [HOST]}),
         ("waiting_approval", {"true_positive": True, "severity": "low"}, {"users": [USER]}),
+        ("closed", {"true_positive": True, "severity": "medium"}, {"hosts": [HOST]}),
     ],
 )
-async def test_a_serious_open_threat_on_the_same_host_or_user_holds_the_close(
+async def test_a_hold_grade_threat_on_the_same_host_or_user_holds_the_close(
     engine: WorkflowEngine, repos: Repositories, status: str, state: Dict[str, Any], shared: Dict[str, List[str]]
 ) -> None:
     """The threat is there before the close and is a strong enough signal: the alert the models call benign goes
-    to a person. These holders have no open case to join, so the alert gets its own, which names the holder."""
+    to a person, through the ordinary escalation path, with the reason."""
     await tier_on(repos)
     threat = await other(repos, status, hosts=shared.get("hosts", ["dc-01"]), users=shared.get("users", ()), **state)
     alert_id = await routine(repos, "held", severity="high", users=[USER, "root"])
@@ -174,8 +113,6 @@ async def test_a_serious_open_threat_on_the_same_host_or_user_holds_the_close(
     assert escalation.alert_id == alert_id and alert.summary["escalation_attached"] is False
     assert escalation.summary["routing"]["code"] == "related_open_threat"
     assert "related open threat on the same host" in escalation.reason
-    assert f"held by alert {threat}, which has no open case to join" in escalation.reason
-    assert escalation.summary["correlated_alert_ids"][0] == threat
 
 
 @pytest.mark.parametrize("severity", ["high", "critical"])
@@ -185,7 +122,7 @@ async def test_a_serious_alert_being_processed_on_the_same_host_holds_the_close(
     """The same moment: nothing is decided yet about a high or critical alert on the host, so the models do not
     close this one before it is."""
     await tier_on(repos)
-    running = await other(repos, "processing", severity=severity)
+    running = await other(repos, "processing", severity=severity, hosts=["WS-FIN-0142.corp.example.com"], idle_minutes=14)
     alert_id = await routine(repos, "same-moment")
 
     assert (await engine.run(TENANT_A, alert_id)).status == "waiting_human"
@@ -195,93 +132,39 @@ async def test_a_serious_alert_being_processed_on_the_same_host_holds_the_close(
     event = await decided(repos, alert_id)
     assert event["code"] == "related_in_progress" and "still being processed" in event["reason"]
     assert event["related_in_progress"] == [running]
+    assert (await repos.escalations.get(TENANT_A, alert.summary["escalation_id"])).priority >= 1
 
 
-async def test_a_held_alert_joins_the_threats_case_and_the_case_decision_settles_it(
-    engine: WorkflowEngine, repos: Repositories, engine_settings: Settings, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Both orders of arrival around one threat with an open case. The alert that closed before the threat is
-    linked by the safety net (unchanged). The alert that comes after it is held and joins the threat's case: one
-    case for the analyst, no escalation of its own. A false-positive decision on the case closes it benign,
-    without detaching it and without teaching the verdict cache a detection nobody reviewed."""
-    learned: List[str] = []
-    learn = VerdictCache.put_analyst_benign
-
-    async def recording(self: VerdictCache, *args: Any, **kwargs: Any) -> Any:
-        learned.append(kwargs["alert_id"])
-        return await learn(self, *args, **kwargs)
-
-    monkeypatch.setattr(VerdictCache, "put_analyst_benign", recording)
+async def test_a_held_alert_takes_the_ordinary_escalation_path(engine: WorkflowEngine, repos: Repositories) -> None:
+    """Review of #442, findings 1 and 5: no custom join. An alert held by a threat with an open case is another
+    detection, so the ordinary grouping gives it an escalation of its own; a decision on the threat's case does
+    not touch it, and a true positive there does not turn it into a confirmed threat."""
     await tier_on(repos)
-    first = await routine(repos, "before-the-threat", hosts=["ws-042"])
-    assert (await engine.run(TENANT_A, first)).status == "completed"
-    assert (await decided(repos, first))["code"] == "model_closed"
-
     threat = await threat_alert(repos)  # high, on ws-042; the fast tier calls it likely_threat and it is escalated
     assert (await engine.run(TENANT_A, threat)).status == "waiting_human"
     case = (await repos.alerts.get(TENANT_A, threat)).summary["escalation_id"]
-    closed = await repos.alerts.get(TENANT_A, first)
-    assert (closed.status, closed.disposition, closed.summary.get("reopened")) == ("closed", "benign", None)
-    assert links(closed) == [(threat, case)]
 
-    second = await routine(repos, "after-the-threat", hosts=["ws-042"])
-    waiting = await engine.run(TENANT_A, second)
-    assert waiting.status == "waiting_human" and waiting.interrupt["escalation_id"] == case
-    assert (await decided(repos, second))["code"] == "related_open_threat"
-    held = await repos.alerts.get(TENANT_A, second)
-    assert held.summary["related_open"]["threats"] == [threat]
-    assert (held.status, held.summary["escalation_id"], held.summary["escalation_attached"]) == (
-        "waiting_human", case, True)
-    assert held.summary["held_by"] == [threat]
-    grown = await repos.escalations.get(TENANT_A, case)
-    assert second in grown.related_alert_ids
-    assert await repos.escalations.get_active_for_alert(TENANT_A, second) is None  # no queue item of its own
-    # What the API tells the analyst: a benign decision leaves no attached alert for a review of its own (another
-    # detection attached by grouping would be listed here; the held alert closes with the case).
-    async with repos.db.tenant_tx(TENANT_A) as conn:
-        assert await ReviewService(repos, engine_settings)._own_review(TENANT_A, grown, "false_positive", conn) == []
+    held_id = await routine(repos, "held-by-a-case", hosts=["ws-042"])
+    waiting = await engine.run(TENANT_A, held_id)
+    held = await repos.alerts.get(TENANT_A, held_id)
+    own = await repos.escalations.get_active_for_alert(TENANT_A, held_id)
+    assert waiting.status == "waiting_human" and (await decided(repos, held_id))["code"] == "related_open_threat"
+    assert own is not None and own.id != case and waiting.interrupt["escalation_id"] == own.id
+    assert held.summary["related_open"]["threats"] == [threat] and held.summary["escalation_attached"] is False
+    assert held_id not in (await repos.escalations.get(TENANT_A, case)).related_alert_ids
 
-    user = await analyst(repos)
-    await decide(engine, repos, threat, case, "false_positive", user)
-    payload = {"type": "analyst_decision", "escalation_id": case, "decision": "false_positive", "approved_actions": [],
-               "decided_by": user, "notes": ""}
-    assert (await engine.resume(TENANT_A, second, payload)).status == "completed"
-    settled = await repos.alerts.get(TENANT_A, second)
-    assert (settled.status, settled.disposition, settled.summary["close_reason"]) == (
-        "closed", "benign", "analyst:false_positive")
-    assert settled.summary["analyst_decision"] == "false_positive" and "detached_from" not in settled.summary
-    assert await repos.escalations.get_active_for_alert(TENANT_A, second) is None
-    assert learned == [threat]
-    # The alert that was only linked stays closed by the models, due for audit.
-    assert (await repos.alerts.get(TENANT_A, first)).summary["close_reason"] == "ai_closed:audit_required"
-
-
-async def test_a_true_positive_on_the_case_reaches_the_held_alert(engine: WorkflowEngine, repos: Repositories) -> None:
-    """The held alert inherits the case's true positive like any attached alert: it never ends as a benign close."""
-    await tier_on(repos)
-    threat = await threat_alert(repos)
-    assert (await engine.run(TENANT_A, threat)).status == "waiting_human"
-    case = (await repos.alerts.get(TENANT_A, threat)).summary["escalation_id"]
-    alert_id = await routine(repos, "held-then-confirmed", hosts=["ws-042"])
-    assert (await engine.run(TENANT_A, alert_id)).interrupt["escalation_id"] == case
-
-    user = await analyst(repos)
-    await decide(engine, repos, threat, case, "true_positive", user)
-    payload = {"type": "analyst_decision", "escalation_id": case, "decision": "true_positive", "approved_actions": [],
-               "decided_by": user, "notes": ""}
-    await engine.resume(TENANT_A, alert_id, payload)
-    alert = await repos.alerts.get(TENANT_A, alert_id)
-    assert alert.disposition != "benign" and alert.summary.get("close_reason") != "ai_closed:audit_required"
-    assert alert.status in ("closed", "waiting_approval", "waiting_human")
-    assert alert.status != "closed" or alert.summary["close_reason"] == "analyst:true_positive"
+    await decide(engine, repos, threat, case, "true_positive", await analyst(repos))
+    after = await repos.alerts.get(TENANT_A, held_id)
+    assert (after.status, after.disposition) == ("waiting_human", None)
+    assert "response" not in after.summary and "analyst_decision" not in after.summary
+    assert (await repos.escalations.get(TENANT_A, own.id)).status == "open"
 
 
 async def test_a_blind_audit_malicious_label_holds_the_close_while_its_case_is_open(
     engine: WorkflowEngine, repos: Repositories, engine_settings: Settings
 ) -> None:
     """Confirmed by a person: an analyst labelled an AI-closed alert malicious in a blind audit. That alert stays
-    closed until the escalation the label opened is decided; meanwhile it holds closes on its host, and the held
-    alert joins that escalation."""
+    closed until the escalation the label opened is decided; meanwhile it holds closes on its host."""
     await tier_on(repos)
     labelled = await make_alert(repos, TENANT_A, title="Package installed", severity="low",
                                 normalized={"entities": {"hosts": [HOST]}})
@@ -302,8 +185,7 @@ async def test_a_blind_audit_malicious_label_holds_the_close_while_its_case_is_o
     assert result.escalation is not None and (await repos.alerts.get(TENANT_A, labelled)).status == "closed"
 
     alert_id = await routine(repos, "after-the-label")
-    waiting = await engine.run(TENANT_A, alert_id)
-    assert waiting.status == "waiting_human" and waiting.interrupt["escalation_id"] == result.escalation.id
+    assert (await engine.run(TENANT_A, alert_id)).status == "waiting_human"
     alert = await repos.alerts.get(TENANT_A, alert_id)
     assert alert.summary["related_open"] == {"threats": [labelled], "in_progress": [], "model_only": []}
     assert (await decided(repos, alert_id))["code"] == "related_open_threat"
@@ -317,7 +199,7 @@ async def test_a_blind_audit_malicious_label_holds_the_close_while_its_case_is_o
     [
         # Low or medium, and only a model stands behind it: the dev run's "web server 400 errors" and "sshd brute force".
         ("waiting_human", {"verdict": "malicious", "severity": "medium", "case": True}, {"hosts": [HOST]}),
-        ("waiting_human", {"assessment": "confirmed_threat", "severity": "low", "case": True}, {"users": [USER]}),
+        ("waiting_human", {"assessment": "confirmed_threat", "severity": "low", "case": True}, {"users": ["CORP\\jsmith"]}),
         ("waiting_human", {"assessment": "likely_threat", "severity": "info"}, {"hosts": [HOST]}),  # no case yet
         ("processing", {"assessment": "likely_threat", "severity": "medium"}, {"users": [USER]}),
         # A response plan that ended with an analyst, not with an approval request, and no model verdict of a threat.
@@ -367,6 +249,38 @@ async def test_a_forward_link_reopens_when_the_threat_is_confirmed(engine: Workf
     assert (alert.status, alert.disposition, alert.summary["reopened"]["mode"]) == ("waiting_human", None, "folded")
 
 
+# ------------------------------------------------------------------ the other order: the close comes first
+
+
+async def test_a_threat_that_reaches_hold_grade_after_the_close_reopens_it_into_its_case(
+    engine: WorkflowEngine, repos: Repositories
+) -> None:
+    """Review of #442, finding 3: the backward net is symmetric with the forward hold. An alert closes on the
+    models' word while nothing is open; a high alert a model judges a threat follows on the same host (spelled as
+    an FQDN) and reopens it into its case. A medium one only links, as #423 decided."""
+    await tier_on(repos)
+    first = await routine(repos, "before-a-serious-threat", hosts=["WS-042.corp.example.com"])
+    assert (await engine.run(TENANT_A, first)).status == "completed"
+    assert (await decided(repos, first))["code"] == "model_closed"
+
+    threat = await threat_alert(repos)  # high, on ws-042; the fast tier calls it likely_threat and it is escalated
+    assert (await engine.run(TENANT_A, threat)).status == "waiting_human"
+    case = (await repos.alerts.get(TENANT_A, threat)).summary["escalation_id"]
+    reopened = await repos.alerts.get(TENANT_A, first)
+    assert (reopened.status, reopened.disposition, reopened.summary["escalation_id"]) == ("waiting_human", None, case)
+    assert reopened.summary["reopened"]["mode"] == "folded" and reopened.summary["reopened"]["threat_alert_id"] == threat
+    assert first in (await repos.escalations.get(TENANT_A, case)).related_alert_ids
+    assert [e.resource_id for e in (await repos.audit.list(TENANT_A, action="alert.reopened")).items] == [first]
+
+    second = await routine(repos, "before-a-model-only-threat", hosts=["db-07"])
+    assert (await engine.run(TENANT_A, second)).status == "completed"
+    lesser = await threat_alert(repos, severity="medium", normalized={"entities": {"hosts": ["db-07.corp.example.com"]}})
+    assert (await engine.run(TENANT_A, lesser)).status == "waiting_human"
+    linked = await repos.alerts.get(TENANT_A, second)
+    assert (linked.status, linked.disposition, linked.summary["close_reason"]) == MODEL_CLOSE
+    assert [threat_id for threat_id, _ in links(linked)] == [lesser] and linked.summary.get("reopened") is None
+
+
 # ------------------------------------------------------------------ neither
 
 
@@ -375,19 +289,24 @@ async def test_a_forward_link_reopens_when_the_threat_is_confirmed(engine: Workf
     [
         ("waiting_human", {"assessment": "suspicious", "verdict": "inconclusive"}),  # a doubt, not a threat (#352)
         ("waiting_human", {"assessment": "benign", "verdict": "benign"}),  # with a person for another reason
-        ("closed", {"verdict": "malicious"}),  # not open any more
-        ("waiting_human", {"verdict": "malicious", "ingested_at": datetime.now(UTC) - timedelta(hours=25)}),
+        ("closed", {"verdict": "malicious"}),  # closed without a person's confirmation
+        ("failed", {"verdict": "malicious"}),  # a failed alert never holds
+        ("failed", {"severity": "critical"}),
+        ("waiting_human", {"verdict": "malicious", "ingested_at": datetime.now(UTC) - timedelta(days=8)}),  # too old
+        ("waiting_human", {"verdict": "malicious", "severity": "medium",
+                           "ingested_at": datetime.now(UTC) - timedelta(hours=25)}),  # a link reaches back 24 hours
         ("waiting_human", {"verdict": "malicious", "hosts": ["dc-01"], "users": ["mgarcia"]}),  # nothing shared
         ("waiting_human", {"verdict": "malicious", "hosts": ["dc-01"], "users": ["root"]}),  # every host has a root
         ("waiting_human", {"verdict": "malicious", "hosts": ["dc-01"], "users": ["NT AUTHORITY\\SYSTEM"]}),
         ("waiting_human", {"verdict": "malicious", "hosts": ["dc-01"], "ips": ["192.0.2.142"]}),  # only an IP
-        ("queued", {"severity": "critical"}),  # not looked at yet: if it becomes a threat, it arrives after the close
+        ("queued", {"severity": "critical"}),  # not looked at yet: if it reaches hold grade, it reopens the close
         ("new", {"severity": "critical"}),
         ("processing", {"severity": "medium"}),  # in progress, but not high or critical
         ("processing", {"severity": "critical", "hosts": ["dc-01"], "users": [USER]}),  # in progress on another host
+        ("processing", {"severity": "critical", "idle_minutes": 16}),  # a stuck run stops holding after 15 minutes
     ],
 )
-async def test_what_is_not_an_open_threat_neither_holds_nor_links(
+async def test_what_is_not_a_related_threat_neither_holds_nor_links(
     engine: WorkflowEngine, repos: Repositories, status: str, state: Dict[str, Any]
 ) -> None:
     await tier_on(repos)
@@ -415,9 +334,10 @@ async def test_another_tenants_threat_never_holds_or_links_a_close(engine: Workf
     mine = await repos.alerts.get(TENANT_A, ours)
     assert mine.summary["related_open"] == NOTHING and links(mine) == []
     assert await related_open(repos, TENANT_A, ours) == NOTHING
-    found = await repos.alerts.open_threats_sharing_entities(
-        TENANT_A, hosts=[HOST], users=[USER], since=datetime.now(UTC) - timedelta(hours=24),
-        exclude_alert_id=ours, threat_assessments=["likely_threat", "confirmed_threat"],
+    now = datetime.now(UTC)
+    found = await repos.alerts.related_candidates(
+        TENANT_A, exclude_alert_id=ours, open_since=now - timedelta(days=7), closed_since=now - timedelta(hours=24),
+        threat_assessments=["likely_threat", "confirmed_threat"], limit=100,
     )
     assert found == []
 
@@ -435,7 +355,7 @@ async def test_with_the_tier_off_nothing_is_read_or_kept(
     async def unused(*args: Any, **kwargs: Any) -> Any:
         raise AssertionError("with the tier off no model-led close is possible: nothing to check")
 
-    monkeypatch.setattr(nodes, "related_open", unused)
+    monkeypatch.setattr(nodes, "related_open_counted", unused)
     await other(repos, "waiting_human", verdict="malicious")
     alert_id = await routine(repos, "tier-off")
     assert (await engine.run(TENANT_A, alert_id)).status == "waiting_human"
@@ -444,65 +364,49 @@ async def test_with_the_tier_off_nothing_is_read_or_kept(
     assert event["code"] == "false_positive_review" and "related_open_threats" not in event
 
 
-async def test_a_failed_read_of_the_related_alerts_never_closes(
+# ------------------------------------------------------------------ unchecked
+
+
+async def test_a_failed_read_of_the_related_alerts_escalates_and_never_fails_the_run(
     engine: WorkflowEngine, repos: Repositories, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Fail closed: when the stored state cannot be read the run fails (and is retried by the worker); the alert
-    is not closed on the models' word."""
+    """Review of #442, finding 6: fail closed without failing the run. The alert the models call benign goes to
+    an analyst with ``related_unchecked``; a threat on the same broken read is escalated as a threat."""
     async def broken(*args: Any, **kwargs: Any) -> Any:
         raise RuntimeError("database read failed")
 
     await tier_on(repos)
-    monkeypatch.setattr(type(repos.alerts), "open_threats_sharing_entities", broken)
+    monkeypatch.setattr(type(repos.alerts), "related_candidates", broken)
     alert_id = await routine(repos, "unreadable")
-    with pytest.raises(RuntimeError, match="database read failed"):
-        await engine.run(TENANT_A, alert_id)
+    assert (await engine.run(TENANT_A, alert_id)).status == "waiting_human"
     alert = await repos.alerts.get(TENANT_A, alert_id)
-    assert alert.status == "failed" and alert.disposition is None
+    assert (alert.status, alert.disposition) == ("waiting_human", None)
+    assert alert.summary["related_open"] == {"unchecked": "read_failed"}
+    event = await decided(repos, alert_id)
+    assert event["code"] == "related_unchecked" and event["related_unchecked"] == "read_failed"
+    assert "could not be checked" in event["reason"]
+
+    threat = await threat_alert(repos)
+    assert (await engine.run(TENANT_A, threat)).status == "waiting_human"
+    assert await repos.escalations.get_active_for_alert(TENANT_A, threat) is not None
+
+
+async def test_more_open_threats_than_one_decision_compares_is_unchecked(
+    engine: WorkflowEngine, repos: Repositories, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Past the candidate limit the check is not complete: it fails closed, on whatever host the threats are."""
+    await tier_on(repos)
+    monkeypatch.setattr(retro_reopen, "MAX_RELATED_CANDIDATES", 2)
+    for n in range(3):
+        await other(repos, "waiting_human", verdict="malicious", hosts=[f"srv-{n}"])
+    alert_id = await routine(repos, "crowded")
+    assert (await engine.run(TENANT_A, alert_id)).status == "waiting_human"
+    alert = await repos.alerts.get(TENANT_A, alert_id)
+    assert alert.summary["related_open"] == {"unchecked": "too_many_candidates"}
+    assert (await decided(repos, alert_id))["code"] == "related_unchecked"
 
 
 # ------------------------------------------------------------------ the demo's attack chain (scripts/demo/alerts.json)
-
-BEACON = "demo-net-001"
-
-
-def _seed_demo() -> Any:
-    spec = importlib.util.spec_from_file_location("seed_demo", REPO / "scripts" / "demo" / "seed_demo.py")
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-async def _store_chain(repos: Repositories, seed: Any, tenant_id: str) -> Dict[str, str]:
-    """The four alerts of the chain, normalised as the canonical ingest endpoint does, in the demo's order."""
-    by_source = {a["source_alert_id"]: a for a in json.loads(seed.DEFAULT_ALERTS.read_text(encoding="utf-8"))["alerts"]}
-    ctx = NormalizeContext("demo", "canonical", {}, now=datetime.now(UTC))
-    ids: Dict[str, str] = {}
-    for step in seed.ATTACK_CHAIN:
-        raw = by_source[step]
-        normalized = json.loads(get_normalizer("canonical").normalize(raw, ctx).model_dump_json())
-        assert "ws-fin-0142.corp.example.com" in normalized["entities"]["hosts"]
-        assert normalized["severity"] in ("high", "critical")  # so each step that is judged a threat holds the others
-        ids[step] = await make_alert(
-            repos, tenant_id, source_id="demo", source_alert_id=f"{step}-qs1", title=normalized["title"],
-            severity=normalized["severity"], category=normalized["category"], raw=raw, normalized=normalized,
-        )
-    return ids
-
-
-def _persuaded(real: Any) -> Any:
-    """The fake model, except that it reads the beacon as the real model did in #435: threat score 10, benign,
-    with the test-looking names as its false-positive reasons."""
-    def analyse(text: str) -> Any:
-        if "cdn-sync.updates-cloud.test" not in text.lower():
-            return real(text)
-        reasons = ("reserved .test domain", "documentation address ranges", "example.com host naming",
-                   "vendor is Demo NDR", "regular interval can be synthetic traffic")
-        return fake.Signals(threat_score=10, confidence=90, malicious=(), benign=reasons)
-
-    return analyse
-
 
 async def test_no_alert_of_the_demo_attack_chain_closes_without_a_person(
     engine: WorkflowEngine, repos: Repositories, monkeypatch: pytest.MonkeyPatch
@@ -510,25 +414,26 @@ async def test_no_alert_of_the_demo_attack_chain_closes_without_a_person(
     """#435 on the demo's own data: Word starts PowerShell, the LSASS dump, the beacon, PsExec, all on WS-FIN-0142,
     at the tier auto_full_audit. A model calls the beacon benign because it looks like test data. Without the
     stored-state check the beacon closes; with it, the open threats on the host send it to a person."""
-    seed = _seed_demo()
-    monkeypatch.setattr(fake, "analyse_text", _persuaded(fake.analyse_text))
+    seed = seed_demo()
+    monkeypatch.setattr(fake, "analyse_text", persuaded(fake.analyse_text))
     for tenant_id in (TENANT_A, TENANT_B):
         await tier_on(repos, tenant_id)
 
-    # Control (the behaviour before AI-E3.16): nothing reads the related alerts, and the beacon closes.
+    # Control (the behaviour before AI-E3.16): nothing reads the related alerts, and the beacon closes after the
+    # two steps before it.
     async def unchecked(*args: Any, **kwargs: Any) -> Dict[str, List[str]]:
         return {"threats": [], "in_progress": [], "model_only": []}
 
-    before = await _store_chain(repos, seed, TENANT_B)
+    before = await store_chain(repos, seed, TENANT_B)
     with monkeypatch.context() as patched:
-        patched.setattr(nodes, "related_open", unchecked)
-        for alert_id in before.values():
-            await engine.run(TENANT_B, alert_id)
+        patched.setattr(nodes, "related_open_counted", unchecked)
+        for step in ("demo-edr-001", "demo-edr-002", BEACON):
+            await engine.run(TENANT_B, before[step])
     closed = await repos.alerts.get(TENANT_B, before[BEACON])
     assert (closed.status, closed.disposition, closed.summary["close_reason"]) == MODEL_CLOSE
     assert seed.closed_without_a_person(closed.model_dump(mode="json"))
 
-    chain = await _store_chain(repos, seed, TENANT_A)
+    chain = await store_chain(repos, seed, TENANT_A)
     for alert_id in chain.values():
         await engine.run(TENANT_A, alert_id)
     alerts = {step: await repos.alerts.get(TENANT_A, alert_id) for step, alert_id in chain.items()}
@@ -542,3 +447,37 @@ async def test_no_alert_of_the_demo_attack_chain_closes_without_a_person(
     for step, alert in alerts.items():
         assert alert.status in ("waiting_human", "waiting_approval"), (step, alert.status)
         assert not seed.closed_without_a_person(alert.model_dump(mode="json")), step
+
+
+async def test_the_beacon_decided_before_the_rest_of_the_chain_is_reopened_by_it(
+    engine: WorkflowEngine, repos: Repositories, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review of #442, finding 3, the other order on the demo chain: the beacon is decided while the LSASS dump is
+    still queued, so nothing holds it and it closes on the models' word. The dump is critical and judged a threat:
+    when it is processed it reopens the beacon. No step of the chain ends closed without a person."""
+    seed = seed_demo()
+    monkeypatch.setattr(fake, "analyse_text", persuaded(fake.analyse_text))
+    await tier_on(repos)
+    chain = await store_chain(repos, seed, TENANT_A)
+    for step, alert_id in chain.items():
+        if step != BEACON:
+            await repos.alerts.update_status(TENANT_A, alert_id, "queued")
+
+    assert (await engine.run(TENANT_A, chain[BEACON])).status == "completed"
+    first = await repos.alerts.get(TENANT_A, chain[BEACON])
+    assert (first.status, first.disposition, first.summary["close_reason"]) == MODEL_CLOSE
+    assert first.summary["related_open"] == NOTHING
+
+    await engine.run(TENANT_A, chain["demo-edr-002"])  # the LSASS dump: critical, a model judges it a threat
+    beacon = await repos.alerts.get(TENANT_A, chain[BEACON])
+    assert beacon.status in ("queued", "waiting_human") and beacon.disposition is None
+    assert beacon.summary["reopened"]["threat_alert_id"] == chain["demo-edr-002"]
+    assert beacon.summary["close_reason"] == "reopened:related_threat"
+    assert [e.resource_id for e in (await repos.audit.list(TENANT_A, action="alert.reopened")).items] == [chain[BEACON]]
+    assert not seed.closed_without_a_person(beacon.model_dump(mode="json"))
+
+    for step in ("demo-edr-001", "demo-edr-003"):
+        await engine.run(TENANT_A, chain[step])
+    for step, alert_id in chain.items():
+        alert = await repos.alerts.get(TENANT_A, alert_id)
+        assert not seed.closed_without_a_person(alert.model_dump(mode="json")), (step, alert.status)

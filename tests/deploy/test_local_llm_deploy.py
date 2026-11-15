@@ -513,13 +513,15 @@ def test_the_demo_attack_chain_is_the_four_alerts_on_the_finance_workstation() -
 
 def test_closed_without_a_person_reads_the_close_reason() -> None:
     seed = load_seed()
-    for reason in ("ai_closed:audit_required", "policy:close", "policy:response", "triage:false_positive",
-                   "suppression_rule", "verdict_cache", None):
+    for reason in ("ai_closed:audit_required", "policy:close", "triage:false_positive", "suppression_rule",
+                   "verdict_cache", None):
         closed = {"status": "closed", "summary": {"close_reason": reason} if reason else {}}
         assert seed.closed_without_a_person(closed), reason
     assert seed.closed_without_a_person({"status": "closed"})
     for decision in ("true_positive", "false_positive", "benign_positive"):
         assert not seed.closed_without_a_person({"status": "closed", "summary": {"close_reason": f"analyst:{decision}"}})
+    # A completed automatic response treated the alert as the attack it is: not a silent close.
+    assert not seed.closed_without_a_person({"status": "closed", "summary": {"close_reason": "policy:response"}})
     for status in ("waiting_human", "waiting_approval", "processing", "failed"):
         assert not seed.closed_without_a_person({"status": status, "summary": {}})
 

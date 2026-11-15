@@ -1,50 +1,61 @@
-"""The safety net of decision policy v3 (FIX-3, AI-E3.15): a related threat a model judged links the alerts the
-models closed alone to its case, and one a person confirmed reopens them.
+"""The safety net of decision policy v3 (FIX-3, AI-E3.15, AI-E3.16): what a related threat does to the alerts
+the models closed alone, and what an open one does to a close that is being decided.
 
 At the autonomy tier ``auto_full_audit`` the models close every alert the
 deep tier judged benign (:mod:`lg_sotf.domain.closure`); the forward gates of
-FIX-1 and FIX-2 (thresholds, campaign check) are gone. Instead, when an alert
-becomes a threat, the safety net looks up the alerts of the same tenant that
-the models closed alone (close reason ``ai_closed:*``) in the previous
-:data:`REOPEN_WINDOW` and that share a host, user or IP with it.
+FIX-1 and FIX-2 (thresholds, campaign check) are gone. Two alerts **relate**
+when they share a host or a user by relation key
+(:func:`lg_sotf.domain.related.relation_keys`: short host name, bare account
+name; never an IP address alone, never an account every host has). A threat
+only a model stands behind links; a stronger signal acts. The stronger signal
+is one predicate, :func:`lg_sotf.domain.related.hold_grade`, in both
+directions: the alert is high or critical and a model judged it a threat, or
+it waits for a response approval, or a person confirmed it.
 
-**A model judged the threat** (:func:`link_related_model_closes`):
+Backward: the threat comes after the close
+------------------------------------------
 
-* the workflow plans a response for it, or closes it malicious, with no
-  analyst ``true_positive`` and no response action that really ran behind
-  it (a response it only proposes, or only simulates in the tenant's
-  dry-run mode);
-* it is escalated and a model judged it a threat (the deep tier's
-  ``malicious``, the fast tier's ``likely_threat`` or ``confirmed_threat``).
-  The fast tier's ``suspicious`` is a doubt, not a threat: it does not block
-  a model close, so it does not touch one either (#352).
+When an alert becomes a threat, the safety net looks up the alerts of the
+same tenant that the models closed alone (close reason ``ai_closed:*``) in
+the previous :data:`REOPEN_WINDOW` and that relate to it.
 
-A model's judgement is not a confirmation (AI-E3.15: on dev, one benign alert
-a model misjudged undid thirteen correct closes). Each related alert is
-**linked** and stays closed: it is attached to the threat's open escalation
-as a related alert when there is one, so the analyst sees it in the case; it
-gets an entry in its summary's ``linked`` list (threat alert, case, time) and
-is audited ``alert.linked`` (reason ``related_threat``), with an
-``alert.linked`` event on its timeline. Its status, disposition and close
-reason do not change, no run starts, and a decision on the case never
-settles it (:func:`lg_sotf.services.folded.settle_folded`): it stays closed
-by the models, marked for audit. The threat keeps the ids it linked
-(``linked_alert_ids`` in its summary). Each call links the related closes
-the threat has not linked yet, newest first and at most :data:`MAX_REOPEN`,
-so the calls of one run (response plan, escalation, close) reach older ones.
+**A model judged the threat, below hold grade**
+(:func:`link_related_model_closes`): a low or medium alert that is escalated
+after a model judged it a threat (the deep tier's ``malicious``, the fast
+tier's ``likely_threat`` or ``confirmed_threat``; never ``suspicious``,
+#352), or that the workflow closes malicious after a response it only
+simulated in the tenant's dry-run mode.
 
-**The threat is confirmed** (:func:`reopen_related_model_closes`), by a
-person or by the platform acting on it:
+A model's judgement on such an alert is not a confirmation (AI-E3.15: on
+dev, one benign alert a model misjudged undid thirteen correct closes). Each
+related alert is **linked** and stays closed: it is attached to the threat's
+open escalation as a related alert when there is one, so the analyst sees it
+in the case; it gets an entry in its summary's ``linked`` list (threat
+alert, case, time) and is audited ``alert.linked`` (reason
+``related_threat``), with an ``alert.linked`` event on its timeline. Its
+status, disposition and close reason do not change, no run starts, and a
+decision on the case never settles it
+(:func:`lg_sotf.services.folded.settle_folded`): it stays closed by the
+models, marked for audit. The threat keeps the ids it linked
+(``linked_alert_ids`` in its summary). Each call links the related closes the
+threat has not linked yet, newest first and at most :data:`MAX_REOPEN`, so
+the calls of one run (response plan, escalation, close) reach older ones.
 
+**The threat reaches hold grade or is confirmed**
+(:func:`reopen_related_model_closes`):
+
+* it is escalated or gets a response plan while it is high or critical and
+  a model judged it a threat (AI-E3.16: the forward check would have held
+  these closes, had the threat been looked at first);
+* a response for it waits for an approval, at any severity;
 * an analyst decides ``true_positive`` on it (the API, then the response
   plan and the malicious close of the run that decision resumes);
 * an analyst approves a response action for it;
 * a blind audit labels it ``malicious``;
 * the workflow carries out a response action for it (``succeeded``), alone
   under the tenant's autonomy policy: once the platform has acted on a
-  threat, the related alerts do not stay closed. A response it only
-  proposes confirms nothing, and neither does a ``dry_run``: a simulation
-  is not an act.
+  threat, the related alerts do not stay closed. A ``dry_run`` is a
+  simulation and confirms nothing.
 
 Each related alert is reopened, and so is every alert linked earlier to the
 threat or attached to its case, however long ago it closed. Each one is
@@ -58,8 +69,9 @@ threat takes it over when the first one asked for more information
 without an escalation, or a case already decided) is it queued for a new
 run instead, marked ``reopened`` so the policy never closes it on the
 models' word again. Either way it is audited ``alert.reopened`` (reason
-``related_threat``), with an ``alert.reopened`` event on its timeline. A single attack step the model
-misjudged therefore resurfaces as soon as the attack is confirmed anywhere.
+``related_threat``), with an ``alert.reopened`` event on its timeline. A
+single attack step the model misjudged therefore resurfaces as soon as a
+serious step of the attack is seen anywhere on its host or user.
 
 Both are idempotent (an alert already reopened is no longer closed, so it is
 not selected again; an alert already linked to the threat is linked again
@@ -70,46 +82,56 @@ fails the threat's own decision. A shadow run runs neither: the call is
 recorded in the run's sink (:func:`reopen_counted`, the one entry point of
 both, is an egress boundary).
 
-IPs are matched whatever their role in the alert (source or destination):
-the canonical alert does not keep the role, and a wider match only links or
-reopens more.
+The closed alerts are read as a bounded candidate set (tenant, closed by the
+models, closed in the window, newest first, at most
+:data:`MAX_CLOSED_CANDIDATES`) and compared by relation key here. Past that
+limit the newest ones are compared, the older ones are not, and the failure
+counter and an error log say so (path ``candidates``).
 
-**The other order of arrival** (:func:`related_open`, AI-E3.16): the threat
-is there before the close. When ``decide`` runs for an alert at the tier, it
-reads the tenant's alerts of the same window that share a host or user with
-it and are not closed. The same distinction applies forward: a threat only a
-model stands behind links, a stronger signal acts.
+Forward: the threat is there before the close
+---------------------------------------------
 
-* **Hold** (:mod:`lg_sotf.domain.closure`): the close is withheld when the
-  related open alert waits for a response approval, is high or critical and
-  judged a threat by a model, or was confirmed by a person (an analyst's
-  ``true_positive``, a blind-audit ``malicious`` label); also while a high
-  or critical alert on the same host is being processed. The held alert
-  joins the threat's open case as an attached alert, so the analyst gets
-  one case; it escalates on its own only when the threat has no open case.
-* **Link forward** (:func:`forward_links`): any other related open alert a
-  model judged a threat, or planned a response for, holds nothing. The
-  alert closes on the models' word and is linked to that threat's case at
-  once, through :func:`link_related_model_closes` (path ``forward``). A
-  later confirmation of the threat reopens it like any linked alert.
+When ``decide`` runs for an alert at the tier, :func:`related_open` reads
+what the database holds about the tenant's other alerts and gives each
+related one its role (:func:`lg_sotf.domain.related.classify`):
 
-IPs are left out here, and so are the accounts every host has of its own
-(:data:`BUILT_IN_ACCOUNTS`): a shared proxy, resolver or NAT address, or
-``root`` on two servers, would relate unrelated alerts, and the safety net
-above still links by them. An alert that is only queued has not been looked
-at; if it becomes a threat it arrives after the close, which the safety net
-covers.
+* **hold**: a hold-grade alert that is open (up to seven days from its
+  ingestion), or one a person confirmed and that closed in the last 24
+  hours. The model-led close is withheld and the alert goes to an analyst
+  through the ordinary escalation path (:mod:`lg_sotf.domain.closure`).
+* **in progress**: a high or critical alert on the same host that is being
+  processed and changed in the last 15 minutes. Also withheld.
+* **model only**: any other open alert of the last 24 hours that a model
+  judged a threat or planned a response for. It holds nothing: the alert
+  closes on the models' word and is linked to that alert's case at once,
+  through :func:`link_related_model_closes` (path ``forward``).
+
+The candidates are read by tenant, state and time, newest first, at most
+:data:`MAX_RELATED_CANDIDATES`. Past that limit, or when the read fails,
+the check fails closed without failing the run: the digest says
+``unchecked`` and the alert goes to an analyst (:func:`related_open_counted`).
+A ``failed`` alert never holds. An alert that is only queued has not been
+looked at; if it reaches hold grade later, the backward net reopens the
+close.
 """
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 from lg_sotf.audit.logger import Actor, AuditLogger
 from lg_sotf.core.state import RelatedOpenDigest
 from lg_sotf.db.errors import InvalidTransition, NotFound
 from lg_sotf.db.repos import Repositories
+from lg_sotf.domain.related import (
+    HOLD_WINDOW,
+    LINK_WINDOW,
+    MODEL_THREATS,
+    RelatedFacts,
+    related_digest,
+    relation_keys,
+)
 from lg_sotf.observability.logging import get_logger, log_failure
 from lg_sotf.observability.metrics import RETRO_LINKED, RETRO_REOPEN_FAILURES, RETRO_REOPENED
 from lg_sotf.security.shadow import egress, sink
@@ -117,7 +139,7 @@ from lg_sotf.services.folded import FOLDED, REQUEUED, closed_by_models, folded_i
 
 log = get_logger(__name__)
 
-REOPEN_WINDOW = timedelta(hours=24)
+REOPEN_WINDOW = LINK_WINDOW
 REOPEN_REASON = "related_threat"
 REOPEN_ACTION = "alert.reopened"
 LINK_ACTION = "alert.linked"
@@ -129,27 +151,13 @@ MAX_LINKED_IDS = 1_000
 REOPENED_CLOSE_REASON = "reopened:related_threat"
 ACTIVE_ESCALATION_STATUSES = frozenset({"open", "claimed"})
 MAX_REOPEN = 200
-MAX_ENTITY_VALUES = 50
-#: The related open alerts a decision records: the ones that hold the close back first, then the ones it links to.
-MAX_RELATED_OPEN = 10
-#: Accounts every host has of its own: two alerts that share only one of them are not about the same user, so it
-#: holds no close back (:func:`related_open`). The safety net still links by them: a link changes no decision.
-BUILT_IN_ACCOUNTS = frozenset({"root", "system", "local service", "network service"})
-#: The fast-tier verdicts that make an escalated alert a threat for the safety net: the same ones that block a
-#: model close. ``suspicious`` is absent on purpose (#352).
-THREAT_ASSESSMENTS = frozenset({"likely_threat", "confirmed_threat"})
-
-
-def judged_threat(triage: Mapping[str, Any], analysis: Mapping[str, Any]) -> bool:
-    """Whether a model judged the alert a threat (the escalation path of the safety net); ``suspicious`` is not one."""
-    return analysis.get("verdict") == "malicious" or triage.get("threat_assessment") in THREAT_ASSESSMENTS
-
-
-def _values(entities: Any, kind: str) -> List[str]:
-    values = entities.get(kind) if isinstance(entities, Mapping) else None
-    if not isinstance(values, list):
-        return []
-    return [v for v in values[:MAX_ENTITY_VALUES] if isinstance(v, str) and v]
+#: The alerts the models closed in the window that one call of the safety net compares with a threat.
+MAX_CLOSED_CANDIDATES = 20_000
+#: The open threats (and serious alerts in progress) of a tenant that one decision compares with its alert. With
+#: more than that the check is not complete, so it fails closed (``unchecked``).
+MAX_RELATED_CANDIDATES = 2_000
+#: Why a related-alert check did not complete (the digest's ``unchecked``).
+READ_FAILED, TOO_MANY = "read_failed", "too_many_candidates"
 
 
 def _listed(summary: Any, key: str) -> List[Any]:
@@ -163,50 +171,68 @@ def _linked_ids(threat: Any) -> List[str]:
 
 
 async def _related(repos: Repositories, tenant_id: str, threat: Any, now: datetime, *, unlinked: bool = False) -> List[str]:
-    """Ids of the alerts the models closed alone in the window that share a host, user or IP with ``threat``,
-    newest first, at most :data:`MAX_REOPEN`; ``unlinked``: only those the threat has not linked yet."""
-    entities = threat.entities if isinstance(threat.entities, Mapping) else {}
-    return await repos.alerts.model_closed_sharing_entities(
-        tenant_id,
-        hosts=_values(entities, "hosts"),
-        users=_values(entities, "users"),
-        ips=_values(entities, "ips"),
-        since=now - REOPEN_WINDOW,
-        exclude_alert_id=threat.id,
-        not_linked_to=unlinked,
-        limit=MAX_REOPEN,
+    """Ids of the alerts the models closed alone in the window that relate to ``threat`` (a shared host or user by
+    relation key), newest first, at most :data:`MAX_REOPEN`; ``unlinked``: only those the threat has not linked
+    yet. Past :data:`MAX_CLOSED_CANDIDATES` closed alerts the older ones are not compared: counted and logged."""
+    keys = relation_keys(threat.entities)
+    if not keys:
+        return []
+    closed = await repos.alerts.model_closed_candidates(
+        tenant_id, since=now - REOPEN_WINDOW, exclude_alert_id=threat.id, not_linked_to=unlinked,
+        limit=MAX_CLOSED_CANDIDATES + 1,
     )
-
-
-def _built_in(user: str) -> bool:
-    """A built-in account of the host itself, with or without its authority prefix (``NT AUTHORITY\\SYSTEM``)."""
-    return user.rsplit("\\", 1)[-1].strip().lower() in BUILT_IN_ACCOUNTS
+    if len(closed) > MAX_CLOSED_CANDIDATES:
+        RETRO_REOPEN_FAILURES.labels(path="candidates").inc()
+        log.error("retro_reopen.too_many_candidates", alert_id=threat.id, limit=MAX_CLOSED_CANDIDATES)
+    related = [c.id for c in closed[:MAX_CLOSED_CANDIDATES] if keys & relation_keys(c.entities)]
+    return related[:MAX_REOPEN]
 
 
 async def related_open(
     repos: Repositories, tenant_id: str, alert_id: str, *, now: Optional[datetime] = None
 ) -> RelatedOpenDigest:
-    """What the database holds, at this moment, about the open threats on the alert's hosts and users: the ids of
-    the ones that hold a model-led close back (``threats``), of the high or critical alerts in progress on its
-    hosts (``in_progress``) and of the threats only a model stands behind (``model_only``: the close is linked
-    to their case), at most :data:`MAX_RELATED_OPEN` in all (see the module docs). Read in the tenant's
-    transaction; raises on a database error, so a failed read never closes an alert."""
+    """What the database holds, at this moment, about the alerts related to this one: the ids of the ones that
+    hold a model-led close back (``threats``), of the high or critical alerts in progress on its hosts
+    (``in_progress``) and of the threats only a model stands behind (``model_only``: the close is linked to their
+    case); see the module docs. ``{"unchecked": "too_many_candidates"}`` when the tenant has more open threats
+    than one decision compares. Read in the tenant's transaction; raises on a database error
+    (:func:`related_open_counted` turns that into an unchecked digest)."""
+    now = now or datetime.now(UTC)
     alert = await repos.alerts.get(tenant_id, alert_id)
-    entities = alert.entities if isinstance(alert.entities, Mapping) else {}
-    found = await repos.alerts.open_threats_sharing_entities(
-        tenant_id,
-        hosts=_values(entities, "hosts"),
-        users=[user for user in _values(entities, "users") if not _built_in(user)],
-        since=(now or datetime.now(UTC)) - REOPEN_WINDOW,
-        exclude_alert_id=alert_id,
-        threat_assessments=sorted(THREAT_ASSESSMENTS),
-        limit=MAX_RELATED_OPEN,
+    if not relation_keys(alert.entities):
+        return {"threats": [], "in_progress": [], "model_only": []}
+    rows = await repos.alerts.related_candidates(
+        tenant_id, exclude_alert_id=alert_id, open_since=now - HOLD_WINDOW, closed_since=now - LINK_WINDOW,
+        threat_assessments=sorted(MODEL_THREATS), limit=MAX_RELATED_CANDIDATES + 1,
     )
-    return {
-        "threats": [other.id for other in found if other.kind == "hold"],
-        "in_progress": [other.id for other in found if other.kind == "in_progress"],
-        "model_only": [other.id for other in found if other.kind == "model_only"],
-    }
+    if len(rows) > MAX_RELATED_CANDIDATES:
+        return {"unchecked": TOO_MANY}
+    others = [
+        RelatedFacts(
+            id=r.id, status=r.status, severity=r.severity, entities=r.entities, threat_assessment=r.threat_assessment,
+            verdict=r.verdict, planned=r.planned, confirmed=r.confirmed, ingested_at=r.ingested_at,
+            changed_at=r.changed_at,
+        )
+        for r in rows
+    ]
+    digest = related_digest(alert.entities, others, now)
+    return {"threats": digest["threats"], "in_progress": digest["in_progress"], "model_only": digest["model_only"]}
+
+
+async def related_open_counted(repos: Repositories, tenant_id: str, alert_id: str) -> RelatedOpenDigest:
+    """:func:`related_open` for the ``decide`` step: it never raises. A read that fails is counted
+    (``lgsotf_retro_reopen_failures_total``, path ``related_open``), logged as an error and answered
+    ``{"unchecked": "read_failed"}``: the alert goes to an analyst, and the run goes on."""
+    try:
+        digest = await related_open(repos, tenant_id, alert_id)
+    except Exception as exc:  # noqa: BLE001 - fail closed without failing the run: counted, logged, escalated
+        RETRO_REOPEN_FAILURES.labels(path="related_open").inc()
+        log_failure(log, "related_open.failed", exc, level="error", alert_id=alert_id, error_type=type(exc).__name__)
+        return {"unchecked": READ_FAILED}
+    if "unchecked" in digest:
+        RETRO_REOPEN_FAILURES.labels(path="related_open").inc()
+        log.error("related_open.too_many_candidates", alert_id=alert_id, limit=MAX_RELATED_CANDIDATES)
+    return digest
 
 
 def forward_links(summary: Any) -> List[str]:
@@ -214,12 +240,6 @@ def forward_links(summary: Any) -> List[str]:
     ``related_open.model_only``): once the models close the alert, it is linked to each one's case."""
     related = summary.get("related_open") if isinstance(summary, Mapping) else None
     return [threat for threat in _listed(related, "model_only") if isinstance(threat, str)]
-
-
-def holders(summary: Any) -> List[str]:
-    """The open threats that held the alert's model-led close back (``related_open.threats``)."""
-    related = summary.get("related_open") if isinstance(summary, Mapping) else None
-    return [threat for threat in _listed(related, "threats") if isinstance(threat, str)]
 
 
 async def link_related_model_closes(
@@ -424,10 +444,11 @@ async def reopen_counted(
     confirmed: bool,
     escalation_id: Optional[str] = None,
 ) -> Sequence[str]:
-    """The safety net for a threat path. ``confirmed`` says what stands behind the threat: a person's decision
-    or an executed response (the related model closes reopen, :func:`reopen_related_model_closes`) or only a
-    model (they are linked and stay closed, :func:`link_related_model_closes`). A failure is counted and logged as
-    an error, never raised (the threat's own decision stands); returns the ids reopened (none when linking)."""
+    """The safety net for a threat path. ``confirmed`` says what stands behind the threat: a person's decision,
+    an executed response or hold grade (the related model closes reopen, :func:`reopen_related_model_closes`), or
+    only a model's judgement below hold grade (they are linked and stay closed,
+    :func:`link_related_model_closes`). A failure is counted and logged as an error, never raised (the threat's
+    own decision stands); returns the ids reopened (none when linking)."""
     act = reopen_related_model_closes if confirmed else link_related_model_closes
     try:
         ids = await act(repos, tenant_id, threat, actor=actor, escalation_id=escalation_id)

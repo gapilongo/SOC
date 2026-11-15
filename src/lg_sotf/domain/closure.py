@@ -30,25 +30,27 @@ unreadable value blocks the close.
 * not normalised by a model (the LLM-fallback normalizer chose its fields),
   and not reopened by the safety net (``reopened``): a reopened alert goes
   to an analyst;
-* no related open threat (AI-E3.16, #435). When the decision is made the
-  workflow reads the tenant's stored alerts of the previous 24 hours that
-  share a host or user with this one
-  (:func:`lg_sotf.core.retro_reopen.related_open`, the digest
-  :data:`RELATED_OPEN`). The close is held back and the alert goes to an
-  analyst, in the threat's case, when one of them is not closed and is a
-  strong enough signal (code ``related_open_threat``): it waits for a
-  response approval; or it is high or critical and a model judged it a
-  threat (the deep tier's ``malicious``, the fast tier's ``likely_threat``
-  or ``confirmed_threat``); or a person confirmed it (an analyst's
-  ``true_positive``, a blind-audit ``malicious`` label). It is also held
-  back when a high or critical alert on the same host is being processed
-  at that moment: nothing is decided about it yet (code
-  ``related_in_progress``). A low or medium threat only a model stands
-  behind holds nothing: the alert closes and is linked to that threat's
-  case at once, as the safety net links it when the threat comes later.
-  The facts come from the database, never from a model's text or from the
-  correlation digest. A digest that is missing or unreadable blocks the
-  close (``related_unchecked``).
+* no related threat of hold grade (AI-E3.16, #435). When the decision is
+  made the workflow reads what the database holds about the tenant's other
+  alerts and keeps the ones that relate to this one: a shared host or user
+  by relation key (:mod:`lg_sotf.domain.related`; never an IP alone, never
+  an account every host has), in the digest :data:`RELATED_OPEN`
+  (:func:`lg_sotf.core.retro_reopen.related_open`). The close is held back
+  and the alert goes to an analyst (code ``related_open_threat``) when one
+  of them is hold grade (:func:`lg_sotf.domain.related.hold_grade`): high
+  or critical and judged a threat by a model, waiting for a response
+  approval, or confirmed by a person. Such an alert holds for as long as it
+  is open, up to seven days from its ingestion, and for 24 hours after it
+  closed with a person's confirmation. It is also held back while a high or
+  critical alert on the same host is being processed (changed in the last
+  15 minutes; code ``related_in_progress``). A low or medium threat only a
+  model stands behind holds nothing: the alert closes and is linked to that
+  threat's case at once, as the safety net links it when the threat comes
+  later. The facts come from the database, never from a model's text or
+  from the correlation digest. A check that did not complete (the read
+  failed, the tenant has more open threats than one decision compares, or
+  no digest at all) blocks the close without failing the run (code
+  ``related_unchecked``).
 
 Removed in v3: the install thresholds on the model tiers (likelihood 8,
 certainty 85), the campaign check and the ``unmapped`` block. The related
@@ -138,11 +140,13 @@ LLM_NORMALIZED_FLAG = "llm_normalized"
 #: The state and alert-summary key of the related-alert check: ``{"threats": [alert ids], "in_progress": [alert
 #: ids], "model_only": [alert ids]}`` as the database held them when the decision was made
 #: (lg_sotf.core.retro_reopen.related_open). ``threats`` and ``in_progress`` hold the close back; ``model_only``
-#: (threats only a model stands behind) holds nothing: the closed alert is linked to their case.
+#: (threats only a model stands behind) holds nothing: the closed alert is linked to their case. A check that did
+#: not complete carries ``{"unchecked": reason}`` and no lists.
 RELATED_OPEN = "related_open"
-#: The blockers that hold a close back because of a related alert's stored state. When nothing else blocks the
-#: close, the alert goes to an analyst under the blocker's own name as the decision code (lg_sotf.domain.routing).
-RELATED_HOLDS: FrozenSet[str] = frozenset({"related_open_threat", "related_in_progress"})
+#: The blockers that hold a close back because of the related alerts' stored state, or because it could not be
+#: read. When nothing else blocks the close, the alert goes to an analyst under the blocker's own name as the
+#: decision code (lg_sotf.domain.routing).
+RELATED_HOLDS: FrozenSet[str] = frozenset({"related_unchecked", "related_open_threat", "related_in_progress"})
 
 
 def linked_only_cases(summary: Mapping[str, Any]) -> FrozenSet[str]:
@@ -351,7 +355,7 @@ def model_close_blockers(state: Mapping[str, Any], *, tier: str) -> List[str]:
         ("deep_tier_not_benign", not _deep_tier_benign(analysis)),
         # The stored state of the related alerts; only read at the tier, so it is only missing there.
         ("related_unchecked", tier == MODEL_CLOSE_TIER and not checked),
-        ("related_open_threat", bool(threats)),
-        ("related_in_progress", bool(in_progress)),
+        ("related_open_threat", checked and bool(threats)),
+        ("related_in_progress", checked and bool(in_progress)),
     )
     return [name for name, blocked in checks if blocked]

@@ -31,7 +31,8 @@ Safety rules enforced here (contract section 8):
   approval, or confirmed by a person), or a high or critical alert still
   in progress on the same host, sends the alert to an analyst instead
   (AI-E3.16: codes ``related_open_threat`` and ``related_in_progress``,
-  read from the database by the ``decide`` node).
+  read from the database by the ``decide`` node; ``related_unchecked``
+  when that read did not complete).
 * A response the policy (not an analyst) chose goes to an analyst when an
   action failed or none completed; it closes (disposition ``malicious``)
   once its actions succeeded or ran in the tenant's dry-run mode. Blocked
@@ -268,10 +269,14 @@ def _model_close(state: Mapping[str, Any], tier: str) -> Optional[Decision]:
 
 def _related_hold(blockers: Sequence[str]) -> Optional[Decision]:
     """The escalation of an alert the models would have closed but for a related alert (AI-E3.16): a serious open
-    threat on the same host or user, or a high or critical alert on the same host that is still being processed.
-    ``None`` when anything else blocks the close too: the rest of the policy decides."""
+    threat on the same host or user, a high or critical alert on the same host that is still being processed, or
+    related alerts that could not be read. ``None`` when anything else blocks the close too: the rest of the
+    policy decides."""
     if not closure.RELATED_HOLDS.issuperset(blockers):
         return None
+    if "related_unchecked" in blockers:
+        reason = "the related alerts on the same host or user could not be checked: the AI does not close this alert"
+        return Decision("escalate", reason, None, "related_unchecked")
     if "related_open_threat" in blockers:
         reason = "related open threat on the same host or user: the AI does not close this alert while it is open"
         return Decision("escalate", reason, None, "related_open_threat")

@@ -100,7 +100,9 @@ REASON_WEIGHTS: Dict[str, int] = {
     "response_review": 1,
     "group_review": 1,
     "false_positive_review": 0,
-    "related_open_threat": 1,  # judged benign, but a serious threat is open on its host or user (domain.closure)
+    # The models judged it benign, but a serious related alert is open or in progress (lg_sotf.domain.closure).
+    "related_open_threat": 1,
+    "related_in_progress": 1,
     # An analyst labelled an auto-closed alert malicious in a blind audit (lg_sotf.services.blind_audit).
     "blind_audit": 5,
 }
@@ -372,13 +374,9 @@ class EscalationService:
         summary: Optional[Mapping[str, Any]] = None,
         correlated_alert_ids: Sequence[str] = (),
         fingerprint: Optional[str] = None,
-        join: Sequence[str] = (),
         now: Optional[datetime] = None,
     ) -> EscalationTicket:
         """The escalation this alert waits on: its own, one it is attached to, a related one, or a new one.
-
-        ``join``: the alerts that hold this one (open threats that held its model-led close back). The alert is
-        attached to the oldest open case one of them has, and to no other case: without one it gets its own.
 
         Idempotent per tenant and alert (the node may run again on resume).
         """
@@ -401,10 +399,7 @@ class EscalationService:
             attached_to = await self._repos.escalations.find_attached_to(tenant_id, alert_id, conn=conn)
             if attached_to is not None:
                 return _ticket(attached_to, created=False, attached=True)
-            if join:
-                parent = await self._repos.escalations.find_case_of(tenant_id, join[:MAX_RELATED], conn=conn)
-            else:
-                parent = await self._find_parent(conn, tenant_id, alert_id, fingerprint, policy, now, related)
+            parent = await self._find_parent(conn, tenant_id, alert_id, fingerprint, policy, now, related)
             attached = await self._attach(conn, tenant_id, alert_id, parent, place) if parent is not None else None
             if attached is None:
                 escalation, created = await self._repos.escalations.create_or_attach(

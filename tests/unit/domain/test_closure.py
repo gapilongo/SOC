@@ -375,17 +375,23 @@ def test_a_related_open_threat_holds_a_model_led_close_and_names_the_reason(
 
 @pytest.mark.parametrize(
     "digest", [None, {}, [], "none", {"threats": []}, {"in_progress": []}, {"threats": None, "in_progress": []},
-               {"threats": [], "in_progress": "a-1"}],
+               {"threats": [], "in_progress": "a-1"}, {"unchecked": "read_failed"}, {"unchecked": "too_many_candidates"}],
 )
 def test_related_alerts_that_were_not_checked_block_the_close(digest: Any) -> None:
-    """Fail closed: without a readable digest of the stored-state check, the models close nothing."""
+    """Fail closed: without a readable digest of the stored-state check (the read failed, the tenant has more open
+    threats than one decision compares, or nothing ran it), the models close nothing and the alert goes to an
+    analyst for that reason."""
     state = benign_state(related_open=digest)
-    assert "related_unchecked" in model_close_blockers(state, tier=AUTO)
+    assert model_close_blockers(state, tier=AUTO) == ["related_unchecked"]
     decision = routing.decide(state, T, AUTO)
-    assert (decision.route, decision.code) == ("escalate", "false_positive_review")
+    assert (decision.route, decision.disposition, decision.code) == ("escalate", None, "related_unchecked")
+    assert "could not be checked" in decision.reason
     del state["related_open"]
     assert model_close_blockers(state, tier=AUTO) == ["related_unchecked"]
-    assert routing.decide(state, T, AUTO).route == "escalate"
+    assert routing.decide(state, T, AUTO).code == "related_unchecked"
+    # An alert another rule sends to an analyst keeps that rule's reason.
+    threat = benign_state(related_open=digest, **{"analysis.verdict": "malicious", "analysis.threat_score": 50})
+    assert routing.decide(threat, T, AUTO).code == "grey_zone"
     # The check only runs at the tier, so with the tier off it is not reported as missing.
     assert model_close_blockers(state, tier="off") == ["tier_off"]
 

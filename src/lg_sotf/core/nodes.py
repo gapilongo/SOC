@@ -16,7 +16,7 @@ from __future__ import annotations
 import asyncio
 import time
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Dict, List, Mapping, Optional, cast
+from typing import Any, Awaitable, Callable, Dict, Mapping, Optional, cast
 
 from langgraph.types import interrupt
 
@@ -27,10 +27,8 @@ from lg_sotf.core.graph import WorkflowState
 from lg_sotf.core.retro_reopen import (
     enqueue_requeued,
     forward_links,
-    holders,
-    judged_threat,
     refold,
-    related_open,
+    related_open_counted,
     reopen_counted,
 )
 from lg_sotf.core.state import (
@@ -49,6 +47,7 @@ from lg_sotf.db.repos import Repositories
 from lg_sotf.db.tenancy import thread_id_for
 from lg_sotf.domain import closure, routing
 from lg_sotf.domain.events import EventPublisher, publish_event
+from lg_sotf.domain.related import hold_grade, model_judged_threat
 from lg_sotf.domain.routing import BENIGN_DECISIONS, RoutingThresholds
 from lg_sotf.domain.suppression import alert_match_view, fingerprint_suggestion, first_matching_rule
 from lg_sotf.errors import NodeTimeout
@@ -116,11 +115,6 @@ def _escalation_summary(state: WorkflowState, routing_digest: RoutingDigest) -> 
         "llm_used": analysis["llm_used"] if isinstance(analysis.get("llm_used"), bool) else None,
         "routing": routing_digest,
     }
-
-
-def _held(state: Mapping[str, Any]) -> bool:
-    """Whether an open threat on the same host or user held this alert's model-led close back (AI-E3.16)."""
-    return (state.get("decision") or {}).get("code") == "related_open_threat"
 
 
 class WorkflowNodes:
@@ -330,19 +324,23 @@ class WorkflowNodes:
 
         At the tier, a model-led close is also decided on the related alerts as the database holds them at this
         moment (an open threat on the same host or user, a serious alert still in progress on the same host),
-        never on what a model wrote about them (AI-E3.16). The digest is kept in the alert's summary: ``escalate``
-        reads who holds the alert, ``close`` which threats' cases to link it to."""
+        never on what a model wrote about them (AI-E3.16). The digest is kept in the alert's summary: ``close``
+        reads from it which threats' cases to link the alert to. A read that fails, or a tenant with more open
+        threats than one decision compares, gives an ``unchecked`` digest: the alert goes to an analyst and the
+        run goes on."""
         tenant_id, alert_id = state["tenant_id"], state["alert_id"]
         tenant = await self.deps.repos.tenants.get(tenant_id)
         tier = closure.autonomy_tier(tenant.settings)
         checked: Dict[str, Any] = {}
         event: Dict[str, Any] = {}
         if tier == closure.MODEL_CLOSE_TIER:
-            related = await related_open(self.deps.repos, tenant_id, alert_id)
+            related = await related_open_counted(self.deps.repos, tenant_id, alert_id)
             await self.deps.repos.alerts.update(tenant_id, alert_id, summary={"related_open": related})
             checked = {closure.RELATED_OPEN: related}
-            event = {"related_open_threats": related["threats"], "related_in_progress": related["in_progress"],
-                     "related_model_only": related["model_only"]}
+            event = {"related_unchecked": related["unchecked"]} if "unchecked" in related else {
+                "related_open_threats": related["threats"], "related_in_progress": related["in_progress"],
+                "related_model_only": related["model_only"],
+            }
         decision = routing.decide({**state, **checked}, self.deps.thresholds, tier).as_dict()
         return {"decision": decision, EVENT_KEY: {**decision, "autonomy_tier": tier, **event}}
 
@@ -359,42 +357,32 @@ class WorkflowNodes:
                 decision["reason"] = "automatic response left the threat without a human or a completed action"
             decision["code"] = "response_review"
         code = str(decision.get("code") or "inconclusive")
-        reason = str(decision.get("reason") or "analyst review required")
-        correlated = list(correlation.get("related_alert_ids") or [])
-        held_by: List[str] = []
-        if code == "related_open_threat":
-            # AI-E3.16: an alert an open threat holds joins that threat's case, so the analyst gets one case and
-            # not one per held alert. Its own escalation (when the threat has no open case) names the threat.
-            held_by = holders((await self.deps.repos.alerts.get(tenant_id, alert_id)).summary)
-            if held_by:
-                reason = f"{reason} (held by alert {held_by[0]}, which has no open case to join)"
-                correlated = list(dict.fromkeys([*held_by, *correlated]))
         ticket = await self.deps.escalations.open_or_attach(
             tenant_id,
             alert_id,
             severity=state["severity"],
             confidence=confidence,
             threat_score=float(analysis.get("threat_score", confidence)),
-            reason=reason,
+            reason=str(decision.get("reason") or "analyst review required"),
             reason_code=code,
             summary=_escalation_summary(
                 state, routing.routing_digest(code, routing.assessed_threat(state), self.deps.thresholds)
             ),
-            correlated_alert_ids=correlated,
+            correlated_alert_ids=list(correlation.get("related_alert_ids") or []),
             fingerprint=state.get("fingerprint") or None,
-            join=held_by,
         )
-        waiting: AlertSummary = {"escalation_id": ticket.id, "escalation_attached": ticket.attached}
-        if held_by:
-            waiting["held_by"] = held_by
-        await self.deps.repos.alerts.update(tenant_id, alert_id, summary=waiting)
+        await self.deps.repos.alerts.update(
+            tenant_id, alert_id, summary={"escalation_id": ticket.id, "escalation_attached": ticket.attached}
+        )
         # Alerts folded into this threat's earlier case (decided needs_more_info) follow it to this one.
         await refold(self.deps.repos, tenant_id, alert_id, ticket.id)
-        if judged_threat(state.get("triage") or {}, analysis):
-            # A model judged it a threat: the alerts the models closed alone on its entities are linked to this
-            # case and stay closed; only a person's confirmation reopens them (policy v3, AI-E3.15).
+        if model_judged_threat((state.get("triage") or {}).get("threat_assessment"), analysis.get("verdict")):
+            # A model judged it a threat. At hold grade (high or critical) the alerts the models closed alone on
+            # its hosts and users are reopened into this case, as the forward check would have held them had this
+            # alert come first (AI-E3.16). Below it they are linked to this case and stay closed: only a person's
+            # confirmation reopens them (policy v3, AI-E3.15).
             stored = await self.deps.repos.alerts.get(tenant_id, alert_id)
-            await self._safety_net(stored, path="escalation", escalation_id=ticket.id, confirmed=False)
+            await self._safety_net(stored, path="escalation", escalation_id=ticket.id, confirmed=self._hold_grade(state))
         return {
             "escalation_id": ticket.id,
             EVENT_KEY: {
@@ -418,11 +406,6 @@ class WorkflowNodes:
         waits again, on that escalation (a second interrupt in this node).
         LangGraph re-runs the node from the top on every resume, so the
         lookups and the detach are idempotent.
-
-        An alert an open threat held (AI-E3.16) joined that threat's case and
-        is never detached: the case decision settles it, as it settles an
-        alert folded into a case. The models had judged it benign and only
-        the threat kept it open.
         """
         tenant_id, alert_id = state["tenant_id"], state["alert_id"]
         waiting_on = state.get("escalation_id")
@@ -439,7 +422,7 @@ class WorkflowNodes:
         )
         if not scope.inherited:
             return {"analyst": decision}
-        if scope.own_review_reason is None or _held(state):
+        if scope.own_review_reason is None:
             return {"analyst": {**decision, "approved_actions": [], "inherited_from": scope.parent_alert_id}}
         analysis = state.get("analysis") or {}
         confidence = float(state.get("confidence", 50))
@@ -501,16 +484,27 @@ class WorkflowNodes:
             await self._safety_net(threat, path="forward", escalation_id=case if isinstance(case, str) else None,
                                    confirmed=False)
 
+    @staticmethod
+    def _hold_grade(state: Mapping[str, Any], *, awaiting_approval: bool = False) -> bool:
+        """Whether this alert is a strong enough signal to reopen the related alerts the models closed: the same
+        predicate that holds a model-led close back (:func:`lg_sotf.domain.related.hold_grade`)."""
+        return hold_grade(
+            severity=state.get("severity"),
+            threat_assessment=(state.get("triage") or {}).get("threat_assessment"),
+            verdict=(state.get("analysis") or {}).get("verdict"),
+            awaiting_approval=awaiting_approval,
+            confirmed=(state.get("analyst") or {}).get("decision") == "true_positive",
+        )
+
     async def _forget_benign_learning(self, state: WorkflowState) -> None:
         """A threat on this alert: no cached verdict or suppression rule may close it, or its repeats, again. The
-        alerts the models closed alone on its entities reopen when an analyst decided ``true_positive`` (on this
-        alert or on the case it is attached to) or a response action for it really ran (``succeeded``, never a
-        dry run); on the models' word alone they are only linked (decision policy v3 safety net)."""
+        alerts the models closed alone on its hosts and users reopen when it is hold grade (high or critical and
+        judged a threat by a model, or an analyst decided ``true_positive`` on this alert or on the case it is
+        attached to) or a response action for it really ran (``succeeded``, never a dry run); below that they
+        are only linked (decision policy v3 safety net)."""
         alert = await self.deps.repos.alerts.get(state["tenant_id"], state["alert_id"])
         await forget_benign_learning(self.deps.repos, self.deps.verdicts, state["tenant_id"], alert, actor=WORKFLOW_ACTOR)
-        confirmed = (state.get("analyst") or {}).get("decision") == "true_positive" or "succeeded" in (
-            state.get("executed") or {}
-        ).values()
+        confirmed = self._hold_grade(state) or "succeeded" in (state.get("executed") or {}).values()
         await self._safety_net(alert, path="workflow", escalation_id=state.get("escalation_id"), confirmed=confirmed)
 
     def _evidence(self, state: WorkflowState) -> str:
@@ -565,6 +559,11 @@ class WorkflowNodes:
             "done": len(plan.done),
         }
         await self.deps.repos.alerts.update(tenant_id, alert_id, summary={"response": response})
+        if plan.awaiting and not self._hold_grade(state):
+            # A response that waits for an approval is hold grade at any severity (AI-E3.16): the related alerts
+            # the models closed reopen now, as the forward check holds a close while this approval is pending.
+            stored = await self.deps.repos.alerts.get(tenant_id, alert_id)
+            await self._safety_net(stored, path="workflow", escalation_id=state.get("escalation_id"), confirmed=True)
         return {
             "plan": plan.as_dict(),
             "awaiting_actions": list(plan.awaiting),
@@ -711,10 +710,7 @@ class WorkflowNodes:
             await self.deps.repos.alerts.update_status(tenant_id, alert_id, "closed", conn=conn)
         if reason == closure.MODEL_CLOSE_REASON:
             await self._link_forward(tenant_id, alert_id)
-        # A held alert settled by the decision on the threat's case: nobody reviewed this detection, so the
-        # verdict cache learns nothing from it (AI-E3.16).
-        settled_with_case = _held(state) and bool(analyst.get("inherited_from"))
-        if analyst.get("decision") in BENIGN_DECISIONS and not settled_with_case:
+        if analyst.get("decision") in BENIGN_DECISIONS:
             await self.deps.verdicts.put_analyst_benign(
                 tenant_id,
                 state.get("verdict_key"),

@@ -196,7 +196,7 @@ async def test_an_api_reopen_failure_is_counted_not_swallowed(api: ApiHarness, m
     async def broken(*args: Any, **kwargs: Any) -> Any:
         raise RuntimeError("database went away")
 
-    monkeypatch.setattr(api.ctx.repos.alerts, "model_closed_sharing_entities", broken)
+    monkeypatch.setattr(api.ctx.repos.alerts, "model_closed_candidates", broken)
     alert_id = await make_alert(api.repos, TENANT_A, title="x", normalized={"entities": {"hosts": ["h1"]}})
     before = RETRO_REOPEN_FAILURES.labels(path="analyst")._value.get()
     analyst = await api.user(TENANT_A, "analyst")

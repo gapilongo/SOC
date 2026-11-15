@@ -14,4 +14,5 @@ onboarding/service.py::onboarding_status
 runtime/leader.py::LeaderLease._still_holds
 runtime/leader.py::LeaderLease._try_acquire
 runtime/leader.py::LeaderLease.release
+services/review.py::ReviewService._own_review
 services/review.py::ReviewService._run_ended

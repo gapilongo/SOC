@@ -118,22 +118,25 @@ INVARIANTS: Tuple[Invariant, ...] = (
             "vendor's authentication-failure rules and T1531, a Wazuh alert whose rule cannot be read, log "
             "clearing, security-tool tampering, ransomware behaviour, persistence through attacker-named objects), "
             "steering text, entities with a recent true positive, an alert normalised by a model or one reopened; "
-            "such a close is marked model_closed for audit. Nor while a serious related threat is open: when the "
-            "decision is made the workflow reads the tenant's stored alerts of the previous 24 hours on the same "
-            "host or user. An alert that is not closed and waits for a response approval, is high or critical and "
-            "was judged a threat by a model, or was confirmed by a person (an analyst true positive, a blind-audit "
-            "malicious label), or a high or critical one on the same host that is being processed at that moment, "
-            "holds the close back: the alert goes to an analyst in that threat's case (read from the database, "
-            "never from a model's text; unreadable blocks the close). A low or medium threat only a model stands "
-            "behind holds nothing: the alert closes and is linked to that threat's case at once. When an alert "
-            "becomes a threat after the close, the safety net looks "
-            "at every model-closed alert sharing a host, user or IP with it in the previous 24 hours. A model's "
-            "judgement is not a confirmation: a threat only a model stands behind (an escalation a model judged a "
-            "threat: deep verdict malicious, or fast tier likely_threat or confirmed_threat, never a merely "
-            "suspicious one; a response the workflow only proposes, or only simulates in dry-run mode) links "
+            "such a close is marked model_closed for audit. Nor while a related threat of hold grade is there. Two "
+            "alerts relate when they share a host or a user by relation key (short host name, bare account name; "
+            "never an IP address alone, never an account every host has). Hold grade is one predicate, forward and "
+            "backward: the alert is high or critical and a model judged it a threat (deep verdict malicious, or "
+            "fast tier likely_threat or confirmed_threat, never a merely suspicious one), or it waits for a "
+            "response approval, or a person confirmed it (an analyst true positive, a blind-audit malicious "
+            "label). When the decision is made the workflow reads what the database holds about the tenant's "
+            "other alerts, never a model's text: a related alert of hold grade that is open (up to seven days from "
+            "its ingestion) or that closed in the last 24 hours with a person's confirmation, or a high or "
+            "critical one on the same host that is being processed, holds the close back and the alert goes to an "
+            "analyst; so does a check that did not complete (a failed read, more open threats than one decision "
+            "compares), without failing the run. A low or medium threat only a model stands behind holds nothing: "
+            "the alert closes and is linked to that threat's case at once. When an alert becomes a threat after "
+            "the close, the safety net looks at every model-closed alert of the previous 24 hours that relates to "
+            "it. Below hold grade a model's judgement is not a confirmation: such a threat (a low or medium "
+            "escalation a model judged a threat; a response the workflow only simulates in dry-run mode) links "
             "those alerts to its open case as related alerts, audited, and they stay closed and marked for audit; "
             "no decision on the case settles them, so a benign one never makes them analyst-confirmed benign, and "
-            "the compliance evidence shows no human decision for them. A "
+            "the compliance evidence shows no human decision for them. A threat of hold grade, or a "
             "confirmed threat (an analyst true positive, an analyst's own approval of a response action, a "
             "blind-audit malicious label, or a response action that really ran, succeeded, when the workflow "
             "carried it out alone under the tenant's autonomy policy: once the platform has acted, the related "
@@ -173,10 +176,18 @@ INVARIANTS: Tuple[Invariant, ...] = (
             "tests/unit/domain/test_closure.py::"
             "test_a_related_open_threat_holds_a_model_led_close_and_names_the_reason",
             "tests/unit/domain/test_closure.py::test_related_alerts_that_were_not_checked_block_the_close",
+            "tests/unit/domain/test_related.py::test_hold_grade_is_one_predicate",
+            "tests/unit/domain/test_related.py::test_relation_keys_are_hosts_and_users_and_never_ips",
             "tests/integration/engine/test_related_open.py::"
-            "test_a_serious_open_threat_on_the_same_host_or_user_holds_the_close",
+            "test_a_hold_grade_threat_on_the_same_host_or_user_holds_the_close",
+            "tests/integration/engine/test_related_open.py::test_a_held_alert_takes_the_ordinary_escalation_path",
             "tests/integration/engine/test_related_open.py::"
-            "test_a_held_alert_joins_the_threats_case_and_the_case_decision_settles_it",
+            "test_a_threat_that_reaches_hold_grade_after_the_close_reopens_it_into_its_case",
+            "tests/integration/engine/test_related_open.py::"
+            "test_the_beacon_decided_before_the_rest_of_the_chain_is_reopened_by_it",
+            "tests/integration/engine/test_related_open.py::"
+            "test_a_failed_read_of_the_related_alerts_escalates_and_never_fails_the_run",
+            "tests/integration/engine/test_review_442.py::test_probe_spelling_of_the_same_entity_still_holds",
             "tests/integration/engine/test_related_open.py::"
             "test_a_threat_only_a_model_stands_behind_links_the_close_to_its_case",
             "tests/integration/engine/test_related_open.py::"
@@ -193,7 +204,7 @@ INVARIANTS: Tuple[Invariant, ...] = (
             "tests/integration/engine/test_retro_reopen.py::"
             "test_an_escalation_the_models_only_found_suspicious_reopens_nothing",
             "tests/integration/engine/test_retro_reopen.py::"
-            "test_a_response_plan_the_workflow_only_proposes_links_and_reopens_nothing",
+            "test_a_response_plan_that_waits_for_an_approval_reopens_related_model_closes",
             "tests/integration/engine/test_retro_reopen.py::"
             "test_a_response_the_workflow_carries_out_alone_reopens_related_model_closes",
             "tests/integration/engine/test_retro_reopen.py::"

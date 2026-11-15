@@ -95,6 +95,7 @@ describe('why a row needs a person', () => {
     // AI-E3.16: an alert the AI judged harmless, held by a threat on the same host or user.
     expect(routingWhy({ code: 'related_open_threat' })).toBe('The AI judged it harmless, but a serious threat is open on the same host or user.');
     expect(routingWhy({ code: 'related_in_progress' })).toBe('The AI judged it harmless, but a serious alert on the same host was still being processed.');
+    expect(routingWhy({ code: 'related_unchecked' })).toBe('The AI judged it harmless, but the related alerts on the same host or user could not be checked.');
     expect(routingLabel('related_open_threat')).toBe('Related open threat');
     expect(routingWhy({ code: 'new_code' })).toBe('Needs a person: new code.');
     expect(routingWhy(null)).toBeNull();

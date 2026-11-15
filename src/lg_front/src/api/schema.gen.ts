@@ -2181,7 +2181,6 @@ export interface components {
                 dry_run?: boolean;
                 escalation_attached?: boolean;
                 escalation_id?: string | null;
-                held_by?: string[];
                 linked?: {
                     [key: string]: string | null;
                 }[];
@@ -2200,11 +2199,12 @@ export interface components {
                 llm_usage?: {
                     [key: string]: unknown;
                 };
-                /** @description The open related alerts on the same host or user, as stored when the alert was decided. ``threats`` and ``in_progress`` hold back a close on the models' word: ids of the open threats that are high or critical, wait for a response approval or were confirmed by a person, and of the high or critical alerts in progress on the same host. ``model_only``: ids of the other threats a model judged; the alert closes and is linked to their case. */
+                /** @description The related alerts on the same host or user, as stored when the alert was decided. ``threats`` and ``in_progress`` hold back a close on the models' word: ids of the threats that are high or critical and judged by a model, wait for a response approval or were confirmed by a person, and of the high or critical alerts in progress on the same host. ``model_only``: ids of the other threats a model judged; the alert closes and is linked to their case. ``unchecked``: the check did not complete (``read_failed``, ``too_many_candidates``), so nothing closed on the models' word; the lists are then absent. */
                 related_open?: {
                     in_progress?: string[];
                     model_only?: string[];
                     threats?: string[];
+                    unchecked?: string;
                 };
                 reopened?: {
                     [key: string]: string | null;
@@ -2443,7 +2443,6 @@ export interface components {
                 dry_run?: boolean;
                 escalation_attached?: boolean;
                 escalation_id?: string | null;
-                held_by?: string[];
                 linked?: {
                     [key: string]: string | null;
                 }[];
@@ -2462,11 +2461,12 @@ export interface components {
                 llm_usage?: {
                     [key: string]: unknown;
                 };
-                /** @description The open related alerts on the same host or user, as stored when the alert was decided. ``threats`` and ``in_progress`` hold back a close on the models' word: ids of the open threats that are high or critical, wait for a response approval or were confirmed by a person, and of the high or critical alerts in progress on the same host. ``model_only``: ids of the other threats a model judged; the alert closes and is linked to their case. */
+                /** @description The related alerts on the same host or user, as stored when the alert was decided. ``threats`` and ``in_progress`` hold back a close on the models' word: ids of the threats that are high or critical and judged by a model, wait for a response approval or were confirmed by a person, and of the high or critical alerts in progress on the same host. ``model_only``: ids of the other threats a model judged; the alert closes and is linked to their case. ``unchecked``: the check did not complete (``read_failed``, ``too_many_candidates``), so nothing closed on the models' word; the lists are then absent. */
                 related_open?: {
                     in_progress?: string[];
                     model_only?: string[];
                     threats?: string[];
+                    unchecked?: string;
                 };
                 reopened?: {
                     [key: string]: string | null;

@@ -137,6 +137,9 @@ def blockers(alert: AlertFacts, tier: str) -> List[InvestigationReason]:
         closure.RELATED_OPEN: alert.summary.get(closure.RELATED_OPEN),
     }
     names = closure.model_close_blockers(state, tier=tier)
+    if closure.RELATED_OPEN not in alert.summary:
+        # Decided before the related-alert check existed, or with the tier off then: nothing was unchecked.
+        names = [name for name in names if name != "related_unchecked"]
     if benign_evidence(triage):
         names += [name for name in closure.evidence_close_blockers(state) if name not in names]
     return [_reason(name, words.BLOCKER_SENTENCES.get(name, words.UNKNOWN_REASON)) for name in names]

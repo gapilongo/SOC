@@ -82,7 +82,9 @@ dumped (`demo-edr-002`), the host beacons out (`demo-net-001`) and PsExec
 reaches a file server (`demo-edr-003`). After triage the seeder checks them:
 if one is closed and no analyst decided it, it prints `FAIL  attack-chain
 alert closed without a person` with the close reason and exits 1, whatever
-model you run and whatever autonomy tier the tenant has
+model you run and whatever autonomy tier the tenant has. A step closed by a
+completed automatic response (`policy:response`) was handled as the attack
+it is and does not count
 (`attack_chain_closed_without_a_person` in `.quickstart/timing.json`). The
 reserved names of the demo set are no reason to close anything: an attacker
 chooses names too.

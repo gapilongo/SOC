@@ -23,7 +23,7 @@ from lg_sotf.queue.streams import Message
 from lg_sotf.runtime.worker import Worker
 from lg_sotf.settings import Settings
 from tests.integration.db._support import TENANT_A, make_alert
-from tests.integration.engine._support import RecordingEvents, analyst, decide, threat_alert
+from tests.integration.engine._support import RecordingEvents, analyst, decide, model_only_threat, threat_alert
 
 pytestmark = pytest.mark.integration
 
@@ -53,7 +53,7 @@ async def test_worker_delivers_the_case_decision_to_a_folded_alert(
     engine_settings: Settings,
 ) -> None:
     folded = await model_closed_with_run(repos, {"hosts": ["ws-042"]})
-    threat = await threat_alert(repos)
+    threat = await model_only_threat(repos)  # below hold grade: the model close is only linked
     outcome = await engine.run(TENANT_A, threat)
     case = outcome.interrupt["escalation_id"]
     user_id = await analyst(repos)

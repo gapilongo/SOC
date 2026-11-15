@@ -60,10 +60,13 @@ def chain_step(source_alert_id: Any) -> Optional[str]:
 
 
 def closed_without_a_person(alert: Mapping[str, Any]) -> bool:
-    """Whether the alert is closed and no analyst decided it (the AI, a rule or a cached verdict closed it)."""
+    """Whether the alert was closed as harmless, or silently, with no person behind it (the AI, a rule or a cached
+    verdict closed it). An analyst's decision is a person; a completed automatic response (``policy:response``)
+    treated the alert as the attack it is, so it does not count either."""
     summary = alert.get("summary")
     reason = summary.get("close_reason") if isinstance(summary, Mapping) else None
-    return alert.get("status") == "closed" and not (isinstance(reason, str) and reason.startswith("analyst:"))
+    handled = isinstance(reason, str) and (reason.startswith("analyst:") or reason == "policy:response")
+    return alert.get("status") == "closed" and not handled
 
 
 def read_kv(path: Path) -> Dict[str, str]:

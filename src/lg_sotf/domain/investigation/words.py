@@ -74,6 +74,10 @@ DECIDE_SENTENCES: Final[Mapping[str, str]] = {
         "The AI judged this alert benign, but a high or critical alert on the same host was still being "
         "processed, so a person decides this one."
     ),
+    "related_unchecked": (
+        "The AI judged this alert benign, but the other alerts on the same host or user could not be checked, so a "
+        "person decides it."
+    ),
     "rule_corroborated_benign": "The threat score is low and approved benign evidence backs it, so the AI closed the alert.",
     "response_review": "An automatic response did not complete, so a person reviews the threat.",
     "group_review": "A decision made on a similar alert does not fit this one, so it gets its own review.",

@@ -47,12 +47,6 @@ _ATTACHED_TO_SQL = f"""
     WHERE tenant_id = $1 AND status IN {_ACTIVE_IN} AND $2 = ANY(related_alert_ids)
     ORDER BY created_at LIMIT 1
 """  # noqa: S608 (a constant: ACTIVE_ESCALATION_STATUSES)
-_CASE_OF_SQL = f"""
-    SELECT * FROM escalations
-    WHERE tenant_id = $1 AND status IN {_ACTIVE_IN}
-      AND (alert_id = ANY($2::text[]) OR related_alert_ids && $2::text[])
-    ORDER BY created_at, id LIMIT 1
-"""  # noqa: S608 (a constant: ACTIVE_ESCALATION_STATUSES)
 _FIND_PARENT_SQL = f"""
     SELECT e.* FROM escalations e
     WHERE e.tenant_id = $1 AND e.status IN {_ACTIVE_IN} AND e.alert_id <> $2
@@ -447,12 +441,6 @@ class EscalationsRepo(Repository):
         """The oldest active escalation ``alert_id`` is attached to (``related_alert_ids``)."""
         async with self._tenant(tenant_id, conn) as c:
             row = await c.fetchrow(_ATTACHED_TO_SQL, tenant_id, alert_id)
-        return to_model(Escalation, row)
-
-    async def find_case_of(self, tenant_id: str, alert_ids: Sequence[str], *, conn: Connection) -> Optional[Escalation]:
-        """The oldest active escalation one of ``alert_ids`` has: its own, or one it is attached to."""
-        async with self._tenant(tenant_id, conn) as c:
-            row = await c.fetchrow(_CASE_OF_SQL, tenant_id, list(alert_ids))
         return to_model(Escalation, row)
 
     async def find_group_parent(
