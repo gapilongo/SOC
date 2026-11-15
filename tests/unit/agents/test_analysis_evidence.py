@@ -15,7 +15,13 @@ from typing import Any, Callable, Dict, List, Mapping, Optional
 import httpx
 import pytest
 
-from lg_sotf.agents.analysis.base import CITED_VERDICT_PROMPT, VERDICT_PROMPT, VERDICT_TASK, AnalysisAgent, AnalysisResult
+from lg_sotf.agents.analysis.base import (
+    CITED_VERDICT_PROMPT,
+    VERDICT_PROMPT,
+    VERDICT_TASK,
+    AnalysisAgent,
+    AnalysisResult,
+)
 from lg_sotf.agents.analysis.react import CITE_TASK, CITED_STEP_PROMPT, MAX_CLAIMS, STEP_PROMPT, STEP_TASK, Claim
 from lg_sotf.agents.base import AgentContext
 from lg_sotf.eval.tool_fixtures import EventStore
@@ -25,10 +31,10 @@ from lg_sotf.llm.prompting import CONTEXT_TAG, DATA_TAG
 from lg_sotf.settings import Settings
 from lg_sotf.tools.enrichment import EnrichmentService
 from lg_sotf.tools.wazuh.indexer import IndexerUnavailable
+from tests.unit.agents._snapshots import check_snapshot, render
 from tests.unit.agents._support import factory, fake_repos, scripted, texts
 from tests.unit.agents.investigation._executor import HOSTILE, RUN_ID
 from tests.unit.agents.investigation._support import MemoryStore
-from tests.unit.agents.test_prompts import check_snapshot, render
 
 pytestmark = pytest.mark.unit
 
@@ -240,3 +246,25 @@ async def test_a_refusal_with_evidence_keeps_the_facts_and_has_no_claims(make_se
 def test_a_claim_is_bounded() -> None:
     claim = Claim.model_validate({"text": "x" * 1_000, "supports": " BENIGN", "cites": [f"host:{n}" for n in range(40)]})
     assert len(claim.text) == 300 and claim.supports == "benign" and len(claim.cites) == 10
+
+
+@pytest.mark.parametrize(
+    ("claims", "kept"),
+    [
+        (None, []), ("the host is quiet", []), ({"text": "one claim, not a list", "supports": "benign"}, []), ([], []),
+        ([{"text": "neither", "supports": "neutral", "cites": ["host:0"]}, "junk", 7, {"supports": "benign"}, {"text": " "},
+          {"text": "kept", "supports": " Benign", "cites": "host:0"},
+          {"text": "kept too", "supports": "MALICIOUS", "cites": [1, None, "host:0", "", {"id": "host:0"}]},
+          {"text": "no cites at all", "supports": "malicious"}],
+         [("kept", "benign", ["host:0"]), ("kept too", "malicious", ["host:0"]), ("no cites at all", "malicious", [])]),
+    ],
+)
+async def test_claims_a_model_gets_wrong_never_cost_the_alert_its_verdict(
+    make_settings: Callable[..., Settings], claims: Any, kept: List[Any]
+) -> None:
+    """A provider that does not enforce the schema, a model that writes "neutral": the claim is dropped, the
+    verdict stands. Without this a bad ``claims`` field would throw away the deep verdict the alert has today."""
+    result = await analyse(make_settings(), scripted(CitedVerdict=[{**VERDICT, "claims": claims}]), evidence_of(QUIET))
+    assert result.llm_used and (result.verdict, result.threat_score) == ("benign", 20)
+    assert result.investigation is not None
+    assert [(c["text"], c["supports"], c["cites"]) for c in result.investigation["claims"]] == kept

@@ -129,11 +129,33 @@ class Claim(BaseModel):
     cites: clipped_list(MAX_CITES, item_chars=MAX_CITE_CHARS)  # type: ignore[valid-type]
 
 
-def _first_claims(value: Any) -> Any:
-    return list(value)[:MAX_CLAIMS] if isinstance(value, (list, tuple)) else value
+_SUPPORTS = ("malicious", "benign")
 
 
-Claims = Annotated[List[Claim], BeforeValidator(_first_claims), Field(default_factory=list, max_length=MAX_CLAIMS)]
+def _usable_claims(value: Any) -> List[Any]:
+    """The claims of an answer that can be read, at most :data:`MAX_CLAIMS`: text, a direction and string ids.
+
+    A claim that cannot be read is dropped, and a ``claims`` that is no list is none. Claims are a record
+    beside the verdict: a model that gets them wrong must never cost the alert its verdict (a provider that
+    does not enforce the schema, a model that writes "neutral").
+    """
+    kept: List[Any] = []
+    for item in value if isinstance(value, (list, tuple)) else ():
+        if isinstance(item, Claim):
+            kept.append(item)
+            continue
+        text = item.get("text") if isinstance(item, Mapping) else None
+        supports = item.get("supports") if isinstance(item, Mapping) else None
+        direction = supports.strip().casefold() if isinstance(supports, str) else None
+        if not isinstance(text, str) or not text.strip() or direction not in _SUPPORTS:
+            continue
+        cites = item.get("cites")
+        cited = [cites] if isinstance(cites, str) else cites if isinstance(cites, (list, tuple)) else []
+        kept.append({"text": text, "supports": direction, "cites": [c for c in cited if isinstance(c, str) and c]})
+    return kept[:MAX_CLAIMS]
+
+
+Claims = Annotated[List[Claim], BeforeValidator(_usable_claims), Field(default_factory=list, max_length=MAX_CLAIMS)]
 
 
 class CitedStep(InvestigationStep):

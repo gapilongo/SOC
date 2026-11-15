@@ -108,6 +108,10 @@ def measurement(analyses: Mapping[str, Mapping[str, Any]]) -> Dict[str, Any]:
     }
 
 
+def write_report(path: str, report: Mapping[str, Any]) -> None:
+    Path(path).write_text(json.dumps(report, indent=1, sort_keys=True) + "\n", encoding="utf-8")
+
+
 def outcomes(run: EvalRun) -> Dict[str, Any]:
     return {r.item_id: (r.status, r.disposition, r.decision_code, r.close_reason) for r in run.results}
 
@@ -190,4 +194,4 @@ async def test_the_harness_gives_corpus_alerts_facts_and_changes_no_close(
             "outcome_changes": {i: {"off": was[i], "on": now[i], "verdict_off": before[i].get("verdict"),
                                     "verdict_on": after[i].get("verdict")} for i in changed},
         }
-        Path(REPORT).write_text(json.dumps(report, indent=1, sort_keys=True) + "\n", encoding="utf-8")
+        write_report(REPORT, report)

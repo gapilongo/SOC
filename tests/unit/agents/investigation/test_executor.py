@@ -19,7 +19,6 @@ from tests.unit.agents.investigation._executor import (
     AT,
     FILE,
     HOSTILE,
-    LOGON,
     RUN_ID,
     SWITCH_ON,
     Answers,

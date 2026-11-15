@@ -1294,6 +1294,87 @@ For the Wazuh lab, `python -m tests.fixtures.attack_corpus telemetry OUT.json
 --dataset corpus_v1` writes a dataset's alerts and context events as
 `alerts.json` lines for `python -m tests.fixtures.wazuh_lab load`.
 
+### The investigation harness on the corpus
+
+The [investigation executor](evidence-facts.md#the-investigation-executor)
+(AI-E3.3) looks up facts for a Wazuh alert before the deep analysis. In an
+evaluation its evidence tools answer from the dataset's telemetry instead of
+a tenant's indexer. That is configuration, never a fallback:
+
+```yaml
+investigation:
+  evidence_backend: event_store       # default: indexer
+  event_store_files:
+    - tests/fixtures/eval/corpus_v1.jsonl.gz
+    - tests/fixtures/eval/corpus_v1_events.jsonl.gz
+```
+
+or `LG_SOTF_INVESTIGATION__EVIDENCE_BACKEND=event_store` and
+`LG_SOTF_INVESTIGATION__EVENT_STORE_FILES='["...","..."]'`. The evaluation
+tenants turn the lookups on with the dataset's
+`_meta.tenant_settings.tools.wazuh_indexer: {enabled: true}`. `lg-sotf eval`
+and `lg-sotf worker` build the store; `event_store` is refused in staging
+and production.
+
+The store answers as of the alert's own time, so an investigation never sees
+what happened after the alert. The alert must be one of the store's
+documents: its source alert id is the document's `id`, as it is or followed
+by `-<digits>`. An alert re-sent with its time moved (a development stack
+that receives corpus alerts "now") gets the whole store moved by the same
+amount. An alert the store does not hold has no telemetry: its lookups fail
+with `no_telemetry`.
+
+**On a development stack.** Give the worker the two settings above, with the
+two corpus files readable at the paths named (mount
+`tests/fixtures/eval` read-only into the worker), restart it (it prints
+`evidence backend: event store (811 synthetic documents), not the tenants'
+indexers`), and turn the lookups on for the tenant:
+
+```sh
+curl -X PATCH "$API/api/v1/tenant/settings" -H "Authorization: Bearer $ADMIN_TOKEN" \
+     -H 'Content-Type: application/json' -d '{"tools": {"wazuh_indexer": {"enabled": true}}}'
+```
+
+Corpus alerts sent to that tenant's Wazuh push source are then investigated
+against the corpus telemetry, whatever time they are sent at.
+
+**Measured offline** (`tests/integration/eval/test_corpus_v1_investigation.py`;
+`LG_SOTF_CORPUS_INVESTIGATION_REPORT=path.json` runs all 520 items and writes
+the numbers). `corpus_v1` at the tier `auto_full_audit`, stand-in model,
+network blocked, 2026-11-15:
+
+| | |
+|---|---|
+| Alerts investigated | 452 of 520. The other 68 are high or critical alerts with strong correlation: they go straight to a person without the deep analysis, where the lookups run |
+| Facts per alert | mean 1.73, median 2, least 1, most 3 |
+| Lookups | 813 made: 784 returned a fact, 29 found nothing, 0 failed. 995 skipped because the alert names no such value. 68 answers incomplete |
+| Budget used | lookups: mean 1.8, most 3 of 8. Time: mean 23 ms, most under 0.1 s of 60 s (an in-memory store; an indexer takes longer). Tokens and money: 0 |
+| Claims | 452, every cited id one the ledger minted. Findings: 33 `incomplete_fact`, 5 `not_benign_evidence` |
+| Indicators true | an alert of a never-close class on the host: 120. An alert of level 12 or higher: 67 |
+
+**What closes is unchanged.** Three runs of the same alerts: today's path;
+the harness on; and the harness on with the stand-in model made blind to the
+evidence (it still cites the ids).
+
+| Run | Benign closed | Attacks closed |
+|---|---|---|
+| Today's path | 100 | 58 |
+| Harness on, stand-in blind to the evidence | 100 | 58 |
+| Harness on, stand-in reads the evidence | 100 | 59 |
+
+With the verdicts held, every one of the 520 alerts ends exactly where it
+ends today, with the same verdict and score: the harness changes no routing.
+The third row differs by one alert, `cv1-0351`, and the cause is the
+stand-in, not the closing rule. The stand-in is a keyword scorer over
+everything untrusted it is shown. The host's activity for that alert lists a
+`certutil` download of `update.exe` from a `.test` host, and it scores the
+words `update` and `test` as benign, so its verdict moved from
+`inconclusive` to `benign` and policy v3 closed it. (To a real model that
+fact is evidence of the attack.) Three verdicts moved this way; one changed
+an outcome. These numbers say nothing about a real model: the first
+measurement of `inconclusive` with evidence is a real-model run, which needs
+new cassettes recorded with the harness on.
+
 ## AIT-ADS
 
 The [AIT Alert Data Set](https://zenodo.org/records/8263181) (AIT-ADS,
