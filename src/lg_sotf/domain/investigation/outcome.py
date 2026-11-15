@@ -134,6 +134,7 @@ def blockers(alert: AlertFacts, tier: str) -> List[InvestigationReason]:
         "triage": triage,
         "analysis": mapping(alert.summary.get("analysis")),
         "correlation": mapping(alert.summary.get("correlation")),
+        closure.RELATED_OPEN: alert.summary.get(closure.RELATED_OPEN),
     }
     names = closure.model_close_blockers(state, tier=tier)
     if benign_evidence(triage):

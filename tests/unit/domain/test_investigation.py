@@ -298,10 +298,23 @@ def test_blockers_follow_the_closure_policy() -> None:
         )
     )
     assert held.outcome is not None and held.outcome.category == "needs_review"
-    assert [b.code for b in held.outcome.blockers] == ["severity", "never_close_class", "steering_text"]
+    # No related-alert digest in the summary (an alert decided before AI-E3.16, or with the tier off then).
+    assert [b.code for b in held.outcome.blockers] == [
+        "severity", "never_close_class", "steering_text", "related_unchecked"
+    ]
     assert [b.sentence for b in held.outcome.blockers] == [
         words.BLOCKER_SENTENCES[b.code] for b in held.outcome.blockers
     ]
+    # The digest the decide step stored names what held the close back.
+    summary["related_open"] = {"threats": ["a-7"], "in_progress": ["a-9"]}
+    related = assemble(
+        prototype_facts(
+            alert=alert(summary=summary, view=view_alert, severity="critical"), tier="auto_full_audit",
+            escalation=own_escalation(verdict="benign", routing={"code": "false_positive_review"}),
+        )
+    )
+    assert related.outcome is not None
+    assert [b.code for b in related.outcome.blockers][3:] == ["related_open_threat", "related_in_progress"]
 
 
 def test_no_outcome_while_the_alert_is_processed_and_waiting_for_approval_needs_a_decision() -> None:

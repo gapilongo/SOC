@@ -17,10 +17,13 @@ Used by ``scripts/quickstart.sh``, but works against any deployment:
 5. polls ``/alerts`` until every posted alert has left the queue (closed,
    waiting for an analyst or waiting for an approval) and prints the result
    and the measured times. ``--started-at`` (epoch seconds) adds the time
-   from that moment, e.g. the start of the quickstart, to the first verdict.
+   from that moment, e.g. the start of the quickstart, to the first verdict;
+6. checks the demo's attack chain (:data:`ATTACK_CHAIN`): no step of it may
+   be closed without a person, whatever the model said about it.
 
 Secrets are read from files and never printed. Exit code 0 when every alert
-was triaged in time, 1 otherwise.
+was triaged in time and no step of the attack chain was closed without a
+person, 1 otherwise.
 """
 
 from __future__ import annotations
@@ -41,10 +44,26 @@ API = "/api/v1"
 SETTLED = ("closed", "waiting_human", "waiting_approval")
 DEFAULT_ALERTS = Path(__file__).resolve().parent / "alerts.json"
 NEWEST_ALERT_AGE = timedelta(minutes=2)
+#: The intrusion the demo set tells, all on WS-FIN-0142 (``source_alert_id`` in alerts.json): Word starts
+#: PowerShell, LSASS is dumped, the host beacons out, PsExec reaches a file server. Each step is an attack.
+ATTACK_CHAIN = ("demo-edr-001", "demo-edr-002", "demo-net-001", "demo-edr-003")
 
 
 class SeedError(Exception):
     pass
+
+
+def chain_step(source_alert_id: Any) -> Optional[str]:
+    """The step of :data:`ATTACK_CHAIN` a posted alert is (its id carries the run's suffix), if it is one."""
+    sid = str(source_alert_id or "")
+    return next((step for step in ATTACK_CHAIN if sid == step or sid.startswith(f"{step}-")), None)
+
+
+def closed_without_a_person(alert: Mapping[str, Any]) -> bool:
+    """Whether the alert is closed and no analyst decided it (the AI, a rule or a cached verdict closed it)."""
+    summary = alert.get("summary")
+    reason = summary.get("close_reason") if isinstance(summary, Mapping) else None
+    return alert.get("status") == "closed" and not (isinstance(reason, str) and reason.startswith("analyst:"))
 
 
 def read_kv(path: Path) -> Dict[str, str]:
@@ -216,10 +235,14 @@ def run(args: argparse.Namespace) -> int:
         print(f"{a['severity']:<9} {a['status']:<17} {a.get('disposition') or '-':<15} {a['title'][:70]}")
     settled = [a for a in rows if a["status"] in SETTLED]
     failed = [a for a in rows if a["status"] == "failed"]
+    chain = [a for a in rows if chain_step(a.get("source_alert_id")) is not None]
+    unattended = [a for a in chain if closed_without_a_person(a)]
     timing: Dict[str, Any] = {
         "alerts": len(ids),
         "triaged": len(settled),
         "failed": len(failed),
+        "attack_chain_alerts": len(chain),
+        "attack_chain_closed_without_a_person": len(unattended),
         "provider": args.provider,
         "first_verdict_after_ingest_s": round(first_verdict - posted_at, 1) if first_verdict else None,
         "all_triaged_after_ingest_s": round(finished - posted_at, 1) if len(settled) == len(ids) else None,
@@ -239,7 +262,12 @@ def run(args: argparse.Namespace) -> int:
         print(f"all {len(ids)} alerts triaged {fmt_duration(timing['all_triaged_after_ingest_s'])} after ingest")
     if args.timing_out is not None:
         args.timing_out.write_text(json.dumps(timing, indent=2) + "\n", encoding="utf-8")
-    return 0 if len(settled) == len(ids) else 1
+    for a in unattended:
+        reason = (a.get("summary") or {}).get("close_reason") or "no close reason"
+        print(f"FAIL  attack-chain alert closed without a person ({reason}): {a['title'][:70]}", file=sys.stderr)
+    if chain and not unattended:
+        print(f"ok    no alert of the demo attack chain ({len(chain)} alerts on WS-FIN-0142) was closed without a person")
+    return 0 if len(settled) == len(ids) and not unattended else 1
 
 
 def main(argv: Optional[List[str]] = None) -> int:

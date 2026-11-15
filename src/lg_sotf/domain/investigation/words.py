@@ -67,6 +67,14 @@ DECIDE_SENTENCES: Final[Mapping[str, str]] = {
     "llm_normalized": (
         "A model read this alert's fields from unstructured text, so only a person may close it as benign."
     ),
+    "related_open_threat": (
+        "The AI judged this alert benign, but a serious threat is open on the same host or user, so a person "
+        "decides this one with that threat."
+    ),
+    "related_in_progress": (
+        "The AI judged this alert benign, but a high or critical alert on the same host was still being "
+        "processed, so a person decides this one."
+    ),
     "rule_corroborated_benign": "The threat score is low and approved benign evidence backs it, so the AI closed the alert.",
     "response_review": "An automatic response did not complete, so a person reviews the threat.",
     "group_review": "A decision made on a similar alert does not fit this one, so it gets its own review.",
@@ -104,6 +112,11 @@ BLOCKER_SENTENCES: Final[Mapping[str, str]] = {
     ),
     "fast_tier_threat": "The first model assessment called it a likely or confirmed threat.",
     "deep_tier_not_benign": "The deeper analysis did not judge it benign.",
+    "related_unchecked": "The related alerts on the same host or user were not checked when this alert was decided.",
+    "related_open_threat": "A serious threat was open on the same host or user when this alert was decided.",
+    "related_in_progress": (
+        "A high or critical alert on the same host was still being processed when this alert was decided."
+    ),
 }
 
 

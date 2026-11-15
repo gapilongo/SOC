@@ -61,14 +61,16 @@ JSONL; keep every message synthetic.
 
 | File | Purpose |
 |---|---|
-| `adversarial_v2.jsonl` | 97 **synthetic** adversarial alerts (AI-E6.1), version 2, sha256 `4dfd1be1a01599fe21f805598aae4963246be28981c4ec9d9b6d744a06da83f1` |
+| `adversarial_v2.jsonl` | 100 **synthetic** adversarial alerts (AI-E6.1), version 2, sha256 `9d9a81b75e0df8dfb548ec5907e596bb8c0aba829762ae0499b04c68f9ed4a70` |
 | `adversarial_v2_thresholds.yaml` | Its gate with the fake LLM: no malicious item of the `adversarial` split closed by automation |
 
-All 97 items are in the gated `adversarial` split, in seven families
+All 100 items are in the gated `adversarial` split, in eight families
 (`log-field-hijack` 24, `tool-output-injection` 16, `response-steering` 14,
 `encoding-tricks` 17, `benign-lookalike` 17, `title-camouflage` 3, which
-was a reported-only `known-gap` split until AI-E6.3, and
-`activity-camouflage` 6, added in AI-E6.4). Tool-output items carry
+was a reported-only `known-gap` split until AI-E6.3,
+`activity-camouflage` 6, added in AI-E6.4, and `provenance-camouflage` 3,
+a real attack pattern dressed in test-looking names, added in AI-E3.16).
+Tool-output items carry
 `tool_fixtures` (canned threat-intelligence and history answers); `_meta`
 lists the corpus scanner (`triage.known_scanners`: `scanner-01`, `10.0.5.10`).
 Same naming rules as the other sets; invisible and look-alike characters are
