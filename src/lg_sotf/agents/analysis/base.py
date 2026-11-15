@@ -56,6 +56,7 @@ closing it; the threat score is kept (it orders the analyst queue).
 from __future__ import annotations
 
 import re
+import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Dict, List, Mapping, Optional, Sequence, Tuple, Union, cast
@@ -75,7 +76,7 @@ from lg_sotf.agents.analysis.react import (
 )
 from lg_sotf.agents.base import AccountedRun, AgentContext, BaseAgent, LLMResult
 from lg_sotf.agents.investigation.claims import investigation_record
-from lg_sotf.agents.investigation.executor import SkillInvestigator
+from lg_sotf.agents.investigation.executor import NO_MODEL, InvestigationRun, SkillInvestigator
 from lg_sotf.agents.triage.base import INJECTION_SIGNAL, agent_refusal, injection_suspected, source_environment
 from lg_sotf.domain.indicators import Indicator, extract_indicators
 from lg_sotf.domain.phishing import (
@@ -86,6 +87,7 @@ from lg_sotf.domain.phishing import (
     evidence_from_triage,
 )
 from lg_sotf.domain.routing import RoutingThresholds
+from lg_sotf.llm.prompting import context_truncated
 from lg_sotf.llm.registry import PromptTemplate, register_prompt
 from lg_sotf.llm.schema import clipped_list, clipped_str, lenient_literal
 from lg_sotf.llm.trace import observe
@@ -700,10 +702,11 @@ class AnalysisAgent(BaseAgent):
             analyst_notes=analyst_notes,
         )
         # Evidence first, by code (AI-E3.3): None when no investigation applies. It never raises.
-        investigation = await self.investigator.investigate(ctx, alert) if self.investigator is not None else None
+        investigation, spent_s = await self._investigate(ctx, alert, llm_on=llm_on)
+        evidence = investigation.context if investigation is not None else None
         run = AnalysisRunContext(
-            agent_ctx=ctx, alert=alert, candidates=candidates, alert_block=alert_block,
-            evidence=investigation.context if investigation is not None else None,
+            agent_ctx=ctx, alert=alert, candidates=candidates, alert_block=alert_block, evidence=evidence,
+            spent_s=spent_s,
         )
         final, refusal = await self._reason(ctx, run)
 
@@ -731,11 +734,31 @@ class AnalysisAgent(BaseAgent):
             "history": history_stored,
             "reasoning": run.thoughts,
             "notes": run.notes,
-            "investigation": await investigation_record(ctx, investigation, final),
+            "investigation": investigation_record(
+                investigation, final,
+                evidence_truncated=evidence is not None and context_truncated({"evidence": evidence}, ctx.settings),
+            ),
         }
         return _assemble_result(
             final, refusal, upstream_refusal(triage, correlation), rule_score, common, agent=self.name
         )
+
+    async def _investigate(
+        self, ctx: AgentContext, alert: Mapping[str, Any], *, llm_on: bool
+    ) -> Tuple[Optional[InvestigationRun], float]:
+        """The evidence lookups before the model (AI-E3.3) and the seconds they took, which count against the
+        analysis's own time budget. ``None`` without a harness or when no investigation applies.
+
+        When no model will read the facts (the LLM is off, or the tenant's token budget is spent) they stay on
+        the ledger for the analyst and the record says ``no_model``: it never claims a model was shown them.
+        """
+        if self.investigator is None:
+            return None, 0.0
+        began = time.monotonic()
+        found = await self.investigator.investigate(ctx, alert)
+        if found is not None and found.context is not None and not llm_on:
+            found.context, found.reason = None, NO_MODEL
+        return found, time.monotonic() - began
 
     async def _reason(
         self, ctx: AgentContext, run: AnalysisRunContext

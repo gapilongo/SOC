@@ -22,7 +22,17 @@ from lg_sotf.agents.analysis.base import (
     AnalysisAgent,
     AnalysisResult,
 )
-from lg_sotf.agents.analysis.react import CITE_TASK, CITED_STEP_PROMPT, MAX_CLAIMS, STEP_PROMPT, STEP_TASK, Claim
+from lg_sotf.agents.analysis.react import (
+    CITE_TASK,
+    CITED_STEP_PROMPT,
+    MAX_CLAIMS,
+    STEP_PROMPT,
+    STEP_TASK,
+    AnalysisRunContext,
+    Candidate,
+    Claim,
+    ReActReasoner,
+)
 from lg_sotf.agents.base import AgentContext
 from lg_sotf.eval.tool_fixtures import EventStore
 from lg_sotf.eval.wazuh_events import EventStoreBackend
@@ -268,3 +278,57 @@ async def test_claims_a_model_gets_wrong_never_cost_the_alert_its_verdict(
     assert result.llm_used and (result.verdict, result.threat_score) == ("benign", 20)
     assert result.investigation is not None
     assert [(c["text"], c["supports"], c["cites"]) for c in result.investigation["claims"]] == kept
+
+
+@pytest.mark.parametrize("llm", [{"enabled": False}, None])
+async def test_without_a_model_the_facts_are_kept_and_the_record_does_not_claim_one_saw_them(
+    make_settings: Callable[..., Settings], llm: Any
+) -> None:
+    """The LLM is off, or the tenant's token budget is spent: the lookups still run for the analyst, the
+    record says ``no_model``, and no prompt is built."""
+    settings = make_settings(llm={"provider": "fake", "allow_fake": True, **(llm or {})})
+    model, store = scripted(), MemoryStore()
+    repos = fake_repos(tenant_settings=SWITCH_ON)
+    repos.evidence_facts = store
+    agent = AnalysisAgent(settings=settings, model_factory=factory(model), evidence=evidence_of(QUIET))
+    ctx = AgentContext("t1", "a1", settings, repos=repos, investigation_run_id=RUN_ID, llm_budget_exceeded=llm is None)
+    result = await agent.run(ctx, state_alert(), triage=TRIAGE, correlation=CORRELATION)
+    assert model.calls == [] and result.llm_used is False and len(store.rows[("t1", "a1", RUN_ID)]) == 3
+    record = result.investigation
+    assert record is not None and (record["status"], record["reason"], record["claims"]) == ("degraded", "no_model", [])
+    assert record["facts"] == 3 and record["evidence_truncated"] is False
+
+
+async def test_evidence_cut_to_fit_the_prompt_is_recorded(make_settings: Callable[..., Settings]) -> None:
+    """The prompt builder marks what it cuts and says so to the model; the record says so too, so a later
+    check knows the model saw some facts in part."""
+    whole = await analyse(make_settings(), scripted(), evidence_of(QUIET))
+    assert whole.investigation is not None and whole.investigation["evidence_truncated"] is False
+    assert whole.investigation["claims_checked"] is True
+    model = scripted()
+    tight = await analyse(make_settings(llm={"provider": "fake", "allow_fake": True, "max_input_chars": 1_500}), model, evidence_of(QUIET))
+    assert tight.investigation is not None and tight.investigation["evidence_truncated"] is True
+    assert "truncated" in texts(model.calls[0].messages)[-1]
+
+
+async def test_the_lookups_time_counts_against_the_analysis_time_budget(
+    make_settings: Callable[..., Settings], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The evidence lookups and the model share one node budget: seconds the lookups used are gone for the loop."""
+    settings = make_settings()
+    step = {"thought": "t", "threat_score": 50, "certainty": 40, "verdict": "inconclusive", "conclusion": "c",
+            "recommended_actions": [], "action": "lookup", "target": "i1"}
+
+    async def looked_up(run: AnalysisRunContext, candidate: Candidate, *, agent: str) -> None:
+        run.lookups += 1
+
+    monkeypatch.setattr(ReActReasoner, "_observe", staticmethod(looked_up))
+    calls = []
+    for spent_s in (0.0, 60.0):  # the lookups used nothing; the lookups used more than the loop's whole budget
+        agent = AnalysisAgent(settings=settings, model_factory=factory(scripted(InvestigationStep=[step, {**step, "threat_score": 90}])))
+        reasoner = ReActReasoner(agent.tools, time_budget_s=50.0, clock=lambda: 100.0)
+        candidates = {"i1": Candidate("i1", "ip", "203.0.113.7", []), "i2": Candidate("i2", "ip", "203.0.113.8", [])}
+        run = AnalysisRunContext(AgentContext("t1", "a1", settings), {}, candidates, spent_s=spent_s)
+        await reasoner.reason(agent, run)
+        calls.append((run.llm_calls, run.stop_reason))
+    assert calls[1] == (1, "time_budget") and calls[0][0] > 1 and calls[0][1] != "time_budget"

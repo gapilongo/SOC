@@ -103,14 +103,16 @@ def assemble(facts: InvestigationFacts) -> Investigation:
     listed = recorded[: max(0, MAX_OBSERVATIONS - len(found))]
     ledger_total = max(facts.ledger_total, len(recorded))
     # The evidence lookups the analysis recorded for itself (or why none ran), and the claims it cited them for.
-    run = harness.evidence_run(alert.summary, alert.view)
+    # A claim of one run is never shown beside an observation of another (ids such as host:0 exist in both).
+    paired = harness.same_run(alert.summary, facts.ledger_run_id)
+    run = harness.evidence_run(alert.summary, alert.view, listed=paired)
     return Investigation(
         alert_id=alert.id,
         tenant_id=alert.tenant_id,
         generated_at=facts.now,
         outcome=outcome(alert, facts.escalation, facts.events, facts.tier),
         summary=summary(alert, facts.escalation),
-        claims=evidence.claims(alert.summary, facts.lookups, found, harness.cited_claims(alert.summary)),
+        claims=evidence.claims(alert.summary, facts.lookups, found, harness.cited_claims(alert.summary) if paired else ()),
         observations=found + listed,
         observations_total=len(found) + ledger_total,
         observations_truncated=len(listed) < ledger_total,

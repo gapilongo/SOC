@@ -39,7 +39,8 @@ class AgentSet:
 
         ``model_factory`` replaces :func:`~lg_sotf.llm.get_chat_model` for every agent (evaluation cassettes).
         ``evidence`` is where the Wazuh evidence tools read for a run; without it the analysis agent has no
-        investigation harness (``lg_sotf.core.workflow.build_node_deps`` always gives one).
+        investigation harness. The workflow engine always gives one (``lg_sotf.core.workflow.build_node_deps``);
+        the history backtest (``lg_sotf.eval.history``) does not yet, so it replays without the lookups.
         """
         enrichment = enrichment or EnrichmentService.from_settings(settings, secret_box=secret_box)
         return cls(

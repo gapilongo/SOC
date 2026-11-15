@@ -2127,7 +2127,9 @@ export interface components {
                             supports?: string;
                             text?: string;
                         }[];
+                        claims_checked?: boolean;
                         empty?: number;
+                        evidence_truncated?: boolean;
                         facts?: number;
                         failed?: number;
                         indicators?: {
@@ -2424,7 +2426,9 @@ export interface components {
                             supports?: string;
                             text?: string;
                         }[];
+                        claims_checked?: boolean;
                         empty?: number;
+                        evidence_truncated?: boolean;
                         facts?: number;
                         failed?: number;
                         indicators?: {
@@ -4523,6 +4527,12 @@ export interface components {
              * @description What the lookups used of each limit.
              */
             budgets: components["schemas"]["EvidenceBudget"][];
+            /**
+             * Evidence Truncated
+             * @description The observations were cut to fit the model's prompt: it saw some of them in part.
+             * @default false
+             */
+            evidence_truncated: boolean;
             /** Indicators */
             indicators: components["schemas"]["EvidenceIndicator"][];
             /** Lookups */
@@ -4993,6 +5003,7 @@ export interface components {
              * @description The evidence lookups of the alert's newest analysis: what ran, what it used, or why none ran.
              * @default {
              *       "budgets": [],
+             *       "evidence_truncated": false,
              *       "indicators": [],
              *       "lookups": [],
              *       "status": "not_run"

@@ -947,8 +947,14 @@
                         },
                         "type": "array"
                       },
+                      "claims_checked": {
+                        "type": "boolean"
+                      },
                       "empty": {
                         "type": "integer"
+                      },
+                      "evidence_truncated": {
+                        "type": "boolean"
                       },
                       "facts": {
                         "type": "integer"
@@ -2073,8 +2079,14 @@
                         },
                         "type": "array"
                       },
+                      "claims_checked": {
+                        "type": "boolean"
+                      },
                       "empty": {
                         "type": "integer"
+                      },
+                      "evidence_truncated": {
+                        "type": "boolean"
                       },
                       "facts": {
                         "type": "integer"
@@ -7666,6 +7678,12 @@
             "title": "Budgets",
             "type": "array"
           },
+          "evidence_truncated": {
+            "default": false,
+            "description": "The observations were cut to fit the model's prompt: it saw some of them in part.",
+            "title": "Evidence Truncated",
+            "type": "boolean"
+          },
           "indicators": {
             "items": {
               "$ref": "#/components/schemas/EvidenceIndicator"
@@ -7757,6 +7775,7 @@
           "run_id",
           "stop_reason",
           "lookups",
+          "evidence_truncated",
           "budgets",
           "indicators"
         ],
@@ -8851,6 +8870,7 @@
             "$ref": "#/components/schemas/EvidenceRun",
             "default": {
               "budgets": [],
+              "evidence_truncated": false,
               "indicators": [],
               "lookups": [],
               "status": "not_run"

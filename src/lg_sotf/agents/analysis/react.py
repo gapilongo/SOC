@@ -221,6 +221,8 @@ class AnalysisRunContext:
     assessments: List[InvestigationStep] = field(default_factory=list)
     thoughts: List[str] = field(default_factory=list)
     lookups: int = 0
+    spent_s: float = 0.0
+    """Seconds of the analysis already used before the loop (the evidence lookups): they count against its time budget."""
     llm_calls: int = 0
     notes: List[str] = field(default_factory=list)
     stop_reason: Optional[StopReason] = None
@@ -293,7 +295,7 @@ class ReActReasoner:
         if not run.candidates:
             run.stop_reason = "no_candidates"
             return
-        started = self._clock()
+        started = self._clock() - run.spent_s  # the evidence lookups came out of the same node budget
         # max_steps lookups, plus the step that sees the last observation.
         for _ in range(self.max_steps + 1):
             out_of_time = self.time_budget_s is not None and self._clock() - started >= self.time_budget_s

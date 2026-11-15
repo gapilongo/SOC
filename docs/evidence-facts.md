@@ -318,6 +318,22 @@ alert is analysed exactly as before.
 off. The alert must come from a Wazuh source; other sources have no evidence
 tools yet.
 
+Two limits to know before turning it on:
+
+- **The alert must come from a Wazuh indexer source** (a source of type
+  `wazuh`, which the platform polls). The lookups read that source's indexer
+  with that source's credentials. A Wazuh alert that was pushed through a
+  webhook has no indexer to read: its investigation makes one call, records
+  `no_source` and the alert is analysed as before.
+- **A Wazuh cluster shared between customers.** The lookups search the index
+  pattern of the tenant's source with that source's indexer user, and
+  `prevalence` and `logon_fanout` count across everything that user can read.
+  When two tenants' sources read the same indices with the same user, one
+  tenant's facts would include the other's events. Turn the lookups on only
+  for a tenant whose index pattern or indexer user (a document-level security
+  role) separates it from other customers; the per-tenant scope filter is
+  INT3.2 (#239, threat TM-EVT-9).
+
 **What runs.** The default playbook, `wazuh.default`
 (`src/lg_sotf/agents/investigation/skills/wazuh.default.yaml`, a reviewed
 file validated by a strict model; a file that uses a field this release does
@@ -353,7 +369,10 @@ plan is fixed, so the executor makes no model call and spends no token, and
 the Wazuh tools cost nothing: the money budget counts the price a tool
 declares in the registry (`price_usd`). After two lookups in a row without an
 answer the rest are skipped (`investigation.breaker_failures`): an indexer
-that is down costs two calls, not a retry storm.
+that is down costs two calls, not a retry storm. A failed lookup's reason is
+the tool's own fixed code (`unreachable`, `credentials_refused`,
+`index_not_found`, `timeout`...). The seconds the lookups take come out of the
+same step budget as the model's reasoning loop.
 
 **What the model is given and asked.** When the lookups finished and
 returned at least one fact, the deep model's prompt gains the ledger's view
@@ -361,7 +380,9 @@ returned at least one fact, the deep model's prompt gains the ledger's view
 block, and its instructions gain one paragraph: return the claims the
 verdict rests on, each with the ids of the observations that show it, never
 an invented id, and an empty, failed or incomplete observation shows that
-something is not known. These are two separate prompt templates
+something is not known. The evidence shares the prompt's size limit for tool
+data; when it is cut to fit, the cut values are marked, the prompt says so,
+and the record says so (`evidence_truncated`). These are two separate prompt templates
 (`analysis.verdict_cited`, `analysis.react_step_cited`); the templates used
 without evidence are unchanged. Code then checks every cited id against the
 ledger of the same run and stores the claims with the findings
@@ -375,7 +396,9 @@ prompt, and the reason is stored and shown as a step of the investigation:
 
 | Reason | What happened |
 |---|---|
-| `circuit_open` | The indexer did not answer twice in a row (unreachable, credentials refused, no Wazuh source); the rest were skipped |
+| `circuit_open` | The indexer did not answer twice in a row (unreachable, credentials refused, timed out); the rest were skipped |
+| `no_source` | There is no event data to read for this alert (it was pushed, not polled from a Wazuh indexer source; or the telemetry store does not hold it): one call, the rest skipped |
+| `no_model` | No model analysed the alert (the LLM is off, or the tenant's token budget is spent): the facts are recorded for the analyst and not used |
 | `budget_steps`, `budget_wall`, `budget_tokens`, `budget_usd` | A budget was spent; a lookup still running when the time ran out is cut and recorded as failed |
 | `no_facts` | The lookups finished and none returned a fact |
 | `no_run_id` | The run started before investigation runs had an id (an older release) |
@@ -383,10 +406,13 @@ prompt, and the reason is stored and shown as a step of the investigation:
 
 What was looked up before the stop stays on the ledger and in the view.
 
-**Resume and retry.** A lookup whose call is already on the run's ledger is
-not sent again, a failed one included. A step retried after a crash sends
-only the lookups it had not recorded, and an alert analysed again in the
-same run (an analyst asked for more) sends none.
+**Resume and retry.** A lookup whose answer is already on the run's ledger (a
+fact, or "nothing found") is not sent again. A step retried after a crash
+sends only the lookups that have no answer yet. A lookup that failed is
+asked again when the alert is analysed again in the same run (a retried step,
+an analyst who asked for more), so an indexer that was down the first time
+can answer the second; the same failure stays one ledger entry however often
+it repeats.
 
 **Shadow runs** make the lookups (they read the tenant's own data and tell
 no third party) and keep the ledger in memory: nothing is written.

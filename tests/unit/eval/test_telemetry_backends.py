@@ -90,7 +90,7 @@ async def test_an_alert_re_sent_at_another_time_takes_its_telemetry_with_it() ->
     assert [e.at - now for e in moved.value.events] == [e.at - original for e in then.value.events]
 
 
-async def test_an_alert_the_dataset_does_not_hold_has_no_telemetry_and_no_tenant_reads_anothers() -> None:
+async def test_an_alert_the_dataset_does_not_hold_has_no_telemetry_and_the_alert_is_read_under_the_runs_tenant() -> None:
     document = corpus("corpus_v1").items[ITEM].alert
     alerts = Alerts()
     alerts.add("t1", "a1", str(document["id"]), event_time(document))

@@ -122,7 +122,7 @@ def investigated() -> Dict[str, Any]:
         budget={"steps": {"used": 1, "limit": 8}}, indicators={"high_level_alert_on_host": "false"}, facts=1,
     )
     claim = {"text": "t", "supports": "benign", "cites": ["host:0"], "findings": [{"fact_id": "x:1", "code": "unknown_fact"}]}
-    return {**run.record(), "claims": [claim]}
+    return {**run.record(), "claims": [claim], "evidence_truncated": False, "claims_checked": True}
 
 
 def test_analysis_digest_keys_are_declared() -> None:

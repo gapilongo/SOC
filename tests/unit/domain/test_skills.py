@@ -72,6 +72,14 @@ def test_only_an_alert_the_wazuh_normalizer_built_has_a_view() -> None:
         ({"agent": {"name": "WS-7"}, "data": {"win": {"eventdata": {"image": "C:\\\\Windows\\\\System32\\\\whoami.exe"}}}},
          WazuhAlertView(host="WS-7", logon_family="windows", object_kind="process_image", object_value="C:\\Windows\\System32\\whoami.exe")),
         ({"_omitted": "raw event too large for workflow state", "rule": {"id": "1"}}, WazuhAlertView()),
+        # A value ingestion changed (a masked secret, a cut string) is not what the index holds: no lookup of it.
+        ({"agent": {"name": "WS-7"}, "data": {"win": {"eventdata": {"imagePath": "C:\\\\svc.exe -password=[REDACTED]"}}}},
+         WazuhAlertView(host="WS-7", logon_family="windows")),
+        ({"agent": {"name": "WS-7"}, "data": {"win": {"eventdata": {"image": "C:\\\\very\\\\long\\\\path..."}}}},
+         WazuhAlertView(host="WS-7", logon_family="windows")),
+        # A UNC path of a document whose backslashes were not doubled keeps its two leading backslashes.
+        ({"agent": {"name": "WS-7"}, "data": {"win": {"eventdata": {"image": "\\\\fileserver\\share\\tool.exe"}}}},
+         WazuhAlertView(host="WS-7", logon_family="windows", object_kind="process_image", object_value="\\\\fileserver\\share\\tool.exe")),
     ],
 )
 def test_a_field_that_does_not_parse_is_none(document: Dict[str, Any], expected: WazuhAlertView) -> None:

@@ -235,6 +235,10 @@ class EvidenceRun(_Model):
         default=None, description="finished, a spent budget (budget_steps, budget_wall, ...), circuit_open or error."
     )
     lookups: List[EvidenceLookup] = Field(default_factory=list)
+    evidence_truncated: bool = Field(
+        default=False,
+        description="The observations were cut to fit the model's prompt: it saw some of them in part.",
+    )
     budgets: List[EvidenceBudget] = Field(default_factory=list, description="What the lookups used of each limit.")
     indicators: List[EvidenceIndicator] = Field(default_factory=list)
 

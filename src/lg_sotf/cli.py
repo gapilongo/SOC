@@ -106,8 +106,8 @@ def worker(metrics_host: str, metrics_port: int) -> None:
     # the dataset files the settings name. Otherwise this is None and they read each tenant's own indexer.
     try:
         evidence = telemetry_backends(settings)
-    except (ValueError, OSError) as exc:
-        raise click.ClickException(f"investigation.event_store_files: {exc}") from None
+    except (ValueError, KeyError, OSError) as exc:  # a missing file, or a line that is not a Wazuh document
+        raise click.ClickException(f"investigation.event_store_files: {type(exc).__name__}: {exc}") from None
     if evidence is not None:
         click.echo(f"evidence backend: event store ({len(evidence)} synthetic documents), not the tenants' indexers", err=True)
     _run(run_worker(settings, metrics_host=metrics_host, metrics_port=metrics_port, evidence=evidence))

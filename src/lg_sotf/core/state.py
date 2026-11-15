@@ -151,7 +151,7 @@ class InvestigationRecord(TypedDict, total=False):
 
     #: ``completed``: the evidence was shown to the deep model. ``degraded``: the analysis ran without it.
     status: str
-    #: Why the analysis ran without the evidence: a budget, ``circuit_open``, ``no_facts``, ``no_run_id``, ``error``.
+    #: Why the analysis ran without the evidence (``lg_sotf.agents.investigation.executor.DEGRADED_REASONS``).
     reason: Optional[str]
     skill: str
     skill_version: str
@@ -172,6 +172,10 @@ class InvestigationRecord(TypedDict, total=False):
     #: The skill's malicious indicators over the run's facts: ``true``, ``false`` or ``unknown``. Reported only.
     indicators: Dict[str, str]
     claims: List[InvestigationClaimRecord]
+    #: The prompt builder cut the evidence to fit its size limit: the model saw some facts in part.
+    evidence_truncated: bool
+    #: False when the citation check itself failed (the claims are then left out).
+    claims_checked: bool
 
 
 class AnalysisDigest(TypedDict, total=False):

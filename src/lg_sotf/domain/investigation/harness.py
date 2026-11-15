@@ -17,6 +17,7 @@ a value outside the vocabulary of this release falls back to the cautious readin
 
 from __future__ import annotations
 
+import math
 from typing import Any, List, Mapping, Optional, Sequence, Tuple, get_args
 
 from lg_sotf.domain.investigation import words
@@ -68,7 +69,14 @@ def _reason(code: Optional[str]) -> Optional[InvestigationReason]:
 
 
 def _number(value: Any) -> Optional[float]:
-    return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else None
+    """A stored number as a finite float; ``None`` for anything else (an integer too large for one included)."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    try:
+        number = float(value)
+    except OverflowError:
+        return None
+    return number if math.isfinite(number) else None
 
 
 def _lookup(step: Mapping[str, Any]) -> EvidenceLookup:
@@ -110,20 +118,36 @@ def not_run_reason(summary: Mapping[str, Any], view: Mapping[str, Any]) -> str:
     return "switched_off" if view.get("normalizer") == WAZUH else "no_evidence_tools"
 
 
-def evidence_run(summary: Mapping[str, Any], view: Mapping[str, Any]) -> EvidenceRun:
-    """The evidence lookups of the alert's newest analysis, or why there were none."""
+def same_run(summary: Mapping[str, Any], ledger_run_id: Optional[str]) -> bool:
+    """Whether the stored record and the ledger the view lists are of one investigation run.
+
+    They differ while an alert is being processed again (the new run's lookups are on the ledger, the
+    stored analysis is still the earlier run's), or when the newer run recorded no lookup. Ids such as
+    ``host:0`` exist in both runs, so a claim of one run is never put beside an observation of the other.
+    """
+    recorded = _record(summary).get("run_id")
+    return ledger_run_id is None or not isinstance(recorded, str) or recorded == ledger_run_id
+
+
+def evidence_run(summary: Mapping[str, Any], view: Mapping[str, Any], *, listed: bool = True) -> EvidenceRun:
+    """The evidence lookups of the alert's newest analysis, or why there were none. ``listed`` is false when
+    the observations the view lists are another run's (:func:`same_run`): the lookups then name none."""
     record = _record(summary)
     if not record:
         return EvidenceRun(status="not_run", reason=_reason(not_run_reason(summary, view)))
     reason = _code(record.get("reason"))
+    lookups = [_lookup(step) for step in _items(record.get("steps"), MAX_LOOKUPS)]
+    if not listed:
+        lookups = [lookup.model_copy(update={"observation_ids": []}) for lookup in lookups]
     return EvidenceRun(
+        evidence_truncated=record.get("evidence_truncated") is True,
         status="ran" if record.get("status") == "completed" and reason is None else "degraded",
         reason=_reason(reason or (None if record.get("status") == "completed" else "error")),
         playbook_id=_code(record.get("skill")),
         playbook_version=_code(record.get("skill_version")),
         run_id=_code(record.get("run_id")),
         stop_reason=_code(record.get("stop_reason")),
-        lookups=[_lookup(step) for step in _items(record.get("steps"), MAX_LOOKUPS)],
+        lookups=lookups,
         budgets=_budgets(record),
         indicators=_indicators(record),
     )

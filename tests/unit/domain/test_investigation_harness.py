@@ -52,11 +52,13 @@ def ledger() -> List[LedgerEntry]:
     return entries
 
 
-def view(summary: Dict[str, Any], *, alert_view: Optional[Dict[str, Any]] = None, events: Any = (), with_ledger: bool = True) -> Any:
+def view(summary: Dict[str, Any], *, alert_view: Optional[Dict[str, Any]] = None, events: Any = (), with_ledger: bool = True,
+         ledger_run_id: Optional[str] = None) -> Any:
     alert = AlertFacts(id="alert-1", tenant_id="tenant-a", status="waiting_human", severity="low", summary=summary,
                        view=WAZUH_VIEW if alert_view is None else alert_view, ingested_at=NOW)
     entries = ledger() if with_ledger else []
-    return assemble(InvestigationFacts(alert=alert, now=NOW, events=events, ledger=entries, ledger_total=len(entries)))
+    return assemble(InvestigationFacts(alert=alert, now=NOW, events=events, ledger=entries, ledger_total=len(entries),
+                                       ledger_run_id=ledger_run_id))
 
 
 def analysed(investigation: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -194,3 +196,24 @@ def test_a_hidden_alert_shows_no_lookups() -> None:
     hidden = assemble(InvestigationFacts(alert=alert, now=NOW, hidden=True, events=[analysis_event({"status": "completed"})]))
     assert (hidden.evidence_run.status, hidden.evidence_run.reason, hidden.evidence_run.lookups) == ("not_run", None, [])
     assert hidden.claims == [] and all(step.text != words.EVIDENCE_STEP.text for step in hidden.steps)
+
+
+def test_a_claim_of_one_run_is_never_put_beside_an_observation_of_another() -> None:
+    """While an alert is processed again the ledger listed is the new run's and the stored analysis the old
+    run's. ``host:0`` exists in both: the old claims are left out, and the old lookups name no observation."""
+    record = run_record(claims=[claim("The host shows routine activity only.", ["host:0"])])
+    same = view(analysed(record), ledger_run_id=RUN_ID)
+    assert same.claims[0].observation_ids == ["host:0"] and same.evidence_run.lookups[0].observation_ids == ["host:0"]
+    other = view(analysed(record), ledger_run_id="inv_" + "9" * 32)
+    assert other.claims == [] and [look.observation_ids for look in other.evidence_run.lookups] == [[], [], [], []]
+    assert [o.id for o in other.observations] == ["host:0", "logons_user:0", "logons_source:0"]  # the newer run's
+    assert other.evidence_run.status == "ran" and other.evidence_run.run_id == RUN_ID
+
+
+def test_a_number_too_large_for_a_float_is_no_budget_and_the_cut_is_shown() -> None:
+    huge = int("9" * 400)
+    record = run_record(budget={"steps": {"used": huge, "limit": 8}, "usd": {"used": float("inf"), "limit": 1},
+                                "tokens": {"used": 3, "limit": 20_000}}, evidence_truncated=True)
+    run = view(analysed(record)).evidence_run
+    assert [(b.kind, b.used) for b in run.budgets] == [("tokens", 3)] and run.evidence_truncated is True
+    assert view(analysed(run_record())).evidence_run.evidence_truncated is False

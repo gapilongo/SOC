@@ -17,14 +17,15 @@ An invalid catalogue is an error at process start (and in CI), never a skill tha
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List, Sequence, Tuple
+from typing import Annotated, Any, List, Sequence, Tuple
 
 import yaml
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
+from pydantic.fields import FieldInfo
 
 from lg_sotf.domain.skill_views import VIEWS, WAZUH, view_fields
 from lg_sotf.errors import LG_SOTFError
-from lg_sotf.models.skill import AllOf, AnyOf, Not, Predicate, SkillSpec
+from lg_sotf.models.skill import AllOf, AnyOf, Const, Not, Predicate, SkillSpec
 from lg_sotf.tools.registry import ToolNotFound, ToolRegistry
 
 __all__ = ["SKILLS_DIR", "SkillError", "check_catalog", "load_catalog", "load_skill"]
@@ -65,6 +66,18 @@ def _leaves(predicate: Predicate) -> List[str]:
     return _leaves(predicate.negated) if isinstance(predicate, Not) else [predicate.fact]
 
 
+def _fits(field: FieldInfo, arg: Any) -> bool:
+    """Whether a number or a constant of the file is a value the tool's parameter takes (its type and bounds),
+    so a query that could never run refuses the file instead of being skipped on every alert."""
+    value = arg.const if isinstance(arg, Const) else arg
+    expected: Any = Annotated[field.annotation, *field.metadata] if field.metadata else field.annotation
+    try:
+        TypeAdapter(expected).validate_python(value, strict=True)
+    except ValidationError:
+        return False
+    return True
+
+
 def _problems(skill: SkillSpec, registry: ToolRegistry) -> List[str]:
     problems: List[str] = []
     bindable = view_fields(skill.view)
@@ -85,9 +98,11 @@ def _problems(skill: SkillSpec, registry: ToolRegistry) -> List[str]:
         missing = sorted(name for name, field in fields.items() if field.is_required() and name not in ref.args)
         if unknown or missing:
             problems.append(f"{ref.id}: arguments not taken: {unknown or 'none'}; required and not given: {missing or 'none'}")
-        for arg in ref.args.values():
+        for name, arg in ref.args.items():
             if isinstance(arg, str) and arg.startswith("view.") and arg.removeprefix("view.") not in bindable:
                 problems.append(f"{ref.id}: the view has no field {arg}")
+            elif not isinstance(arg, str) and name in fields and not _fits(fields[name], arg):
+                problems.append(f"{ref.id}: {name} is not a value {ref.tool_name} takes")
     if WAZUH in skill.applies_to.source_types and not any(
         ref.tool_name == HOST_ACTIVITY_TOOL and ref.args.get("host") == "view.host" for ref in skill.evidence
     ):
@@ -112,5 +127,7 @@ def check_catalog(skills: Sequence[SkillSpec], registry: ToolRegistry) -> None:
             seen[source] = skill.id
     if len({skill.id for skill in skills}) != len(skills):
         problems.append("a skill id appears twice")
+    if not skills:
+        problems.append("it holds no skill (the skill files ship with the package)")
     if problems:
         raise SkillError("the skill catalogue does not load: " + "; ".join(problems)[:2_000])

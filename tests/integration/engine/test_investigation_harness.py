@@ -166,7 +166,7 @@ async def test_an_unreachable_indexer_gives_todays_path_and_the_reason(
     # Two calls failed and are on the ledger as failed; the breaker then skipped the rest: no retry storm.
     assert evidence.calls == 2
     assert [(s["outcome"], s["reason"]) for s in record["steps"]] == [
-        ("failed", "reported"), ("skipped", "no_binding"), ("failed", "reported"), ("skipped", "circuit_open")]
+        ("failed", "unreachable"), ("skipped", "no_binding"), ("failed", "unreachable"), ("skipped", "circuit_open")]
     run_id = (await state_of(engine, alert_id))["investigation_run_id"]
     ledger = await repos.evidence_facts.list_for_run(TENANT_A, alert_id, run_id)
     assert [(e.outcome, e.fact is None, e.citable_as_benign_evidence) for e in ledger] == [("failed", True, False)] * 2

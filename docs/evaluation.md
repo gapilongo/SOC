@@ -1362,6 +1362,13 @@ evidence (it still cites the ids).
 | Harness on, stand-in blind to the evidence | 100 | 58 |
 | Harness on, stand-in reads the evidence | 100 | 59 |
 
+The store receives an event at its own time, so a window that ends at the
+alert is closed and most facts here are complete. A production Wazuh source
+allows 15 minutes for late events by default (`max_event_lag_s`), so the
+lookups of an alert analysed within that time say `complete: false`: the 68
+incomplete answers and 33 `incomplete_fact` findings above understate what a
+live indexer will show.
+
 With the verdicts held, every one of the 520 alerts ends exactly where it
 ends today, with the same verdict and score: the harness changes no routing.
 The third row differs by one alert, `cv1-0351`, and the cause is the

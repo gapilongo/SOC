@@ -33,7 +33,13 @@
     spent, no fact came back, or the lookup code itself fails), the alert is
     analysed as it is today and the reason is recorded and shown. A failed
     lookup never fails, closes or escalates an alert. A step that is retried
-    after a crash does not send a lookup twice.
+    after a crash does not ask again for an answer it already has; a lookup
+    that failed is asked again when the alert is analysed again.
+  - The alert must come from a Wazuh indexer source (one the platform
+    polls): a pushed Wazuh alert has no indexer to read and is analysed as
+    before. On a Wazuh cluster shared between customers, turn the lookups on
+    only where the index pattern or the indexer user separates the tenant
+    from the others. See docs/evidence-facts.md.
   - A shadow run makes the lookups and writes nothing.
   - The playbook declares two malicious indicators over the host's
     activity. They are evaluated and reported; they do not block a close

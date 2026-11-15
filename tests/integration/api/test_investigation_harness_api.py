@@ -51,7 +51,7 @@ async def investigated(api: ApiHarness, tenant_id: str, answers: Answers, *claim
     state = {"normalizer": "wazuh", "occurred_at": AT.isoformat(), "raw": dict(LOGON)}
     run = await SkillInvestigator(answers.registry, settings).investigate(ctx, state)
     assert run is not None
-    record = {**run.record(), "claims": await checked_claims(ctx, [Claim.model_validate(c) for c in claims])}
+    record = {**run.record(), "claims": checked_claims(run.ledger, [Claim.model_validate(c) for c in claims])}
     analysis = {"verdict": "benign", "threat_score": 20, "llm_used": True, "conclusion": "A mistyped password.",
                 "investigation": record}
     await api.repos.alerts.update(tenant_id, alert_id, summary={"analysis": analysis})
@@ -80,7 +80,7 @@ async def test_the_view_shows_the_lookups_the_budgets_and_each_claim_beside_its_
         ("host", "wazuh.host_activity", "success", None, ["host:0"]),
         ("prevalence", "wazuh.prevalence", "skipped", "no_binding", []),
         ("logons_user", "wazuh.logon_fanout", "success", None, ["logons_user:0"]),
-        ("logons_source", "wazuh.logon_fanout", "failed", "reported", ["logons_source:0"]),
+        ("logons_source", "wazuh.logon_fanout", "failed", "unreachable", ["logons_source:0"]),
     ]
     assert {b["kind"]: (b["used"], b["limit"]) for b in shown["budgets"] if b["kind"] != "wall_s"} == {
         "steps": (3, 8), "tokens": (0, 20_000), "usd": (0, 0.25)}

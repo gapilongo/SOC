@@ -53,7 +53,7 @@ async def test_the_plan_runs_in_file_order_and_every_call_is_on_the_ledger(make_
     assert run is not None and (run.skill_id, run.skill_version, run.run_id) == ("wazuh.default", "1.0.0", RUN_ID)
     assert answers.called == [HOST_ACTIVITY, LOGON_FANOUT, LOGON_FANOUT]
     assert outcomes(run) == [("host", "success", None), ("prevalence", "skipped", "no_binding"),
-                             ("logons_user", "empty", None), ("logons_source", "failed", "reported")]
+                             ("logons_user", "empty", None), ("logons_source", "failed", "unreachable")]
     entries = store.rows[("t1", "a1", RUN_ID)]
     assert [(e.fact_id, e.outcome, e.fact is not None) for e in entries] == [
         ("host:0", "success", True), ("logons_user:0", "empty", False), ("logons_source:0", "failed", False)]
@@ -191,8 +191,8 @@ async def test_the_breaker_opens_after_two_calls_without_an_answer(make_settings
     answers, store = Answers({HOST_ACTIVITY: DOWN, LOGON_FANOUT: DOWN}), MemoryStore()
     run = await investigator(answers, make_settings()).investigate(context(make_settings(), store=store), wazuh_alert())
     assert run is not None and answers.called == [HOST_ACTIVITY, LOGON_FANOUT]
-    assert outcomes(run) == [("host", "failed", "reported"), ("prevalence", "skipped", "no_binding"),
-                             ("logons_user", "failed", "reported"), ("logons_source", "skipped", "circuit_open")]
+    assert outcomes(run) == [("host", "failed", "unreachable"), ("prevalence", "skipped", "no_binding"),
+                             ("logons_user", "failed", "unreachable"), ("logons_source", "skipped", "circuit_open")]
     assert (run.stop_reason, run.reason, run.context, run.facts) == ("circuit_open", "circuit_open", None, 0)
     assert [e.outcome for e in store.rows[("t1", "a1", RUN_ID)]] == ["failed", "failed"]
     # An answer in between closes it again: two failures apart are not an outage.
@@ -233,20 +233,27 @@ async def test_no_executor_error_reaches_the_alerts_run(make_settings: Make) -> 
         assert run is not None and (run.reason, {s.reason for s in run.steps}, untracked.calls) == ("no_facts", {"no_binding"}, [])
 
 
-async def test_a_retried_or_resumed_run_sends_nothing_twice(make_settings: Make) -> None:
-    """The same run again: every call is found on the ledger, a failed one included, and no id is minted."""
+async def test_a_retried_or_resumed_run_asks_only_for_what_it_has_no_answer_to(make_settings: Make) -> None:
+    """The same run again: an answer on the ledger (a fact, or "nothing found") is not asked for again. A call
+    that failed is asked again, and the same failure stays one ledger entry: no id is minted twice."""
     answers, store = Answers({LOGON_FANOUT: lambda p: Evidence([logon_fact()]) if p.pivot == "target_user" else DOWN}), MemoryStore()
     engine = investigator(answers, make_settings())
     first = await engine.investigate(context(make_settings(), store=store), wazuh_alert())
     again = await engine.investigate(context(make_settings(), store=store), wazuh_alert())
-    assert first is not None and again is not None and len(answers.calls) == 3
+    assert first is not None and again is not None and len(answers.calls) == 3 + 1
+    assert answers.called[3] == LOGON_FANOUT and answers.calls[3][1]['pivot'] == 'source_ip'
     assert [(s.evidence_id, s.outcome, s.fact_ids) for s in again.steps] == [(s.evidence_id, s.outcome, s.fact_ids) for s in first.steps]
-    assert [s.reused for s in first.steps] == [False] * 4 and [s.reused for s in again.steps] == [True, False, True, True]
+    assert [s.reused for s in first.steps] == [False] * 4 and [s.reused for s in again.steps] == [True, False, True, False]
     assert [e.fact_id for e in store.rows[("t1", "a1", RUN_ID)]] == ["host:0", "logons_user:0", "logons_source:0"]
     assert again.context == first.context and again.budget["steps"]["used"] == 3
     # Another run of the same alert (a reprocess) starts from an empty ledger and asks again.
     other = await engine.investigate(context(make_settings(), store=store, run_id="inv_" + "2" * 32), wazuh_alert())
-    assert other is not None and len(answers.calls) == 6 and not any(s.reused for s in other.steps)
+    assert other is not None and len(answers.calls) == 4 + 3 and not any(s.reused for s in other.steps)
+    # The indexer is back when the run is analysed again (an analyst asked for more): the failed lookup answers.
+    answers.answers[LOGON_FANOUT] = Evidence([logon_fact()])
+    healed = await engine.investigate(context(make_settings(), store=store), wazuh_alert())
+    assert healed is not None and [s.outcome for s in healed.steps] == ['success', 'skipped', 'success', 'success']
+    assert healed.steps[3].fact_ids == ('logons_source:1',) and healed.steps[3].reused is False
 
 
 async def test_a_value_the_tool_refuses_skips_the_query(make_settings: Make) -> None:
@@ -299,3 +306,38 @@ def test_an_invalid_catalogue_stops_the_process(make_settings: Make) -> None:
 def test_limits_default_to_the_install(make_settings: Make) -> None:
     engine = investigator(Answers(), make_settings())
     assert engine.limits(None) == engine.limits({}) == BudgetLimits(steps=8, wall_s=60.0, tokens=20_000, usd=0.25)
+
+
+async def test_an_alert_with_no_event_data_to_read_costs_one_call_and_says_so(make_settings: Make) -> None:
+    """A Wazuh alert pushed by a source that is not an indexer source (or one the telemetry store does not hold):
+    the first call says so in the tool's own fixed code, and nothing more is asked."""
+    for code in ("no_wazuh_source", "not_configured", "no_telemetry"):
+        answers, store = Answers({HOST_ACTIVITY: Evidence(error=code)}), MemoryStore()
+        run = await investigator(answers, make_settings()).investigate(context(make_settings(), store=store), wazuh_alert())
+        assert run is not None and answers.called == [HOST_ACTIVITY]
+        assert outcomes(run) == [("host", "failed", code), ("prevalence", "skipped", "no_source"),
+                                 ("logons_user", "skipped", "no_source"), ("logons_source", "skipped", "no_source")]
+        assert (run.stop_reason, run.reason, run.context) == ("no_source", "no_source", None)
+        assert [(e.outcome, e.reason) for e in store.rows[("t1", "a1", RUN_ID)]] == [("failed", code)]
+
+
+async def test_a_switch_that_cannot_be_read_is_off_and_leaves_no_record(make_settings: Make) -> None:
+    class Down:
+        async def get(self, tenant_id: str, *, conn: Any = None) -> Any:
+            raise ConnectionError("the database went away")
+
+    answers, ctx = Answers(), context(make_settings())
+    ctx.repos.tenants = Down()
+    assert await investigator(answers, make_settings()).investigate(ctx, wazuh_alert()) is None
+    assert answers.calls == [] and ctx.repos.evidence_facts.rows == {}
+
+
+async def test_a_timeout_that_is_not_the_budgets_is_an_error_not_a_spent_budget(make_settings: Make) -> None:
+    class Slow(TenantTools):
+        async def __call__(self, tenant_id: str, repos: Any) -> Any:
+            raise TimeoutError("the settings read timed out")
+
+    answers = Answers(tenant_tools=Slow({"wazuh_indexer": {"enabled": True}}))
+    run = await investigator(answers, make_settings()).investigate(context(make_settings()), wazuh_alert())
+    assert run is not None and (run.stop_reason, run.reason) == ("error", "error")
+    assert run.budget["wall_s"]["used"] < 1 and answers.calls == []

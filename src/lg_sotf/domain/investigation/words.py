@@ -239,6 +239,10 @@ EVIDENCE_REASONS: Final[Mapping[str, str]] = {
         "The source's event data did not answer, so the remaining lookups were skipped and the analysis ran "
         "without them."
     ),
+    "no_source": (
+        "The evidence lookups have no event data to read for this alert's source, so the analysis ran without them."
+    ),
+    "no_model": "No model analysed this alert, so the facts the lookups found were recorded and not used.",
     "no_facts": "The evidence lookups returned no fact, so the analysis ran as it does without them.",
     "no_run_id": "This run started before evidence lookups existed, so none ran.",
     "error": "The evidence lookups failed, so the analysis ran without them.",
@@ -253,6 +257,7 @@ SKIPPED_LOOKUP_REASONS: Final[Mapping[str, str]] = {
     "no_binding": "The alert does not carry the value this lookup needs.",
     "binding_refused": "The alert's value for this lookup is not well-formed, so it was not sent.",
     "circuit_open": "Skipped: the source's event data had stopped answering.",
+    "no_source": "Skipped: there is no event data to read for this alert's source.",
     "budget_steps": "Skipped: the lookups had reached their limit.",
     "budget_wall": "Skipped: the lookups had reached their time limit.",
     "budget_tokens": "Skipped: the lookups had reached their token limit.",

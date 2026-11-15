@@ -10,7 +10,9 @@ whose source has evidence tools (a skill applies) and whose tenant switched ever
 3. records every call on the run's fact ledger, whatever its outcome (``success``, ``empty``,
    ``failed``), so the ids a verdict may cite exist before any model sees them;
 4. stops at a budget (:mod:`lg_sotf.domain.investigation_budget`) or when the breaker opens: after
-   ``investigation.breaker_failures`` calls in a row gave no answer, the rest are skipped.
+   ``investigation.breaker_failures`` calls in a row gave no answer, the rest are skipped. A call that
+   says the alert has no event data to read at all (:data:`NO_SOURCE_ERRORS`) skips the rest at once.
+   A failed step's reason is the tool's own fixed code (``unreachable``, ``credentials_refused``...).
 
 It makes no model call and takes no input from one: the plan is the reviewed file, the values are the
 view's, the budget is the install's and the tenant's. Text inside a returned fact is data on the ledger
@@ -21,10 +23,11 @@ any error in here give :attr:`InvestigationRun.context` ``None``: the analysis t
 does without the harness, and :attr:`InvestigationRun.reason` says why. Nothing here closes or escalates
 an alert.
 
-**Resume and retry.** A query whose call is already on the run's ledger (same evidence id, tool, version
-and input hash) is not sent again: its entries are reused, a failed one included (a failed query is a
-missing fact, never a retry storm). So a node retried after a crash between two calls sends only the
-calls it had not recorded.
+**Resume and retry.** A query whose answer is already on the run's ledger (same evidence id, tool, version
+and input hash; ``success`` or ``empty``) is not sent again: its entries are reused. So a node retried
+after a crash between two calls sends only the calls that have no answer yet. A call that failed is asked
+again when the run is analysed again (a retried node, an analyst who asked for more): the breaker bounds
+that to a few calls, and the ledger keeps one entry for the same failure, however often it repeats.
 
 **No settle delay** (Amendment 1 point 2): the queries run at once. A fact whose window had not closed
 says ``complete: false``, which the tools compute.
@@ -36,7 +39,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
@@ -67,13 +70,19 @@ CIRCUIT_OPEN = "circuit_open"
 BUDGET_WALL = "budget_wall"
 SKIPPED = "skipped"
 NO_FACTS, NO_RUN_ID, ERROR = "no_facts", "no_run_id", "error"
+NO_SOURCE, NO_MODEL = "no_source", "no_model"
 NO_BINDING, BINDING_REFUSED = "no_binding", "binding_refused"
 BUDGET_STOPS = ("budget_steps", BUDGET_WALL, "budget_tokens", "budget_usd")
 """What :meth:`lg_sotf.domain.investigation_budget.Budget.spent` answers when a budget is spent."""
-DEGRADED_REASONS = (*BUDGET_STOPS, CIRCUIT_OPEN, NO_FACTS, NO_RUN_ID, ERROR)
+DEGRADED_REASONS = (*BUDGET_STOPS, CIRCUIT_OPEN, NO_SOURCE, NO_FACTS, NO_RUN_ID, NO_MODEL, ERROR)
 """Every value of :attr:`InvestigationRun.reason`: why the analysis ran without the evidence."""
-SKIP_REASONS = (NO_BINDING, BINDING_REFUSED, CIRCUIT_OPEN, *BUDGET_STOPS)
+SKIP_REASONS = (NO_BINDING, BINDING_REFUSED, CIRCUIT_OPEN, NO_SOURCE, *BUDGET_STOPS)
 """Every reason of a skipped :class:`StepRecord`. The investigation view has a sentence for each of both."""
+NO_SOURCE_ERRORS = frozenset({"no_wazuh_source", "not_configured", "no_telemetry"})
+"""A tool's fixed error codes that say this alert has no event data to read at all (an alert pushed by a
+source that is not a Wazuh indexer source; an alert the telemetry store does not hold): no other query of
+the alert can answer, so the rest are skipped at once."""
+REPORTED = "reported"
 
 
 def switched_on(tenant_settings: Any, tool_settings: Sequence[str]) -> bool:
@@ -124,8 +133,10 @@ class InvestigationRun:
     facts: int = 0
     context: Optional[Dict[str, Any]] = None
     reason: Optional[str] = None
-    """Why the analysis went on without the evidence (``None`` when it was shown): the stop reason,
-    ``no_facts``, ``no_run_id`` or ``error``."""
+    """Why the analysis went on without the evidence (``None`` when it was shown): one of
+    :data:`DEGRADED_REASONS`."""
+    ledger: Tuple[LedgerEntry, ...] = field(default=(), repr=False)
+    """The run's ledger as the executor left it: what a claim's citations are checked against. Not stored."""
 
     def _count(self, outcome: str) -> int:
         return sum(step.outcome == outcome for step in self.steps)
@@ -204,6 +215,10 @@ class SkillInvestigator:
         run = InvestigationRun(skill.id, skill.version, ctx.investigation_run_id)
         try:
             tenant = await ctx.repos.tenants.get(ctx.tenant_id)
+        except Exception as exc:  # noqa: BLE001 - a switch that cannot be read is off: today's path, no record
+            log_failure(log, "investigation.switch_unreadable", exc, level="warning", error_type=type(exc).__name__)
+            return None
+        try:
             if not switched_on(tenant.settings, self._tool_settings(skill)):
                 return None
             if not ctx.investigation_run_id:  # a run started before the id existed has no ledger
@@ -222,25 +237,30 @@ class SkillInvestigator:
         ledger = FactLedger.for_run(ctx)
         view, at = VIEWS[skill.view](alert), _occurred_at(alert)
         failures = 0
+        halted: Optional[str] = None
         try:
             for ref in skill.evidence:
                 spec = self.registry.get(ref.tool_name)
-                stop = CIRCUIT_OPEN if failures >= self._config.breaker_failures else budget.spent(next_usd=spec.price_usd)
+                broken = CIRCUIT_OPEN if failures >= self._config.breaker_failures else None
+                stop = halted or broken or budget.spent(next_usd=spec.price_usd)
                 if stop is not None:
                     run.stop_reason = stop
                     run.steps.append(StepRecord(ref.id, ref.tool_name, SKIPPED, stop))
                     continue
                 done = await self._query(ctx, ledger, ref, spec, bind(ref.args, view, at) if at else None, budget)
                 run.steps.append(done)
-                if done.outcome == "failed" and not done.reused:
+                if done.outcome == "failed":
                     failures += 1
                     if done.reason == BUDGET_WALL:  # cut while it ran: the budget is spent even if it was the last
                         run.stop_reason = BUDGET_WALL
+                    elif done.reason in NO_SOURCE_ERRORS:  # nothing to read for this alert: ask nothing more
+                        run.stop_reason = halted = NO_SOURCE
                 elif done.outcome in ("success", "empty"):
                     failures = 0
         finally:
             run.budget = budget.used()
         entries = await ledger.facts()
+        run.ledger = entries
         run.facts = sum(entry.fact is not None for entry in entries)
         run.indicators = indicator_states(skill, entries)
         if run.stop_reason != FINISHED:
@@ -264,15 +284,24 @@ class SkillInvestigator:
             return StepRecord(ref.id, ref.tool_name, SKIPPED, BINDING_REFUSED)
         input_hash = tool_input_hash(spec.traced_as, valid.model_dump(mode="json"))
         call = (ref.id, spec.name, spec.version, input_hash)
-        known = [e for e in await ledger.facts() if (e.evidence_id, e.tool, e.tool_version, e.input_hash) == call]
-        if known:
+        known = [
+            e for e in await ledger.facts()
+            if (e.evidence_id, e.tool, e.tool_version, e.input_hash) == call and e.outcome != "failed"
+        ]
+        if known:  # an answer the run already has (a resumed or retried run): not asked again
             budget.charge(steps=1)
             return _step(ref, known, reused=True)
         budget.charge(steps=1, usd=spec.price_usd)
+        deadline = asyncio.timeout(budget.remaining_s)
         try:
-            async with asyncio.timeout(budget.remaining_s):
+            async with deadline:
                 result = await self.registry.call(ctx, ref.tool_name, args, agent=AGENT)
             step = tool_step(ref.id, spec, result)
-        except TimeoutError:  # the wall-clock budget ran out while the call was running
+            error = getattr(result.value, "error", None)
+            if step.outcome == "failed" and step.reason == REPORTED and isinstance(error, str) and error:
+                step = replace(step, reason=error[:64])  # the tool's own fixed code says why, not "reported"
+        except TimeoutError:
+            if not deadline.expired():  # not this budget's timeout: an error like any other
+                raise
             step = ToolStep(ref.id, spec.name, spec.version, input_hash, None, "failed", False, BUDGET_WALL)
         return _step(ref, await ledger.record(step), reused=False)

@@ -28,6 +28,9 @@ _HOST = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,254}$")
 _USER = re.compile(r"^[A-Za-z0-9._$@\\-]{1,128}$")
 _SHA256 = re.compile(r"^[0-9A-Fa-f]{64}$")
 MAX_OBJECT_CHARS = 1_024
+_BACKSLASHES = re.compile(r"\\+")
+_MASKED = "[REDACTED"
+"""How the redaction of ``lg_sotf.security.redaction`` marks a masked secret."""
 _ED = ("data", "win", "eventdata")
 # Where the object an alert is about is read, in this order: a file's hash, a service's binary, a process image.
 _OBJECTS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
@@ -70,8 +73,19 @@ def _address(text: Optional[str]) -> Optional[str]:
 
 
 def _windows_text(text: Optional[str]) -> Optional[str]:
-    """A Windows value as Windows wrote it: a Wazuh 4.x document holds every backslash doubled."""
-    return text.replace("\\\\", "\\") if text else None
+    """A Windows value as Windows wrote it. A Wazuh 4.x document holds every backslash doubled, so a value
+    whose backslashes all come in pairs is halved; any other (a UNC path of a document that was not doubled)
+    is left as it is."""
+    if not text:
+        return None
+    doubled = all(len(run) % 2 == 0 for run in _BACKSLASHES.findall(text))
+    return text.replace("\\\\", "\\") if doubled else text
+
+
+def _altered(value: str) -> bool:
+    """Whether ingestion changed the value (a secret masked, a long string cut): the index holds the original,
+    so a lookup of the changed one would wrongly find nothing."""
+    return _MASKED in value or value.endswith("...") or "\x00" in value
 
 
 def _object(document: Mapping[str, Any]) -> Tuple[Optional[str], Optional[str]]:
@@ -81,7 +95,7 @@ def _object(document: Mapping[str, Any]) -> Tuple[Optional[str], Optional[str]]:
             value = value.lower() if value and _SHA256.fullmatch(value) else None
         else:
             value = _windows_text(value)
-        if value and len(value) <= MAX_OBJECT_CHARS and "\x00" not in value:
+        if value and len(value) <= MAX_OBJECT_CHARS and not _altered(value):
             return kind, value
     return None, None
 

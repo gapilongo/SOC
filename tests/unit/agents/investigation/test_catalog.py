@@ -62,6 +62,10 @@ def _arg(doc: Dict[str, Any], name: str, value: Any) -> None:
         (lambda d: d["evidence"][0]["args"].pop("before_min"), r"required and not given: \['before_min'\]"),
         (lambda d: _arg(d, "host", "view.hostname"), "the view has no field view.hostname"),
         (lambda d: d.update(view="splunk.alert"), "view splunk.alert is not registered"),
+        # A constant or a number the tool would refuse on every alert: the query could never run.
+        (lambda d: d["evidence"][2]["args"].update(pivot={"const": "bogus"}), "logons_user: pivot is not a value wazuh.logon_fanout takes"),
+        (lambda d: _arg(d, "before_min", 99_999), "host: before_min is not a value wazuh.host_activity takes"),
+        (lambda d: d["evidence"][1]["args"].update(days={"const": "thirty"}), "prevalence: days is not a value"),
         (lambda d: _arg(d, "host", "view.user"), "a Wazuh skill runs wazuh.host_activity on the alert's host"),
         (lambda d: d["hypotheses"]["malicious"][0]["indicator"].update(fact="prevalence"),
          "never_close_class_on_host: evidence prevalence holds no host_activity fact"),
@@ -70,6 +74,12 @@ def _arg(doc: Dict[str, Any], name: str, value: Any) -> None:
 def test_a_skill_that_does_not_fit_the_registry_refuses_the_catalogue(change: Callable[[Dict[str, Any]], Any], problem: str) -> None:
     with pytest.raises(SkillError, match=problem):
         check_catalog([skill(change)], Answers().registry)
+
+
+def test_an_empty_catalogue_is_an_error_not_a_harness_that_never_runs(tmp_path: Path) -> None:
+    assert load_catalog(tmp_path) == ()
+    with pytest.raises(SkillError, match="holds no skill"):
+        check_catalog(load_catalog(tmp_path), Answers().registry)
 
 
 def test_a_registry_without_the_evidence_tools_refuses_the_catalogue() -> None:
