@@ -121,7 +121,7 @@ async def test_model_led_closure_on_closes_only_what_policy_v3_allows(eval_setti
         assert (held.status, held.disposition, held.decision_code) == ("waiting_human", None, "related_open_threat"), held
         stored = await repos.alerts.get(tenant, held.alert_id)
         assert stored.summary["analysis"]["verdict"] == "benign"
-        assert stored.summary["related_open"] == {"threats": [dump.alert_id], "in_progress": []}
+        assert stored.summary["related_open"] == {"threats": [dump.alert_id], "in_progress": [], "model_only": []}
 
 
 async def test_tool_fixture_answers_are_recorded_and_replayed_by_cassettes(

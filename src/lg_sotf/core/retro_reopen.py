@@ -77,16 +77,28 @@ reopens more.
 **The other order of arrival** (:func:`related_open`, AI-E3.16): the threat
 is there before the close. When ``decide`` runs for an alert at the tier, it
 reads the tenant's alerts of the same window that share a host or user with
-it and are not closed: the ones that are a threat as stored (a response was
-planned for them, or a model judged them a threat: the same tests as above),
-and the high or critical ones on the same host that are being processed at
-that moment. Either holds the model-led close back
-(:mod:`lg_sotf.domain.closure`). IPs are left out here, and so are the
-accounts every host has of its own (:data:`BUILT_IN_ACCOUNTS`): a shared
-proxy, resolver or NAT address, or ``root`` on two servers, would hold back
-unrelated closes, and the safety net above still links by them. An alert
-that is only queued has not been looked at; if it becomes a threat it
-arrives after the close, which the safety net covers.
+it and are not closed. The same distinction applies forward: a threat only a
+model stands behind links, a stronger signal acts.
+
+* **Hold** (:mod:`lg_sotf.domain.closure`): the close is withheld when the
+  related open alert waits for a response approval, is high or critical and
+  judged a threat by a model, or was confirmed by a person (an analyst's
+  ``true_positive``, a blind-audit ``malicious`` label); also while a high
+  or critical alert on the same host is being processed. The held alert
+  joins the threat's open case as an attached alert, so the analyst gets
+  one case; it escalates on its own only when the threat has no open case.
+* **Link forward** (:func:`forward_links`): any other related open alert a
+  model judged a threat, or planned a response for, holds nothing. The
+  alert closes on the models' word and is linked to that threat's case at
+  once, through :func:`link_related_model_closes` (path ``forward``). A
+  later confirmation of the threat reopens it like any linked alert.
+
+IPs are left out here, and so are the accounts every host has of its own
+(:data:`BUILT_IN_ACCOUNTS`): a shared proxy, resolver or NAT address, or
+``root`` on two servers, would relate unrelated alerts, and the safety net
+above still links by them. An alert that is only queued has not been looked
+at; if it becomes a threat it arrives after the close, which the safety net
+covers.
 """
 
 from __future__ import annotations
@@ -118,7 +130,7 @@ REOPENED_CLOSE_REASON = "reopened:related_threat"
 ACTIVE_ESCALATION_STATUSES = frozenset({"open", "claimed"})
 MAX_REOPEN = 200
 MAX_ENTITY_VALUES = 50
-#: The related alerts a decision names as holding a close back (one is enough to hold it).
+#: The related open alerts a decision records: the ones that hold the close back first, then the ones it links to.
 MAX_RELATED_OPEN = 10
 #: Accounts every host has of its own: two alerts that share only one of them are not about the same user, so it
 #: holds no close back (:func:`related_open`). The safety net still links by them: a link changes no decision.
@@ -174,10 +186,11 @@ def _built_in(user: str) -> bool:
 async def related_open(
     repos: Repositories, tenant_id: str, alert_id: str, *, now: Optional[datetime] = None
 ) -> RelatedOpenDigest:
-    """What the database holds, at this moment, against a model-led close of the alert: the ids of the open
-    threats on its hosts and users and of the high or critical alerts in progress on its hosts, at most
-    :data:`MAX_RELATED_OPEN` in all (see the module docs). Read in the tenant's transaction; raises on a database
-    error, so a failed read never closes an alert."""
+    """What the database holds, at this moment, about the open threats on the alert's hosts and users: the ids of
+    the ones that hold a model-led close back (``threats``), of the high or critical alerts in progress on its
+    hosts (``in_progress``) and of the threats only a model stands behind (``model_only``: the close is linked
+    to their case), at most :data:`MAX_RELATED_OPEN` in all (see the module docs). Read in the tenant's
+    transaction; raises on a database error, so a failed read never closes an alert."""
     alert = await repos.alerts.get(tenant_id, alert_id)
     entities = alert.entities if isinstance(alert.entities, Mapping) else {}
     found = await repos.alerts.open_threats_sharing_entities(
@@ -190,9 +203,23 @@ async def related_open(
         limit=MAX_RELATED_OPEN,
     )
     return {
-        "threats": [other.id for other in found if other.threat],
-        "in_progress": [other.id for other in found if not other.threat],
+        "threats": [other.id for other in found if other.kind == "hold"],
+        "in_progress": [other.id for other in found if other.kind == "in_progress"],
+        "model_only": [other.id for other in found if other.kind == "model_only"],
     }
+
+
+def forward_links(summary: Any) -> List[str]:
+    """The open threats only a model stands behind that the decision recorded for an alert (its summary's
+    ``related_open.model_only``): once the models close the alert, it is linked to each one's case."""
+    related = summary.get("related_open") if isinstance(summary, Mapping) else None
+    return [threat for threat in _listed(related, "model_only") if isinstance(threat, str)]
+
+
+def holders(summary: Any) -> List[str]:
+    """The open threats that held the alert's model-led close back (``related_open.threats``)."""
+    related = summary.get("related_open") if isinstance(summary, Mapping) else None
+    return [threat for threat in _listed(related, "threats") if isinstance(threat, str)]
 
 
 async def link_related_model_closes(

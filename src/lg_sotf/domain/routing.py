@@ -25,11 +25,13 @@ Safety rules enforced here (contract section 8):
   below the response policy) unless a hard block applies; the thresholds,
   the campaign check and the ``unmapped`` block are gone, and the safety net
   (:mod:`lg_sotf.core.retro_reopen`) links such closes to a related threat a
-  model judged and reopens them when a person confirms one. A threat that
-  is already open on the same host or user when the decision is made, or a
-  high or critical alert still in progress on the same host, sends the
-  alert to an analyst instead (AI-E3.16: codes ``related_open_threat`` and
-  ``related_in_progress``, read from the database by the ``decide`` node).
+  model judged and reopens them when a person confirms one. A serious
+  threat that is already open on the same host or user when the decision
+  is made (high or critical and judged by a model, waiting for a response
+  approval, or confirmed by a person), or a high or critical alert still
+  in progress on the same host, sends the alert to an analyst instead
+  (AI-E3.16: codes ``related_open_threat`` and ``related_in_progress``,
+  read from the database by the ``decide`` node).
 * A response the policy (not an analyst) chose goes to an analyst when an
   action failed or none completed; it closes (disposition ``malicious``)
   once its actions succeeded or ran in the tenant's dry-run mode. Blocked
@@ -265,9 +267,9 @@ def _model_close(state: Mapping[str, Any], tier: str) -> Optional[Decision]:
 
 
 def _related_hold(blockers: Sequence[str]) -> Optional[Decision]:
-    """The escalation of an alert the models would have closed but for a related alert (AI-E3.16): an open threat
-    on the same host or user, or a high or critical alert on the same host that is still being processed. ``None``
-    when anything else blocks the close too: the rest of the policy decides."""
+    """The escalation of an alert the models would have closed but for a related alert (AI-E3.16): a serious open
+    threat on the same host or user, or a high or critical alert on the same host that is still being processed.
+    ``None`` when anything else blocks the close too: the rest of the policy decides."""
     if not closure.RELATED_HOLDS.issuperset(blockers):
         return None
     if "related_open_threat" in blockers:

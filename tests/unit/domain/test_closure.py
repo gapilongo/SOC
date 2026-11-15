@@ -415,6 +415,16 @@ def test_the_models_text_about_related_alerts_decides_nothing() -> None:
     assert routing.decide(held, T, AUTO).code == "related_open_threat"
 
 
+def test_a_threat_only_a_model_stands_behind_holds_nothing() -> None:
+    """The digest's ``model_only`` list (low or medium alerts a model judged a threat) is for the forward link: it
+    blocks no close, and a digest without it is still a checked one."""
+    linked = benign_state(related_open={"threats": [], "in_progress": [], "model_only": ["a-3", "a-4"]})
+    assert model_close_blockers(linked, tier=AUTO) == []
+    assert routing.decide(linked, T, AUTO).code == MODEL_CLOSED
+    held = benign_state(related_open={"threats": ["a-1"], "in_progress": [], "model_only": ["a-3"]})
+    assert routing.decide(held, T, AUTO).code == "related_open_threat"
+
+
 def test_approved_benign_evidence_is_not_held_by_a_related_open_threat() -> None:
     """Scope: the hold is on the models' word. A close on approved benign evidence (the rule's own test intent, a
     declared scanner) is decided as before."""

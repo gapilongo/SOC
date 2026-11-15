@@ -118,12 +118,15 @@ INVARIANTS: Tuple[Invariant, ...] = (
             "vendor's authentication-failure rules and T1531, a Wazuh alert whose rule cannot be read, log "
             "clearing, security-tool tampering, ransomware behaviour, persistence through attacker-named objects), "
             "steering text, entities with a recent true positive, an alert normalised by a model or one reopened; "
-            "such a close is marked model_closed for audit. Nor while a related threat is open: when the decision "
-            "is made the workflow reads the tenant's stored alerts of the previous 24 hours on the same host or "
-            "user, and an alert that is not closed and has a response planned for it or was judged a threat by a "
-            "model, or a high or critical one on the same host that is being processed at that moment, sends the "
-            "alert to an analyst instead (read from the database, never from a model's text; unreadable blocks "
-            "the close). When an alert becomes a threat after the close, the safety net looks "
+            "such a close is marked model_closed for audit. Nor while a serious related threat is open: when the "
+            "decision is made the workflow reads the tenant's stored alerts of the previous 24 hours on the same "
+            "host or user. An alert that is not closed and waits for a response approval, is high or critical and "
+            "was judged a threat by a model, or was confirmed by a person (an analyst true positive, a blind-audit "
+            "malicious label), or a high or critical one on the same host that is being processed at that moment, "
+            "holds the close back: the alert goes to an analyst in that threat's case (read from the database, "
+            "never from a model's text; unreadable blocks the close). A low or medium threat only a model stands "
+            "behind holds nothing: the alert closes and is linked to that threat's case at once. When an alert "
+            "becomes a threat after the close, the safety net looks "
             "at every model-closed alert sharing a host, user or IP with it in the previous 24 hours. A model's "
             "judgement is not a confirmation: a threat only a model stands behind (an escalation a model judged a "
             "threat: deep verdict malicious, or fast tier likely_threat or confirmed_threat, never a merely "
@@ -171,10 +174,15 @@ INVARIANTS: Tuple[Invariant, ...] = (
             "test_a_related_open_threat_holds_a_model_led_close_and_names_the_reason",
             "tests/unit/domain/test_closure.py::test_related_alerts_that_were_not_checked_block_the_close",
             "tests/integration/engine/test_related_open.py::"
-            "test_an_open_threat_on_the_same_host_or_user_holds_the_close",
+            "test_a_serious_open_threat_on_the_same_host_or_user_holds_the_close",
+            "tests/integration/engine/test_related_open.py::"
+            "test_a_held_alert_joins_the_threats_case_and_the_case_decision_settles_it",
+            "tests/integration/engine/test_related_open.py::"
+            "test_a_threat_only_a_model_stands_behind_links_the_close_to_its_case",
             "tests/integration/engine/test_related_open.py::"
             "test_a_serious_alert_being_processed_on_the_same_host_holds_the_close",
-            "tests/integration/engine/test_related_open.py::test_another_tenants_threat_never_holds_a_close",
+            "tests/integration/engine/test_related_open.py::"
+            "test_another_tenants_threat_never_holds_or_links_a_close",
             "tests/integration/engine/test_related_open.py::"
             "test_no_alert_of_the_demo_attack_chain_closes_without_a_person",
             "tests/unit/domain/test_closure.py::test_a_scanner_or_test_source_never_closes_a_never_close_class",

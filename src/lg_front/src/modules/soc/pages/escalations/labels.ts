@@ -56,6 +56,8 @@ const ROUTING_WHY: Record<string, string> = {
   response_review: 'The planned response did not complete; a person decides what happens next.',
   group_review: 'Under review together with similar alerts.',
   blind_audit: 'A blind audit disagreed: an analyst labelled this AI close malicious.',
+  related_open_threat: 'The AI judged it harmless, but a serious threat is open on the same host or user.',
+  related_in_progress: 'The AI judged it harmless, but a serious alert on the same host was still being processed.',
   high_risk: 'The threat score meets the response policy.',
   complex_attack: 'Several steps of one attack are linked.',
   conflicting_evidence: 'The evidence points both ways.',

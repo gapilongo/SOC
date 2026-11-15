@@ -399,9 +399,10 @@ response actions.
   (`grey_zone`, `false_positive_review`, `inconclusive`, `model_refused`,
   `llm_normalized`, `analyst_request`, `response_review`, `group_review`,
   `blind_audit`; `related_open_threat` and `related_in_progress` when the
-  AI judged the alert benign but another alert on the same host or user is
-  an open threat, or a high or critical one on the same host was still
-  being processed)
+  AI judged the alert benign but a serious threat is open on the same host
+  or user, or a high or critical alert on the same host was still being
+  processed; an alert held by an open threat is attached to that threat's
+  escalation)
   and, for `grey_zone` when the confidence was inside it, the band
   (`{min, max}`, `routing.correlation_grey_zone_min`..`_max`). Escalations
   opened before this was recorded have `routing` and `ai_reason_source`

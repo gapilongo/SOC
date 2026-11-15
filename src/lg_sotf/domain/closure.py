@@ -35,23 +35,29 @@ unreadable value blocks the close.
   share a host or user with this one
   (:func:`lg_sotf.core.retro_reopen.related_open`, the digest
   :data:`RELATED_OPEN`). The close is held back and the alert goes to an
-  analyst when one of them is not closed and is a threat as stored: a
-  response was planned for it (it waits for the approval, or for an
-  analyst after the plan), or a model judged it one (the deep tier's
-  ``malicious``, the fast tier's ``likely_threat`` or ``confirmed_threat``;
-  code ``related_open_threat``). It is also held back when a high or
-  critical alert on the same host is being processed at that moment:
-  nothing is decided about it yet (code ``related_in_progress``). The
-  facts come from the database, never from a model's text or from the
+  analyst, in the threat's case, when one of them is not closed and is a
+  strong enough signal (code ``related_open_threat``): it waits for a
+  response approval; or it is high or critical and a model judged it a
+  threat (the deep tier's ``malicious``, the fast tier's ``likely_threat``
+  or ``confirmed_threat``); or a person confirmed it (an analyst's
+  ``true_positive``, a blind-audit ``malicious`` label). It is also held
+  back when a high or critical alert on the same host is being processed
+  at that moment: nothing is decided about it yet (code
+  ``related_in_progress``). A low or medium threat only a model stands
+  behind holds nothing: the alert closes and is linked to that threat's
+  case at once, as the safety net links it when the threat comes later.
+  The facts come from the database, never from a model's text or from the
   correlation digest. A digest that is missing or unreadable blocks the
   close (``related_unchecked``).
 
 Removed in v3: the install thresholds on the model tiers (likelihood 8,
 certainty 85), the campaign check and the ``unmapped`` block. The related
 open threat check is narrower than that campaign check: it reads stored
-state, only alerts on the same host or user, and only the ones with a
-response plan, the ones a model judged a threat (never ``suspicious``) and
-the serious ones still in progress.
+state, only alerts on the same host or user, and it holds a close back
+only for a serious threat, one a person or a pending response stands
+behind, or a serious alert still in progress (never for a model's
+``suspicious``, and never for a model's own low or medium false alarms,
+which cost 13 of 53 benign closes on a realistic mix).
 
 The safety net (:mod:`lg_sotf.core.retro_reopen`) covers the other order of
 arrival, a threat that appears after the close: when an alert becomes a
@@ -130,7 +136,9 @@ FAST_TIER_THREATS: FrozenSet[str] = frozenset({"likely_threat", "confirmed_threa
 REOPENED = "reopened"
 LLM_NORMALIZED_FLAG = "llm_normalized"
 #: The state and alert-summary key of the related-alert check: ``{"threats": [alert ids], "in_progress": [alert
-#: ids]}`` as the database held them when the decision was made (lg_sotf.core.retro_reopen.related_open).
+#: ids], "model_only": [alert ids]}`` as the database held them when the decision was made
+#: (lg_sotf.core.retro_reopen.related_open). ``threats`` and ``in_progress`` hold the close back; ``model_only``
+#: (threats only a model stands behind) holds nothing: the closed alert is linked to their case.
 RELATED_OPEN = "related_open"
 #: The blockers that hold a close back because of a related alert's stored state. When nothing else blocks the
 #: close, the alert goes to an analyst under the blocker's own name as the decision code (lg_sotf.domain.routing).

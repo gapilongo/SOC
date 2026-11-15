@@ -57,6 +57,7 @@ from uuid import UUID
 from lg_sotf.audit.logger import AuditLogger, written_under_grant
 from lg_sotf.db import Connection
 from lg_sotf.db.errors import InvalidTransition, NotFound
+from lg_sotf.db.repos.alerts import group_decision_rows
 from lg_sotf.db.repos.escalations import ACTIVE_ESCALATION_STATUSES, DECISIONS, Escalation
 from lg_sotf.domain.events import EventPublisher, publish_event
 from lg_sotf.domain.routing import BENIGN_DECISIONS
@@ -89,7 +90,6 @@ MAX_APPROVED_ACTIONS = 50
 # Per entry, as the workflow's resume payload accepts it.
 MAX_APPROVED_ENTRY_CHARS = 256
 MAX_ACTION_IDS = 100
-_ALERT_KEYS_SQL = "SELECT id, status, fingerprint, severity, normalized, raw FROM alerts WHERE tenant_id = $1 AND id = ANY($2)"
 # Locks the run row until the approval commits: a reprocess (or the run finishing) waits for it.
 _RUN_FOR_SHARE_SQL = "SELECT status FROM workflow_runs WHERE tenant_id = $1 AND alert_id = $2 FOR SHARE"
 SUPPRESSION_SUGGESTION_DAYS = 90
@@ -469,16 +469,16 @@ class ReviewService:
         return resolved
 
     async def _own_review(self, tenant_id: str, escalation: Escalation, decision: str, conn: Connection) -> List[str]:
-        """Attached alerts a benign ``decision`` will not close (predicts the workflow's decision scope)."""
+        """Attached alerts a benign ``decision`` will not close (the workflow's decision scope; linked or held: none)."""
         attached = [a for a in escalation.related_alert_ids if a != escalation.alert_id]
         if not attached or decision not in BENIGN_DECISIONS:
             return []
-        rows = {r["id"]: dict(r) for r in await conn.fetch(_ALERT_KEYS_SQL, tenant_id, [escalation.alert_id, *attached])}
+        rows = await group_decision_rows(conn, tenant_id, [escalation.alert_id, *attached])
         parent = rows.get(escalation.alert_id)
         out: List[str] = []
         for alert_id in attached:
             row = rows.get(alert_id)
-            if (row is None or row["status"] != "closed") and own_review_reason(  # closed: only linked, no run waits
+            if (row is None or not (row["status"] == "closed" or row["held"])) and own_review_reason(
                 decision,
                 parent_key=verdict_key_of(parent) if parent else None,
                 parent_severity=parent["severity"] if parent else None,

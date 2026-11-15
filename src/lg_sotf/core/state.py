@@ -143,11 +143,15 @@ class DecisionDigest(TypedDict, total=False):
 
 
 class RelatedOpenDigest(TypedDict, total=False):
-    """The related alerts that hold back a close on the models' word, as stored when the alert was decided: ids of
-    the open threats on the same host or user, and of the high or critical alerts in progress on the same host."""
+    """The open related alerts on the same host or user, as stored when the alert was decided. ``threats`` and
+    ``in_progress`` hold back a close on the models' word: ids of the open threats that are high or critical,
+    wait for a response approval or were confirmed by a person, and of the high or critical alerts in progress on
+    the same host. ``model_only``: ids of the other threats a model judged; the alert closes and is linked to
+    their case."""
 
     threats: List[str]
     in_progress: List[str]
+    model_only: List[str]
 
 
 class PlanDigest(TypedDict, total=False):
@@ -256,6 +260,9 @@ class AlertSummary(TypedDict, total=False):
     linked_alert_ids: List[str]
     # The related-alert check of a model-led close, as the database stood when ``decide`` ran (only at the tier).
     related_open: RelatedOpenDigest
+    # The open threats that held the alert's model-led close back (escalate node): it waits in their case when one
+    # of them has one (``escalation_attached``), and that case's decision settles it.
+    held_by: List[str]
     confidence: Optional[float]
     threat_score: Optional[float]
     decision: Optional[DecisionDigest]

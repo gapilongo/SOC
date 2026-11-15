@@ -348,15 +348,26 @@ Rules:
   * A related open threat holds that close back (AI-E3.16). At the tier,
     `decide` reads the tenant's stored alerts of the previous 24 hours
     that share a host or user with the alert (`related_open` in
-    `core/retro_reopen.py`; not IPs, not `root` or `SYSTEM`). The alert
-    goes to an analyst when one of them is not closed and is a threat as
-    stored (a response was planned for it, or a model judged it
-    `malicious`, `likely_threat` or `confirmed_threat`; decision code
-    `related_open_threat`), or when a high or critical alert on the same
-    host is being processed at that moment (`related_in_progress`). The
-    answer comes from the database, never from a model's text or the
-    correlation digest; it is kept in the alert summary (`related_open`),
-    and a read that fails or is missing blocks the close.
+    `core/retro_reopen.py`; not IPs, not `root` or `SYSTEM`). As in the
+    safety net, a threat only a model stands behind links and a stronger
+    signal acts. The close is **held** (decision code
+    `related_open_threat`) when one of them is not closed and waits for a
+    response approval, is high or critical and judged `malicious`,
+    `likely_threat` or `confirmed_threat` by a model, or was confirmed by
+    a person (an analyst true positive, a blind-audit malicious label);
+    also when a high or critical alert on the same host is being
+    processed at that moment (`related_in_progress`). A held alert joins
+    the threat's open case as an attached alert, so the analyst gets one
+    case; the case decision settles it (a benign decision closes it
+    without detaching it and teaches the verdict cache nothing). It gets
+    its own escalation, naming the threat, only when the threat has no
+    open case. A low or medium threat only a model stands behind holds
+    nothing: the alert closes and is **linked** to that threat's case at
+    once (`alert.linked`, metric path `forward`), and reopens when the
+    threat is confirmed. The answer comes from the database, never from a
+    model's text or the correlation digest; it is kept in the alert
+    summary (`related_open`), and a read that fails or is missing blocks
+    the close.
   * The safety net (`core/retro_reopen.py`) covers the other order of
     arrival, a threat that appears after the close, and replaces the
     other forward gates.
