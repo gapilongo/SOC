@@ -20,7 +20,7 @@ ARG BASE_IMAGE=
 
 # The base image, pinned by digest (tag kept for readability; Dependabot bumps
 # both). Only pulled when BASE_IMAGE is empty.
-FROM python:3.11-slim@sha256:65bd3d9f1d7fa268dd1909973ba7eb4bdf41f6dcf2cfbe76ba9528b170f3fd79 AS python-base
+FROM python:3.15-slim@sha256:65a65fc7b30b06cb6df4930fd4650697cb23f4c2698ab81fc87e4b031bc36928 AS python-base
 
 # ---------------------------------------------------------------------------
 # Builder: install the hash-locked dependency set into a virtualenv and the
