@@ -2,6 +2,6 @@
 # docker/requirements-build.txt by scripts/lock_requirements.sh. pip and setuptools build
 # the application wheel and are uninstalled before the virtualenv ships; dumb-init (a static
 # binary shipped as a wheel) is PID 1 of the runtime image.
-pip==26.2
-setuptools==84.1.0
+pip==26.3
+setuptools==84.2.1
 dumb-init==1.2.5.post1
