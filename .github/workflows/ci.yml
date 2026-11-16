@@ -85,7 +85,7 @@ jobs:
         run: |
           pip install --require-hashes -r requirements-dev.txt
           pip install --no-deps -e .
-      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+      - uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e # v5.1.0
         with:
           version: ${{ env.HELM_VERSION }}
       - name: Pytest (unit and deploy)
@@ -196,7 +196,7 @@ jobs:
         run: |
           psql -h 127.0.0.1 -U postgres -v ON_ERROR_STOP=1 -f scripts/ci/create_test_role.sql
       # tests/deploy renders the chart; without helm those tests skip.
-      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+      - uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e # v5.1.0
         with:
           version: ${{ env.HELM_VERSION }}
       - name: Pytest
@@ -337,7 +337,7 @@ jobs:
           PGPASSWORD: ci_only_superuser_password
         run: |
           psql -h 127.0.0.1 -U postgres -v ON_ERROR_STOP=1 -f scripts/ci/create_test_role.sql
-      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+      - uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e # v5.1.0
         with:
           version: ${{ env.HELM_VERSION }}
       - name: Pytest (4 workers, one file per worker at a time)
@@ -590,7 +590,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+      - uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e # v5.1.0
         with:
           version: ${{ env.HELM_VERSION }}
       - name: Pull kubeconform
