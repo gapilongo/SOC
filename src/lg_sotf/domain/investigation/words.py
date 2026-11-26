@@ -98,7 +98,8 @@ DECIDE_SENTENCES: Final[Mapping[str, str]] = {
         "The AI judged the alert benign, but the facts its lookups found show a sign of an attack, so a person decides."
     ),
     "evidence_citation": (
-        "The AI judged the alert benign, but the facts it cited for that do not hold, so a person decides."
+        "The AI judged the alert benign, but it cites an observation the investigation never recorded, so a "
+        "person decides."
     ),
     "awaiting_approval": "A response was proposed and waits for a person to approve it.",
 }
@@ -127,8 +128,7 @@ BLOCKER_SENTENCES: Final[Mapping[str, str]] = {
         "high-level alert or an alert of a class only a person may close on the same host."
     ),
     "evidence_citation": (
-        "The benign verdict cites an observation the investigation did not record, or a lookup that found nothing "
-        "or failed, as its evidence."
+        "The benign verdict cites an observation the investigation did not record, or one whose record was changed."
     ),
 }
 

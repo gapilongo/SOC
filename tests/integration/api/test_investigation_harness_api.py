@@ -8,13 +8,14 @@ observations they cite, and, for an alert without lookups, why none ran.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any, Dict, Tuple
 
 import pytest
 
 from lg_sotf.agents.analysis.react import Claim
 from lg_sotf.agents.base import AgentContext
-from lg_sotf.agents.investigation.claims import blocking, checked_claims
+from lg_sotf.agents.investigation.claims import blocking, checked_claims, evidence_backed
 from lg_sotf.agents.investigation.executor import InvestigationRun, SkillInvestigator, switched_on
 from lg_sotf.domain.investigation import words
 from lg_sotf.domain.investigation_budget import tenant_limits
@@ -54,6 +55,7 @@ async def investigated(api: ApiHarness, tenant_id: str, answers: Answers, *claim
     record = {**run.record(), "claims": checked_claims(run.ledger, [Claim.model_validate(c) for c in claims]),
               "claims_checked": True, "verdict_findings": []}
     record["blocking"] = blocking(run, record)
+    record["evidence_backed"] = evidence_backed(SimpleNamespace(verdict="benign"), record)
     analysis = {"verdict": "benign", "threat_score": 20, "llm_used": True, "conclusion": "A mistyped password.",
                 "investigation": record}
     await api.repos.alerts.update(tenant_id, alert_id, summary={"analysis": analysis})
@@ -92,6 +94,7 @@ async def test_the_view_shows_the_lookups_the_budgets_and_each_claim_beside_its_
     assert shown["holds_close"] == [{"code": "evidence_citation", "sentence": words.BLOCKER_SENTENCES["evidence_citation"]}]
     assert [(i["holds_close"], i["observation_ids"]) for i in shown["indicators"]] == [(False, []), (False, [])]
     assert (shown["steering_observation_ids"], shown["benign_without_claims"]) == ([], False)
+    assert shown["evidence_backed"] is False  # one benign claim rests on a failed lookup and an invented id
     # The observations are the ledger's, under the ids the lookups name; each claim sits beside what it cites.
     observations = {o["id"]: o for o in body["observations"]}
     assert set(observations) == {"host:0", "logons_user:0", "logons_source:0"}
@@ -107,6 +110,20 @@ async def test_the_view_shows_the_lookups_the_budgets_and_each_claim_beside_its_
     assert [u["observation_id"] for u in body["not_established"]["unavailable"]] == ["logons_source:0"]
     step = next(s for s in body["steps"] if s["text"] == words.EVIDENCE_STEP.text)
     assert (step["actor"], step["produced"]) == ("code", "3 lookups · 2 facts · 1 failed · 1 skipped · 2 citation findings")
+
+
+async def test_a_verdict_whose_every_benign_claim_rests_on_a_complete_fact_is_shown_as_evidence_backed(api: ApiHarness) -> None:
+    """The label an analyst reads: backed by recorded evidence, or the model's word. A benign claim on a lookup
+    that found nothing or failed holds no close; it only loses the label."""
+    answers = Answers({LOGON_FANOUT: lambda p: Evidence([logon_fact()]) if p.pivot == "target_user" else DOWN})
+    good = {"text": "The account logged on from the same address before.", "supports": "benign", "cites": ["logons_user:0"]}
+    backed, _ = await investigated(api, TENANT_A, answers, good)
+    shown = (await investigation(api, backed))["evidence_run"]
+    assert (shown["evidence_backed"], shown["holds_close"]) == (True, [])
+    word, _ = await investigated(api, TENANT_A, answers, good, {"text": "No other source.", "supports": "benign", "cites": ["logons_source:0"]})
+    body = await investigation(api, word)
+    assert (body["evidence_run"]["evidence_backed"], body["evidence_run"]["holds_close"]) == (False, [])
+    assert [f["code"] for f in body["claims"][1]["findings"]] == ["not_benign_evidence"]
 
 
 async def test_a_degraded_run_and_an_alert_without_lookups_say_why(api: ApiHarness) -> None:

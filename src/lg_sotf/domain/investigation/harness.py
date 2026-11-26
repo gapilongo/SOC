@@ -170,6 +170,7 @@ def evidence_run(summary: Mapping[str, Any], view: Mapping[str, Any], *, listed:
         indicators=_indicators(record),
         steering_observation_ids=_ids(record.get("steering")),
         benign_without_claims=any(f.get("code") == "no_claims" for f in _items(record.get("verdict_findings"), 4)),
+        evidence_backed=record.get("evidence_backed") is True,
         holds_close=_holds(summary),
     )
 

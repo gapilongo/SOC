@@ -27,7 +27,7 @@ const ROUTING_LABELS: Record<string, string> = {
   model_refused: 'Model declined',
   llm_normalized: 'Model-normalized alert',
   evidence_indicator: 'Attack sign in the evidence',
-  evidence_citation: 'Citations do not hold',
+  evidence_citation: 'Cites an unrecorded observation',
   evidence_steering: 'Steering text in the evidence',
   analyst_request: 'Analyst request',
   response_review: 'Response review',
@@ -56,7 +56,7 @@ const ROUTING_WHY: Record<string, string> = {
   model_refused: 'The model declined to assess this alert.',
   llm_normalized: 'A model had to normalize this alert; check the extracted fields.',
   evidence_indicator: 'The AI judged it benign, but the facts it looked up show a sign of an attack.',
-  evidence_citation: 'The AI judged it benign, but the facts it cited for that do not hold.',
+  evidence_citation: 'The AI judged it benign, but it cites an observation that was never recorded.',
   evidence_steering: 'A fact the AI looked up contains text that tries to steer the model.',
   analyst_request: 'An analyst asked for another look.',
   response_review: 'The planned response did not complete; a person decides what happens next.',
@@ -108,7 +108,7 @@ export function routingSentence(value: unknown): string | null {
     case 'evidence_indicator':
       return 'Escalated because the facts the AI looked up show a sign of an attack, so it may not close the alert on its own.';
     case 'evidence_citation':
-      return 'Escalated because the facts the AI cited for its benign verdict do not hold.';
+      return 'Escalated because the AI cites an observation that was never recorded for its benign verdict.';
     case 'evidence_steering':
       return 'Escalated because a fact the AI looked up contains text that tries to steer the model.';
     case 'analyst_request':

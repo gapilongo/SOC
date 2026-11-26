@@ -20,7 +20,8 @@ from lg_sotf.domain.closure import HARD_CITATION_FINDINGS
 from lg_sotf.domain.ledger import LedgerEntry, check_citations
 from lg_sotf.observability.logging import get_logger, log_failure
 
-__all__ = ["DIGEST_KEYS", "CitedClaim", "blocking", "checked_claims", "investigation_digest", "investigation_record"]
+__all__ = ["DIGEST_KEYS", "CitedClaim", "blocking", "checked_claims", "evidence_backed", "investigation_digest",
+           "investigation_record"]
 
 log = get_logger(__name__)
 
@@ -96,14 +97,27 @@ def investigation_record(
     benign = shown and getattr(final, "verdict", None) == "benign"
     record["verdict_findings"] = [{"code": NO_CLAIMS}] if benign and record["claims_checked"] and not record["claims"] else []
     record["blocking"] = blocking(investigation, record)
+    record["evidence_backed"] = evidence_backed(final, record)
     return record
+
+
+def evidence_backed(final: Any, record: Mapping[str, Any]) -> bool:
+    """Whether the benign verdict rests on recorded evidence: it has benign claims, and every one of them
+    cites at least one observation and has no finding (so each cited one is a complete fact a tool observed).
+    Anything less (a claim on an empty or incomplete lookup, on nothing, or no claim) is the model's word.
+    A label only: no decision reads it."""
+    benign = [claim for claim in record["claims"] if claim["supports"] == "benign"]
+    return (
+        getattr(final, "verdict", None) == "benign" and record["claims_checked"] is True and bool(benign)
+        and all(claim["cites"] and not claim["findings"] for claim in benign)
+    )
 
 
 def blocking(investigation: InvestigationRun, record: Dict[str, Any]) -> Dict[str, Any]:
     """What of the investigation holds a model-led close (read by :mod:`lg_sotf.domain.closure`): the facts
     with steering text, the malicious indicators that are true with their fact ids, and the hard citation
-    findings (an id the ledger did not mint, an altered entry, an empty or failed lookup cited as benign
-    evidence). A check that failed counts as a hard finding: nothing closes on claims nobody checked."""
+    findings (an id the ledger did not mint, an altered entry: forgery or corruption). A check that failed
+    counts as a hard finding: nothing closes on claims nobody checked."""
     codes = sorted({f["code"] for claim in record["claims"] for f in claim["findings"]} & HARD_CITATION_FINDINGS)
     if not record["claims_checked"]:
         codes.append(UNCHECKED)

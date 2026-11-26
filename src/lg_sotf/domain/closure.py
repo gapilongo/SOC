@@ -40,12 +40,17 @@ unreadable value blocks the close.
     (``evidence_indicator``). An indicator that is *unknown*, because a
     lookup failed or its answer was incomplete, does not block;
   * the benign verdict's claims have no hard citation finding
-    (``evidence_citation``): an id the ledger did not mint, an entry that
-    was altered, an empty or failed lookup cited as benign evidence, or
-    claims nobody could check. A claim that cites an incomplete fact, or
-    nothing, is recorded and does not block.
+    (``evidence_citation``): an id the ledger did not mint or an entry that
+    was altered (forgery or corruption), or claims nobody could check. A
+    benign claim that rests on an empty or failed lookup, on an incomplete
+    fact, or on nothing is recorded and does not block: the close is then
+    made on the model's word, as policy v3 makes it without a harness, and
+    the record says it is not evidence-backed (``evidence_backed: false``).
 
-  Without an investigation none of the three applies: policy v3 is as above.
+  The harness never closes fewer alerts than no harness would, except on
+  positive evidence of an attack (a true indicator, steering text) or on
+  forgery. Without an investigation none of the three applies: policy v3
+  is as above.
 
 Removed in v3: the install thresholds on the model tiers (likelihood 8,
 certainty 85), the campaign check and the ``unmapped`` block.
@@ -289,9 +294,10 @@ EVIDENCE_STEERING = "evidence_steering"
 EVIDENCE_INDICATOR = "evidence_indicator"
 EVIDENCE_CITATION = "evidence_citation"
 EVIDENCE_BLOCKERS: Tuple[str, ...] = (EVIDENCE_STEERING, EVIDENCE_INDICATOR, EVIDENCE_CITATION)
-#: Citation findings that hold a benign verdict's close (``lg_sotf.domain.ledger.check_citations``), and
-#: ``unchecked``: the check itself failed. ``incomplete_fact`` and ``no_citation`` are recorded only.
-HARD_CITATION_FINDINGS: FrozenSet[str] = frozenset({"unknown_fact", "altered_fact", "not_benign_evidence", "unchecked"})
+#: Citation findings that hold a benign verdict's close (``lg_sotf.domain.ledger.check_citations``): forgery
+#: or corruption, and ``unchecked`` (the check itself failed). ``not_benign_evidence``, ``incomplete_fact``,
+#: ``no_citation`` and ``no_claims`` are recorded only: such a close is on the model's word.
+HARD_CITATION_FINDINGS: FrozenSet[str] = frozenset({"unknown_fact", "altered_fact", "unchecked"})
 UNREADABLE = "unreadable"
 MAX_HELD = 16
 MAX_HELD_CHARS = 80

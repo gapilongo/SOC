@@ -957,6 +957,9 @@
                       "empty": {
                         "type": "integer"
                       },
+                      "evidence_backed": {
+                        "type": "boolean"
+                      },
                       "evidence_truncated": {
                         "type": "boolean"
                       },
@@ -2113,6 +2116,9 @@
                       },
                       "empty": {
                         "type": "integer"
+                      },
+                      "evidence_backed": {
+                        "type": "boolean"
                       },
                       "evidence_truncated": {
                         "type": "boolean"
@@ -7750,6 +7756,12 @@
             "title": "Budgets",
             "type": "array"
           },
+          "evidence_backed": {
+            "default": false,
+            "description": "The benign verdict rests on recorded evidence: every benign claim cites at least one complete observation that found something, and has no finding. False otherwise: a close by the AI is then on the model's word.",
+            "title": "Evidence Backed",
+            "type": "boolean"
+          },
           "evidence_truncated": {
             "default": false,
             "description": "The observations were cut to fit the model's prompt: it saw some of them in part.",
@@ -7868,6 +7880,7 @@
           "indicators",
           "steering_observation_ids",
           "benign_without_claims",
+          "evidence_backed",
           "holds_close"
         ],
         "title": "EvidenceRun",
@@ -8962,6 +8975,7 @@
             "default": {
               "benign_without_claims": false,
               "budgets": [],
+              "evidence_backed": false,
               "evidence_truncated": false,
               "holds_close": [],
               "indicators": [],
@@ -9111,7 +9125,7 @@
             "type": "string"
           },
           "findings": {
-            "description": "A cited claim's citation findings (code checked them). unknown_fact, altered_fact and not_benign_evidence on a benign verdict hold a model-led close; the others are recorded only.",
+            "description": "A cited claim's citation findings (code checked them). unknown_fact and altered_fact on a benign verdict hold a model-led close; the others are recorded only (see evidence_run.evidence_backed).",
             "items": {
               "$ref": "#/components/schemas/ClaimFinding"
             },

@@ -1365,8 +1365,8 @@ today's.
 | Run | Benign closed | Attacks closed |
 |---|---|---|
 | Today's path | 100 | 58 |
-| Harness on, stand-in blind to the evidence | 82 | 35 |
-| Harness on, stand-in reads the evidence | 82 | 35 |
+| Harness on, stand-in blind to the evidence | 100 | 39 |
+| Harness on, stand-in reads the evidence | 100 | 39 |
 
 What held the closes, in the run where the stand-in reads the evidence (the
 decide code of each alert):
@@ -1374,33 +1374,38 @@ decide code of each alert):
 | Blocker | Benign held | Attacks held | |
 |---|---|---|---|
 | `evidence_indicator` | 0 | 20 | `high_level_alert_on_host` true for all 20, `never_close_class_on_host` for 10 of them |
-| `evidence_citation` | 18 | 4 | every one is `not_benign_evidence`: a benign claim that cites a lookup that found nothing |
+| `evidence_citation` | 0 | 0 | the stand-in cites only ids it was shown |
 | `evidence_steering` | 0 | 0 | the corpus holds no steering text in telemetry |
 
-With the verdicts held, 41 alerts end differently from today, and every one
-was a model-led close that an evidence blocker now sends to a person: 23
-attacks and 18 benign alerts. No alert closes that did not close before, in
-either run.
+With the verdicts held, 19 alerts end differently from today, all attacks,
+and every one was a model-led close that a true indicator now sends to a
+person. No benign close is lost, and no alert closes that did not close
+before, in either run.
 
-- **The indicators cost no benign close** and hold 19 attacks (20 when the
-  stand-in reads the evidence, below).
-- **All 18 benign alerts are held by `evidence_citation`, and the cause is
-  the stand-in.** It cites every observation id it is shown, for a benign
-  claim too. Since an alert alone on its host now has an empty host lookup,
-  the stand-in cites "nothing found" as benign evidence, which the rule
-  refuses. The cited prompt tells a model that an empty or failed observation
-  shows that something is not known; whether a real model follows that is
-  the first thing a real-model run has to measure. Had the stand-in not
-  cited empty lookups, these 22 alerts (18 benign, 4 attacks) would have
-  closed as they do today: 100 benign and 39 attacks. That figure is derived
-  from the run, not measured.
 - **`cv1-0351`** is the attack the evidence bought a close for before the
   review: the stand-in reads the words `update` and `test` in the host's
   facts and its verdict moves from `inconclusive` to `benign`. It no longer
   closes: two level-15 alerts on the same host in the hour make
   `high_level_alert_on_host` true, and the decision is `evidence_indicator`.
   Three verdicts moved with the evidence (`cv1-0345`, `cv1-0351`,
-  `cv1-0392`); all three alerts are held by an indicator.
+  `cv1-0392`); all three alerts are held by an indicator. That is the
+  twentieth alert of the table above.
+- **A benign claim on a lookup that found nothing holds no close.** The
+  stand-in cites every observation id it is shown, so for an alert alone on
+  its host it cites the empty host lookup as benign evidence (the 55
+  `not_benign_evidence` findings). A first build of the citation rule held
+  those closes: 18 benign and 4 attacks, 82 and 35 closed. That made the
+  harness close fewer benign alerts than no harness, on no evidence of an
+  attack, so the rule now holds a close only for a forged or altered
+  citation. The finding is recorded and costs the verdict its label.
+- **Evidence-backed or the model's word.** Of the 131 model-led closes with
+  the harness on, the record calls 29 evidence-backed (every benign claim
+  cites a complete fact and has no finding): 8 benign and 21 attacks. The
+  other 102 are closes on the model's word: 84 benign and 18 attacks. The
+  21 attacks show what the label is and is not: it says the claims cite
+  recorded facts, not that the facts make the alert benign. The stand-in
+  cites whatever it is shown; judging whether a cited fact supports the
+  claim is the checker's work (AI-E3.4, #207).
 
 The store receives an event at its own time, so a window that ends at the
 alert is closed and most facts here are complete. A production Wazuh source

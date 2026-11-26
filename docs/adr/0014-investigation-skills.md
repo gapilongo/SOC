@@ -1259,10 +1259,16 @@ was built and why; nothing here changes a decision of this record.
   deep model inside a fact that nothing scanned. So the closing rule (`lg_sotf.domain.closure`) reads
   the investigation's record now, and only when an investigation ran: (a) a declared malicious
   indicator that is true over the facts holds a model-led close (`evidence_indicator`; unknown does not
-  hold); (b) a benign verdict whose claims have a hard citation finding (`unknown_fact`, `altered_fact`,
-  `not_benign_evidence`) is held (`evidence_citation`; `incomplete_fact`, `no_citation` and `no_claims`
-  are recorded only); and steering text in a fact, found by the alert text's own scan, holds every
-  automatic close (`evidence_steering`). The host lookup leaves the alert's own event out
+  hold); (b) a benign verdict whose claims cite an id the ledger did not mint or an altered entry
+  (`unknown_fact`, `altered_fact`: forgery or corruption) is held (`evidence_citation`); and steering
+  text in a fact, found by the alert text's own scan, holds every automatic close
+  (`evidence_steering`). `not_benign_evidence`, `incomplete_fact`, `no_citation` and `no_claims` are
+  recorded only. The first build of (b) also held `not_benign_evidence`, and on the corpus it held 18
+  benign closes of alerts alone on their host. That contradicted the principle point 1 states for
+  unknown indicators: the harness never closes fewer alerts than no harness would, except on positive
+  evidence of an attack or on forgery, because policy v3 already closes on the model's word. So such a
+  close stands, and the record labels it: `evidence_backed` is true only when every benign claim cites
+  a complete fact and has no finding. Nothing reads the label yet. The host lookup leaves the alert's own event out
   (`exclude_rule_id`, an optional binding), so an indicator is never true from the alert's own level
   or technique; prevalence is taken as of the alert's time and is not asked for a common system binary
   or interpreter. INV-03 says so. The full checker (#207) and the skills with benign proofs (#199)

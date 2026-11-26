@@ -59,7 +59,12 @@ def state_alert(document: Mapping[str, Any] = THE_ALERT) -> Dict[str, Any]:
 
 
 def evidence_of(documents: List[Dict[str, Any]]) -> Any:
-    backend = EventStoreBackend(EventStore(documents).as_of(AT))
+    return evidence_of_at(documents, AT)
+
+
+def evidence_of_at(documents: List[Dict[str, Any]], now: Any) -> Any:
+    """The index as it stood at ``now``: at the alert's own time its windows are still open (incomplete facts)."""
+    backend = EventStoreBackend(EventStore(documents).as_of(now))
 
     async def backends(ctx: Any) -> EventStoreBackend:
         return backend

@@ -34,9 +34,12 @@
     the playbook declares (another alert of rule level 12 or higher, or of
     a class only a person may close, on the same host in the hour: decide
     code `evidence_indicator`), or when the benign verdict cites an
-    observation that was never recorded or a lookup that found nothing or
-    failed (`evidence_citation`). A sign the lookups could not settle does
-    not hold the close. Tenants that have not turned the lookups on are not
+    observation that was never recorded (`evidence_citation`). Nothing
+    else holds a close: a sign the lookups could not settle, or a benign
+    claim that rests on a lookup that found nothing, is recorded, and the
+    alert closes as it would without the lookups. The record says whether
+    the benign verdict is backed by evidence (`evidence_backed`) or is the
+    model's word. Tenants that have not turned the lookups on are not
     affected. INV-03 says so.
   - Text an attacker can write into a fact (a user name typed at a logon,
     a command line) is scanned for steering instructions before any model
@@ -69,7 +72,8 @@
   observations it recorded, what was used of each budget, the indicators
   (with `holds_close` and the observations a true one read), the
   observations with steering text (`steering_observation_ids`), what of
-  the evidence holds an AI close (`holds_close`), and, when no lookup was
+  the evidence holds an AI close (`holds_close`), whether the benign
+  verdict is backed by evidence (`evidence_backed`), and, when no lookup was
   made or the analysis ran without them, the reason as a code and a
   sentence. The same reasons appear in `outcome.blockers`, and the work
   queue shows a plain sentence for the three new routing codes. `claims` now starts with the deep model's
@@ -96,7 +100,6 @@
   (the others are high or critical alerts that go straight to a person
   without the deep analysis), with no failed lookup. At the tier
   `auto_full_audit`, automation closed 58 attacks with the lookups off and
-  35 with them on: the evidence held 23 and bought none. It also held 18
-  benign alerts, all because the stand-in model cites lookups that found
-  nothing; a real-model run has to measure that. See docs/evaluation.md ("The investigation
+  39 with them on: the evidence held 19 and bought none. The 100 benign
+  alerts that close today still close. See docs/evaluation.md ("The investigation
   harness on the corpus").

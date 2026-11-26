@@ -167,8 +167,10 @@ instructions reads every string of it; a flagged string is replaced by a
 fixed marker in the model's copy. The evidence can hold a model-led close and
 never buy one: a malicious indicator of the playbook that is true over the
 facts, a benign verdict that cites an observation the ledger did not record
-(or an empty or failed lookup), or steering text in a fact sends the alert to
-a person, and the decision says which
+(or one whose record was changed), or steering text in a fact sends the alert
+to a person, and the decision says which. Nothing else holds a close: a
+benign claim on a lookup that found nothing is recorded, and the close is
+labelled as made on the model's word, not as backed by evidence
 ([evidence-facts.md](evidence-facts.md#what-the-evidence-holds)).
 
 **The tools are read-only.** The lookups query reputation services and the

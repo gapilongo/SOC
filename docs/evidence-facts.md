@@ -414,7 +414,7 @@ ledger of the same run and stores the claims with the findings
 (`unknown_fact`, `not_benign_evidence`, `incomplete_fact`, `no_citation`,
 `altered_fact`). A benign verdict that was shown the evidence and gives no
 claim at all is recorded as `no_claims`. The findings never change the
-verdict; the hard ones hold a model-led close (next).
+verdict; a forged or altered citation holds a model-led close (next).
 
 **Steering text in a fact.** A typed field of a fact can hold a string an
 attacker chose: a user name typed at a logon, a command line, a service
@@ -436,7 +436,19 @@ from its record (`blocking`), and each alone sends the alert to a person:
 |---|---|---|
 | `evidence_steering` | a fact carries steering text. This also stops a close on approved benign evidence | |
 | `evidence_indicator` | a malicious indicator of the playbook is `true` over the facts. The decision names the indicator and the observations it read | an `unknown` indicator: the lookup failed, or did not show it and was not complete |
-| `evidence_citation` | the verdict is benign and a claim has a hard finding: `unknown_fact`, `altered_fact`, `not_benign_evidence`; or the claims could not be checked | `incomplete_fact`, `no_citation`, `no_claims`: recorded and shown |
+| `evidence_citation` | the verdict is benign and a claim cites an id the ledger did not mint (`unknown_fact`) or an entry that was altered (`altered_fact`): forgery or corruption; or the claims could not be checked | `not_benign_evidence`, `incomplete_fact`, `no_citation`, `no_claims`: recorded and shown |
+
+The lookups never make the platform close fewer alerts than it would without
+them, except on positive evidence of an attack (a true indicator, steering
+text) or on forgery. A benign claim that rests on a lookup that found
+nothing or failed, on an incomplete fact, or on nothing is a finding and
+holds no close: without the lookups the models close such an alert on their
+word, and they still do. What changes is the label. The record's
+`evidence_backed` is true only when the verdict is benign, it has benign
+claims, and every one of them cites at least one complete observation that
+found something and has no finding. Otherwise it is false, and a close by the
+AI is a close on the model's word. Nothing decides on that label in this
+release.
 
 These apply only to a model-led close (and steering text to every automatic
 close). With no investigation the decision policy is unchanged. An

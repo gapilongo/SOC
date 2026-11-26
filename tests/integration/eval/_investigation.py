@@ -104,6 +104,19 @@ def held_by_evidence(run: EvalRun, analyses: Mapping[str, Mapping[str, Any]]) ->
     return {"by_blocker": {code: dict(count) for code, count in by_blocker.items()}, "indicators": dict(indicators)}
 
 
+def model_closes_by_backing(run: EvalRun, analyses: Mapping[str, Mapping[str, Any]]) -> Dict[str, int]:
+    """The model-led closes of a run by label and by what the record calls them: ``evidence_backed`` (every
+    benign claim rests on a complete fact), ``models_word`` (an investigation ran and the claims rest on less)
+    or ``no_investigation`` (no lookup was made for the alert)."""
+    counted: Counter[str] = Counter()
+    for result in run.results:
+        if result.status == "closed" and result.decision_code == "model_closed":
+            record = analyses.get(result.item_id, {}).get("investigation")
+            kind = "no_investigation" if record is None else "evidence_backed" if record["evidence_backed"] else "models_word"
+            counted[f"{result.expected}/{kind}"] += 1
+    return dict(counted)
+
+
 def alone_on_host(dataset: Dataset, analyses: Mapping[str, Mapping[str, Any]], techniques: List[str]) -> Dict[str, Any]:
     """The alerts whose host raised nothing else in the hour: the host lookup is empty once the alert's own event
     is left out. ``own_event_would_show`` counts those whose own level or technique would have made an indicator

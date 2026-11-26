@@ -97,7 +97,7 @@ describe('why a row needs a person', () => {
     expect(routingLabel('high_risk')).toBe('High risk');
     // The evidence of the AI's own lookups held its close (AI-E3.3): a known reason, never a humanized code.
     expect(routingWhy({ code: 'evidence_indicator' })).toBe('The AI judged it benign, but the facts it looked up show a sign of an attack.');
-    expect(routingWhy({ code: 'evidence_citation' })).toBe('The AI judged it benign, but the facts it cited for that do not hold.');
+    expect(routingWhy({ code: 'evidence_citation' })).toBe('The AI judged it benign, but it cites an observation that was never recorded.');
     expect(routingLabel('evidence_steering')).toBe('Steering text in the evidence');
   });
 

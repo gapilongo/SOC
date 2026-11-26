@@ -124,7 +124,7 @@ def investigated() -> Dict[str, Any]:
     claim = {"text": "t", "supports": "benign", "cites": ["host:0"], "findings": [{"fact_id": "x:1", "code": "unknown_fact"}]}
     blocking = {"steering": [], "indicators": {}, "citations": ["unknown_fact"]}
     return {**run.record(), "claims": [claim], "evidence_truncated": False, "claims_checked": True,
-            "verdict_findings": [], "blocking": blocking}
+            "verdict_findings": [], "blocking": blocking, "evidence_backed": False}
 
 
 def test_analysis_digest_keys_are_declared() -> None:
@@ -134,7 +134,7 @@ def test_analysis_digest_keys_are_declared() -> None:
     # The investigation record: the digest carries counts and codes, the summary the steps, budgets and claims.
     digest, summary = full.digest()["investigation"], full.summary()["investigation"]
     assert set(digest) | set(summary) == declared(InvestigationRecord)
-    assert not {"steps", "claims", "budget", "indicators", "run_id", "steering", "verdict_findings"} & set(digest)
+    assert not {"steps", "claims", "budget", "indicators", "run_id", "steering", "verdict_findings", "evidence_backed"} & set(digest)
     assert digest["blocking"] == summary["blocking"]  # what holds a close: the decision reads the digest
     assert (digest["claim_count"], digest["citation_findings"]) == (1, 1)
     assert set(summary["steps"][0]) == declared(InvestigationStepRecord)

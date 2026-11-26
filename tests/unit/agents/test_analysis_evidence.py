@@ -8,6 +8,7 @@ ids they rest on. Code then checks every id. Without facts the prompt is byte fo
 from __future__ import annotations
 
 import json
+from datetime import timedelta
 from typing import Any, Callable, Dict, List
 
 import httpx
@@ -34,11 +35,13 @@ from lg_sotf.agents.base import AgentContext
 from lg_sotf.agents.investigation.executor import STEERING_MARKER
 from lg_sotf.domain import closure
 from lg_sotf.domain.benign_evidence import INJECTION_SIGNAL
+from lg_sotf.domain.ledger import LedgerEntry
 from lg_sotf.llm.fake import Refuse, read_signals
 from lg_sotf.llm.prompting import CONTEXT_TAG, DATA_TAG
 from lg_sotf.settings import Settings
 from lg_sotf.tools.enrichment import EnrichmentService
 from tests.unit.agents._evidence import (
+    AT,
     CORRELATION,
     POISONED,
     QUIET,
@@ -49,6 +52,7 @@ from tests.unit.agents._evidence import (
     analyse,
     block,
     evidence_of,
+    evidence_of_at,
     logon,
     state_alert,
     unreachable,
@@ -305,26 +309,66 @@ def held(result: Any) -> Dict[str, Any]:
         # A complete answer would be citable; these are incomplete (the window is still open): recorded only.
         (CALM, [{"text": "One earlier success.", "supports": "benign", "cites": ["logons_user:0"]}], [], []),
         (CALM, [{"text": "Nothing else.", "supports": "benign", "cites": []}], [], []),
+        # An entry whose stored fact no longer matches its hash is cited (see the test body).
+        (CALM, [{"text": "Tampered.", "supports": "benign", "cites": ["host:0"]}], ["altered_fact"], ["evidence_citation"]),
         # An id the ledger did not mint, among good ones.
         (CALM, [{"text": "Seen before.", "supports": "benign", "cites": ["logons_user:0", "logons_user:7"]}],
          ["unknown_fact"], ["evidence_citation"]),
         # The alert is alone on its host: the host lookup is empty, and "nothing found" is not benign evidence.
-        ([THE_ALERT], [{"text": "The host is quiet.", "supports": "benign", "cites": ["host:0"]}],
-         ["not_benign_evidence"], ["evidence_citation"]),
+        # That is a finding and no forgery: the models close it on their word, as they do without a harness.
+        ([THE_ALERT], [{"text": "The host is quiet.", "supports": "benign", "cites": ["host:0"]}], [], []),
         # The same empty lookup cited for a malicious claim is no finding.
         ([THE_ALERT], [{"text": "Odd.", "supports": "malicious", "cites": ["host:0"]}], [], []),
     ],
 )
 async def test_a_hard_citation_finding_on_a_benign_verdict_holds_the_close(
-    make_settings: Callable[..., Settings], documents: List[Dict[str, Any]], claims: List[Dict[str, Any]],
-    citations: List[str], blockers: List[str],
+    make_settings: Callable[..., Settings], monkeypatch: pytest.MonkeyPatch, documents: List[Dict[str, Any]],
+    claims: List[Dict[str, Any]], citations: List[str], blockers: List[str],
 ) -> None:
-    """Review of PR 443 (rule b): the findings were a record nobody read. The hard ones now hold the close."""
+    """Review of PR 443 (rule b): a benign verdict that cites an id the ledger never minted, or an altered
+    entry, is held (forgery or corruption). Every other finding is recorded: the harness never closes fewer
+    alerts than no harness would, except on evidence of an attack or on forgery."""
+    if citations == ["altered_fact"]:
+        monkeypatch.setattr(LedgerEntry, "intact", property(lambda entry: entry.evidence_id != "host"))
     result = await analyse(make_settings(), scripted(CitedVerdict=[{**VERDICT, "claims": claims}]), evidence_of(documents))
     record = result.investigation or {}
+    assert record["evidence_backed"] is False  # incomplete, empty, uncited or forged: never evidence-backed
     assert record["blocking"]["citations"] == citations == result.digest()["investigation"]["blocking"]["citations"]
     assert held(result)["blockers"] == blockers
     assert result.verdict == "benign" and result.threat_score == 20  # the verdict is the model's, unchanged
+
+
+async def test_a_close_is_called_evidence_backed_only_when_every_benign_claim_rests_on_a_complete_fact(
+    make_settings: Callable[..., Settings],
+) -> None:
+    """Round 3 of the review: a benign claim on a lookup that found nothing does not hold the close, and the
+    record never calls such a close evidence-backed. The label is true only when every benign claim cites at
+    least one complete fact a tool observed and has no finding; nothing reads it yet."""
+    # An hour later the windows are closed, and the index reaches back past their start: complete facts.
+    old = logon("4624", 60 * 48, user="someone.else", doc_id="2")
+    settled = evidence_of_at([old, *CALM], AT + timedelta(hours=1))
+
+    async def backed(claims: List[Dict[str, Any]], verdict: str = "benign", evidence: Any = settled) -> Any:
+        answer = {**VERDICT, "verdict": verdict, "claims": claims}
+        result = await analyse(make_settings(), scripted(CitedVerdict=[answer]), evidence)
+        record = result.investigation or {}
+        return record["evidence_backed"], sorted({f["code"] for c in record["claims"] for f in c["findings"]})
+
+    good = {"text": "The account logged on from the same address before.", "supports": "benign", "cites": ["logons_user:0"]}
+    assert await backed([good]) == (True, [])
+    assert await backed([good, {"text": "A second look.", "supports": "malicious", "cites": ["host:0"]}]) == (True, [])
+    # One benign claim that rests on less is enough to lose the label; none holds the close.
+    assert await backed([good, {"text": "Nothing else.", "supports": "benign", "cites": []}]) == (False, ["no_citation"])
+    assert await backed([good, {"text": "Made up.", "supports": "benign", "cites": ["host:7"]}]) == (False, ["unknown_fact"])
+    assert await backed([]) == (False, []) and await backed([{"text": "Odd.", "supports": "malicious", "cites": ["host:0"]}]) == (False, [])
+    assert await backed([good], verdict="suspicious") == (False, [])  # the label is about a benign verdict
+    assert await backed([good], evidence=evidence_of(CALM)) == (False, ["incomplete_fact"])  # the window was still open
+    alone = evidence_of_at([old, THE_ALERT], AT + timedelta(hours=1))
+    quiet = {"text": "The host is quiet.", "supports": "benign", "cites": ["host:0"]}
+    assert await backed([quiet], evidence=alone) == (False, ["not_benign_evidence"])
+    result = await analyse(make_settings(), scripted(CitedVerdict=[{**VERDICT, "claims": [quiet]}]), alone)
+    assert held(result) == {"blockers": [], "holds": {}}  # closed on the model's word, as without a harness
+    assert "evidence_backed" not in result.digest()["investigation"]  # a label of the stored record only
 
 
 async def test_a_benign_verdict_that_rests_on_no_claim_is_a_finding(make_settings: Callable[..., Settings]) -> None:

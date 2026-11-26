@@ -183,6 +183,9 @@ class InvestigationRecord(TypedDict, total=False):
     steering: List[str]
     #: Findings about the verdict as a whole: ``no_claims`` (a benign verdict that rests on no claim).
     verdict_findings: List[CitationFinding]
+    #: The benign verdict rests on recorded evidence: every benign claim cites a complete fact and has no
+    #: finding. False for any other verdict or record: a close is then on the model's word. A label only.
+    evidence_backed: bool
 
 
 class AnalysisDigest(TypedDict, total=False):

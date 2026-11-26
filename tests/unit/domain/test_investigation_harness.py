@@ -230,6 +230,11 @@ def test_the_view_shows_what_of_the_evidence_holds_the_close() -> None:
     by the closing rule's own reading of the stored record."""
     quiet = view(analysed(run_record())).evidence_run
     assert quiet.holds_close == [] and quiet.steering_observation_ids == [] and quiet.benign_without_claims is False
+    # Evidence-backed is what the record says, and only an exact true: absent, or anything else, is the model's word.
+    assert quiet.evidence_backed is False and view(analysed(run_record(evidence_backed=True))).evidence_run.evidence_backed is True
+    assert view(analysed(run_record(evidence_backed="true"))).evidence_run.evidence_backed is False
+    soft = run_record(blocking={"steering": [], "indicators": {}, "citations": ["not_benign_evidence"]})
+    assert view(analysed(soft)).evidence_run.holds_close == []  # a claim on an empty lookup holds nothing
     assert [(i.holds_close, i.observation_ids) for i in quiet.indicators] == [(False, []), (False, [])]
     held = run_record(
         indicators={"never_close_class_on_host": "true", "high_level_alert_on_host": "unknown"}, steering=["logons_user:0"],

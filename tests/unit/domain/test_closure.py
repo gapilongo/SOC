@@ -360,7 +360,6 @@ def investigated(**blocking: Any) -> Dict[str, Any]:
         ({"indicators": {"high_level_alert_on_host": ["host:0", "host:1"]}}, "evidence_indicator", "high_level_alert_on_host (host:0, host:1)"),
         ({"citations": ["unknown_fact"]}, "evidence_citation", "unknown_fact"),
         ({"citations": ["altered_fact"]}, "evidence_citation", "altered_fact"),
-        ({"citations": ["not_benign_evidence"]}, "evidence_citation", "not_benign_evidence"),
         ({"citations": ["unchecked"]}, "evidence_citation", "unchecked"),  # nothing closes on claims nobody checked
         ({"steering": ["logons_user:0"]}, "evidence_steering", "logons_user:0"),
     ],
@@ -384,12 +383,17 @@ def test_the_evidence_of_an_investigation_holds_a_model_led_close(blocking: Dict
     [
         {},  # an investigation that found nothing against the close
         {"citations": ["incomplete_fact", "no_citation", "no_claims"]},  # recorded, and do not block
+        # A benign claim on a lookup that found nothing or failed: a finding, no forgery. The close is on the
+        # model's word, as without a harness (the record's evidence_backed is then false).
+        {"citations": ["not_benign_evidence"]},
         {"citations": ["a_code_of_a_newer_release"]},
         {"indicators": {}},
     ],
 )
 def test_what_is_recorded_only_does_not_hold_a_close(blocking: Dict[str, Any]) -> None:
-    """An unknown indicator is not in ``blocking`` at all (the tool could not answer): it does not block."""
+    """The harness never closes fewer alerts than no harness would, except on evidence of an attack or on
+    forgery. An unknown indicator is not in ``blocking`` at all (the tool could not answer): it does not block."""
+    assert closure.HARD_CITATION_FINDINGS == {"unknown_fact", "altered_fact", "unchecked"}
     state = benign_state(**{"analysis.investigation": investigated(**blocking)})
     assert model_close_blockers(state, tier=AUTO) == [] and routing.decide(state, T, AUTO).code == MODEL_CLOSED
 

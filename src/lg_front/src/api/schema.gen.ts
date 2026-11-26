@@ -2132,6 +2132,7 @@ export interface components {
                         }[];
                         claims_checked?: boolean;
                         empty?: number;
+                        evidence_backed?: boolean;
                         evidence_truncated?: boolean;
                         facts?: number;
                         failed?: number;
@@ -2439,6 +2440,7 @@ export interface components {
                         }[];
                         claims_checked?: boolean;
                         empty?: number;
+                        evidence_backed?: boolean;
                         evidence_truncated?: boolean;
                         facts?: number;
                         failed?: number;
@@ -4560,6 +4562,12 @@ export interface components {
              */
             budgets: components["schemas"]["EvidenceBudget"][];
             /**
+             * Evidence Backed
+             * @description The benign verdict rests on recorded evidence: every benign claim cites at least one complete observation that found something, and has no finding. False otherwise: a close by the AI is then on the model's word.
+             * @default false
+             */
+            evidence_backed: boolean;
+            /**
              * Evidence Truncated
              * @description The observations were cut to fit the model's prompt: it saw some of them in part.
              * @default false
@@ -5046,6 +5054,7 @@ export interface components {
              * @default {
              *       "benign_without_claims": false,
              *       "budgets": [],
+             *       "evidence_backed": false,
              *       "evidence_truncated": false,
              *       "holds_close": [],
              *       "indicators": [],
@@ -5119,7 +5128,7 @@ export interface components {
             direction: "malicious" | "benign";
             /**
              * Findings
-             * @description A cited claim's citation findings (code checked them). unknown_fact, altered_fact and not_benign_evidence on a benign verdict hold a model-led close; the others are recorded only.
+             * @description A cited claim's citation findings (code checked them). unknown_fact and altered_fact on a benign verdict hold a model-led close; the others are recorded only (see evidence_run.evidence_backed).
              */
             findings: components["schemas"]["ClaimFinding"][];
             /** Id */

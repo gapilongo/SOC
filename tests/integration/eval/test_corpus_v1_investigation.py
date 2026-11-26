@@ -6,7 +6,9 @@ evidence tools answering from the corpus telemetry (``investigation.evidence_bac
 
 The evidence can hold a model-led close and can never buy one (ADR 0014 Amendment 1 point 1, pulled forward
 by the review of PR 443): a malicious indicator of the skill that is true over the facts, a benign verdict
-with a hard citation finding, or steering text in a fact sends the alert to a person. The stand-in model is a
+that cites an observation the ledger never recorded (or an altered one), or steering text in a fact sends
+the alert to a person. Nothing else holds a close: the harness never closes fewer alerts than no harness
+would, except on evidence of an attack or on forgery. The stand-in model is a
 keyword scorer over everything untrusted it is shown, the evidence included, so its verdict can move with
 the evidence. Three runs separate the effects:
 
@@ -43,6 +45,7 @@ from tests.integration.eval._investigation import (
     blind_to_evidence,
     held_by_evidence,
     measurement,
+    model_closes_by_backing,
     outcomes,
     own_event_listed,
     records,
@@ -100,6 +103,16 @@ async def test_the_harness_gives_corpus_alerts_facts_and_changes_no_close(
     closes_off, closes_on, closes_blind = closures(off.results), closures(on.results), closures(blind.results)
     assert closes_on["malicious_closed"] <= closes_off["malicious_closed"] >= closes_blind["malicious_closed"]
     assert closes_blind["benign_closed"] <= closes_off["benign_closed"]
+    # The harness never closes fewer alerts than no harness would, except on evidence of an attack or on forgery:
+    # the stand-in cites only ids it was shown, so no citation holds a close. A claim on a lookup that found
+    # nothing is a finding, and that close is recorded as made on the model's word, never as evidence-backed.
+    assert held_by_evidence(on, after)["by_blocker"]["evidence_citation"] == {}
+    assert held_by_evidence(blind, unseen)["by_blocker"]["evidence_citation"] == {}
+    backing = model_closes_by_backing(on, after)
+    for analysis in after.values():
+        record = analysis.get("investigation") or {}
+        if any(claim["findings"] for claim in record.get("claims", []) if claim["supports"] == "benign"):
+            assert record["evidence_backed"] is False
     if ITEM_0351 in now:  # the attack the evidence bought a close for, before the review
         assert now[ITEM_0351][0] != "closed" and held_verdicts[ITEM_0351][0] != "closed"
     # The alert is never its own evidence: alone on its host it shows no indicator, and no fact lists its own event.
@@ -126,6 +139,7 @@ async def test_the_harness_gives_corpus_alerts_facts_and_changes_no_close(
             "closes_on_stand_in_blind_to_evidence": closes_blind,
             "held_by_evidence_on": held_by_evidence(on, after),
             "held_by_evidence_blind": held_by_evidence(blind, unseen),
+            "model_closes_by_backing": backing,
             "closes_stopped_blind": {label: sum(1 for i in stopped if expected[i] == label) for label in ("benign", "malicious")},
             "alone_on_host": alone,
             ITEM_0351: {"off": was.get(ITEM_0351), "on": now.get(ITEM_0351), "blind": held_verdicts.get(ITEM_0351)},

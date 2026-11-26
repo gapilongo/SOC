@@ -133,8 +133,8 @@ class InvestigationClaim(_Model):
     findings: List[ClaimFinding] = Field(
         default_factory=list,
         description=(
-            "A cited claim's citation findings (code checked them). unknown_fact, altered_fact and "
-            "not_benign_evidence on a benign verdict hold a model-led close; the others are recorded only."
+            "A cited claim's citation findings (code checked them). unknown_fact and altered_fact on a benign "
+            "verdict hold a model-led close; the others are recorded only (see evidence_run.evidence_backed)."
         ),
     )
 
@@ -258,6 +258,14 @@ class EvidenceRun(_Model):
     benign_without_claims: bool = Field(
         default=False,
         description="The deep model was shown the observations, judged the alert benign and gave no claim (recorded only).",
+    )
+    evidence_backed: bool = Field(
+        default=False,
+        description=(
+            "The benign verdict rests on recorded evidence: every benign claim cites at least one complete "
+            "observation that found something, and has no finding. False otherwise: a close by the AI is then "
+            "on the model's word."
+        ),
     )
     holds_close: List[InvestigationReason] = Field(
         default_factory=list,
