@@ -40,9 +40,9 @@ def _own_handlers(root: logging.Logger) -> List[logging.Handler]:
     return [h for h in root.handlers if not type(h).__module__.startswith("_pytest.")]
 
 
-@pytest.fixture(autouse=True)
-def _isolate_logging(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
-    """Logging configured by one test never reaches the next (issue #382).
+@pytest.fixture(scope="session", autouse=True)
+def _no_cached_loggers() -> Iterator[None]:
+    """structlog never caches a logger on first use while the suite runs (issue #382).
 
     ``configure_logging`` (the CLI entry points and the API app call it, and tests call those in-process)
     sets structlog's ``cache_logger_on_first_use``. The first call through a module-level logger then
@@ -51,22 +51,33 @@ def _isolate_logging(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     no event from it. Which capture test lost its events depended on the tests that ran before it in the
     same process, so the suite failed only in some orders (pytest-xdist, pytest-randomly).
 
-    While the suite runs no logger is cached, and after every test the structlog configuration, the root
-    logger's level and the handlers the test put on the root logger are back to what the test found.
+    Session-wide, so it also holds for a fixture of any scope that configures logging.
     """
     configure = structlog.configure
 
     def configure_without_cache(*args: Any, **kwargs: Any) -> None:
         configure(*args, **{**kwargs, "cache_logger_on_first_use": False})
 
-    monkeypatch.setattr(structlog, "configure", configure_without_cache)
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(structlog, "configure", configure_without_cache)
+        yield
+
+
+@pytest.fixture(autouse=True)
+def _isolate_logging() -> Iterator[None]:
+    """Logging configured by one test never reaches the next (issue #382).
+
+    After every test the structlog configuration, the root logger's level and the handlers the test put
+    on the root logger are back to what the test found. With ``_no_cached_loggers`` a test may call
+    ``configure_logging`` and needs no cleanup of its own.
+    """
     root = logging.getLogger()
     handlers, level = _own_handlers(root), root.level
     configured, config = structlog.is_configured(), structlog.get_config()
     yield
     structlog.reset_defaults()
     if configured:
-        configure(**config)
+        structlog.configure(**config)
     for handler in _own_handlers(root):
         if handler not in handlers:
             root.removeHandler(handler)

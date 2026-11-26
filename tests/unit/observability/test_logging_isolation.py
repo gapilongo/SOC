@@ -1,4 +1,6 @@
-"""Logging configured by one test never reaches the next (``_isolate_logging`` in tests/conftest.py, issue #382).
+"""Logging configured by one test never reaches the next (issue #382).
+
+The fixtures ``_no_cached_loggers`` and ``_isolate_logging`` in tests/conftest.py see to it.
 
 The first test below does what the CLI entry points do when a test calls them in-process: it configures
 logging and logs through a module-level logger, and cleans nothing up. The tests after it run in the same

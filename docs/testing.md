@@ -299,14 +299,14 @@ flaky test pass.
   created by a test.
 * Process-wide caches (settings, chat models, usage) are reset around every
   test by `tests/conftest.py`; reset any new one there too.
-* Logging is process-wide state too. `_isolate_logging` in `tests/conftest.py`
-  puts the structlog configuration, the root logger's level and its handlers
-  back after every test, and keeps structlog from caching a logger on first
-  use while the suite runs: a cached module-level logger stays bound to the
-  processors of the test that first used it, and a later
-  `structlog.testing.capture_logs()` then sees none of its events. A test may
-  call `configure_logging` (or a CLI entry point that does) and needs no
-  cleanup of its own.
+* Logging is process-wide state too. In `tests/conftest.py`,
+  `_isolate_logging` puts the structlog configuration, the root logger's
+  level and its handlers back after every test, and `_no_cached_loggers`
+  keeps structlog from caching a logger on first use while the suite runs: a
+  cached module-level logger stays bound to the processors of the test that
+  first used it, and a later `structlog.testing.capture_logs()` then sees
+  none of its events. A test may call `configure_logging` (or a CLI entry
+  point that does) and needs no cleanup of its own.
 * Tests must pass in any order and on any xdist worker (the nightly job
   checks the first, and `test-parallel`, the backend gate of every pull
   request, the second).
