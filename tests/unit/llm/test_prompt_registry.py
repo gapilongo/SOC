@@ -24,7 +24,7 @@ from lg_sotf.eval.report import build_report, render_markdown
 from lg_sotf.eval.results import ItemResult, llm_provenance
 from lg_sotf.ingestion.llm_fallback import PROMPT as NORMALIZE_PROMPT
 from lg_sotf.llm import registry
-from lg_sotf.llm.prompting import build_messages
+from lg_sotf.llm.prompting import PROVENANCE_NOTE, build_messages
 from lg_sotf.llm.registry import PROMPT_HASH_CHARS, PromptTemplate, prompt_manifest, register_prompt
 from lg_sotf.llm.structured import ainvoke_structured
 from lg_sotf.services.llm_check import PROMPT as PROBE_PROMPT
@@ -76,6 +76,20 @@ def test_every_production_prompt_is_registered() -> None:
             "llm_check.probe", "nis2.narrative.early_warning", "nis2.narrative.notification",
             "nis2.narrative.final"} <= set(manifest)
     assert all(HASH_RE.match(h) for h in manifest.values())
+
+
+def test_the_judging_prompts_say_that_test_looking_names_are_not_benign_evidence() -> None:
+    """AI-E3.16 (#435): a model closed the command-and-control step of the demo's attack chain because its domain,
+    addresses, host, vendor and id "looked like test data". The fast tier's triage and both deep-tier prompts name
+    each of those cues and forbid them as false-positive reasons; a prompt that judges nothing is left alone."""
+    for prompt in (TRIAGE_PROMPT, STEP_PROMPT, VERDICT_PROMPT):
+        assert prompt.task.endswith(PROVENANCE_NOTE), prompt.name
+    for prompt in (CORRELATION_PROMPT, NORMALIZE_PROMPT, PROBE_PROMPT):
+        assert PROVENANCE_NOTE not in prompt.task and PROVENANCE_NOTE not in prompt.system, prompt.name
+    for cue in (".test", ".example", "documentation address range", "example.* host name",
+                "vendor or id string containing 'demo' or 'test'", "traffic that looks synthetic"):
+        assert cue in PROVENANCE_NOTE, cue
+    assert "Never list such a cue as a false-positive indicator or as a reason for a benign verdict" in PROVENANCE_NOTE
 
 
 def _llm_calls_without_prompt(tree: ast.AST) -> list[int]:

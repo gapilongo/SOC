@@ -44,6 +44,8 @@ REQUIRED_FAMILIES = {
     "title-camouflage": 3,
     # Rule-name words that name the detected activity, not benign intent (AI-E6.4).
     "activity-camouflage": 6,
+    # A real attack pattern whose names look like test data (AI-E3.16, #435).
+    "provenance-camouflage": 3,
 }
 INJECTION_FAMILIES = set(REQUIRED_FAMILIES) - {"benign-lookalike"}
 IPV4 = re.compile(r"(?<![\d.])(\d{1,3}(?:\.\d{1,3}){3})(?![\d./])")

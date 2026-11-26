@@ -28,7 +28,7 @@ scripts/quickstart.sh --ollama qwen3:8b    # or: make quickstart OLLAMA=qwen3:8b
 | 3. Model | With `--ollama MODEL`: pulls the model into the `ollama-models` volume through the one-shot `ollama-pull` service. |
 | 4. Stack | `docker compose up --wait` of postgres, redis, migrate, api, worker, scheduler and the UI with the production-like overlay (`docker-compose.prod.yml`: two database roles, secrets enforced; plus `docker-compose.ollama.yml` with `--ollama`). |
 | 5. Tenant | `lg-sotf create-tenant` creates tenant `demo` and its admin `admin@demo.example.com`; the generated password goes to `.quickstart/admin-credentials.txt` (0600) and is never printed. |
-| 6. Demo | `scripts/demo/seed_demo.py` signs in, creates an `ingest` API key (`.quickstart/ingest-api-key`), posts `scripts/demo/alerts.json`, waits until every alert is triaged and prints the result and the **measured time to first verdict**, also saved in `.quickstart/timing.json`. |
+| 6. Demo | `scripts/demo/seed_demo.py` signs in, creates an `ingest` API key (`.quickstart/ingest-api-key`), posts `scripts/demo/alerts.json`, waits until every alert is triaged and prints the result and the **measured time to first verdict**, also saved in `.quickstart/timing.json`. It then checks the attack chain (below): the run fails if a step of it was closed without a person. |
 
 At the end it prints:
 
@@ -75,6 +75,19 @@ python3 -c 'import json; print(json.dumps(json.load(open("scripts/demo/alerts.js
 
 (`/ingest/alerts` takes a JSON array or `{"alerts": [...]}` with no other
 key; posting the same `source_alert_id` twice is reported as a duplicate.)
+
+**The attack chain must reach a person.** Four of the alerts are one
+intrusion on `WS-FIN-0142`: Word starts PowerShell (`demo-edr-001`), LSASS is
+dumped (`demo-edr-002`), the host beacons out (`demo-net-001`) and PsExec
+reaches a file server (`demo-edr-003`). After triage the seeder checks them:
+if one is closed and no analyst decided it, it prints `FAIL  attack-chain
+alert closed without a person` with the close reason and exits 1, whatever
+model you run and whatever autonomy tier the tenant has. A step closed by a
+completed automatic response (`policy:response`) was handled as the attack
+it is and does not count
+(`attack_chain_closed_without_a_person` in `.quickstart/timing.json`). The
+reserved names of the demo set are no reason to close anything: an attacker
+chooses names too.
 
 With the `fake` model the verdicts come from a keyword heuristic: useful to
 see the workflow (auto-closed noise, escalations with timelines, correlation of

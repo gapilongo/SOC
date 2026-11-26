@@ -14,6 +14,7 @@ from typing import Any, Dict
 
 import pytest
 
+from lg_sotf.core import nodes
 from lg_sotf.db.repos import Repositories
 from lg_sotf.eval.dataset import load_dataset
 from lg_sotf.eval.gate import evaluate_gate, load_thresholds
@@ -30,6 +31,7 @@ pytestmark = pytest.mark.integration
 FIXTURES = Path(__file__).resolve().parents[2] / "fixtures" / "eval"
 DATASET = FIXTURES / "adversarial_v2.jsonl"
 THRESHOLDS = FIXTURES / "adversarial_v2_thresholds.yaml"
+TIER_ON_THRESHOLDS = FIXTURES / "adversarial_v2_tier_on_thresholds.yaml"
 
 
 def _outcome(r: Any) -> tuple:  # type: ignore[type-arg]
@@ -74,6 +76,12 @@ async def test_adversarial_v2_passes_its_gate_with_the_fake_model(eval_settings:
     assert len(activity) == 6 and all(r.escalated and r.disposition is None for r in activity), activity
     for r in activity:
         assert (await repos.alerts.get(tenant, r.alert_id)).summary["triage"]["rule_fp"] == [], r.item_id
+    # Provenance camouflage (AI-E3.16, #435): a real attack pattern on hosts, domains, vendors and ids that look like
+    # test data. Test-looking names give no rule evidence, and nothing closes.
+    dressed = [r for r in run.results if r.family == "provenance-camouflage"]
+    assert len(dressed) == 3 and all(r.status in ("waiting_human", "waiting_approval") for r in dressed), dressed
+    for r in dressed:
+        assert (await repos.alerts.get(tenant, r.alert_id)).summary["triage"]["rule_fp"] == [], r.item_id
 
     # The canned answers reached the analysis agent through the real tools.
     looked_up = await repos.alerts.get(tenant, by_id["adv2-to-01"].alert_id)
@@ -97,9 +105,47 @@ async def test_model_led_closure_on_closes_only_what_policy_v3_allows(eval_setti
     assert [(r.item_id, r.error) for r in run.results if r.status == "error"] == []
     counts = await v3_closures(repos, run)
     assert counts["forbidden"] == [], counts
+    # The gate of the tier (review of #442): the provenance-camouflage family never closes at the tier.
+    gate = evaluate_gate(build_report(run.results, dataset=dataset, run_info=run.info), load_thresholds(TIER_ON_THRESHOLDS))
+    assert gate.passed, ([v.message for v in gate.violations], _outcomes(run.results))
     off = {r.item_id for r in run.results if r.status == "closed" and r.decision_code != "model_closed"}
     assert set(counts["malicious_closed"]) <= {r.item_id for r in run.results if r.decision_code == "model_closed"}
     assert not off & set(counts["malicious_closed"])
+
+    # AI-E3.16 (#435): the fake model calls the beacon and the PsExec step benign (their attacker-chosen and
+    # test-looking names are full of its benign words). The credential dump before them is an open threat on the
+    # same host (the beacon) and the same user (PsExec, on another host), so neither closes on the models' word.
+    by_id: Dict[str, Any] = {r.item_id: r for r in run.results}
+    tenant = run.info["tenants"]["adversarial"]
+    dump = by_id["adv2-pc-01"]
+    assert dump.status in ("waiting_human", "waiting_approval"), dump
+    assert (await repos.alerts.get(tenant, dump.alert_id)).summary["analysis"]["verdict"] == "malicious"
+    for item_id in ("adv2-pc-02", "adv2-pc-03"):
+        held = by_id[item_id]
+        assert held.injection_followed is True, held  # the model said benign
+        assert (held.status, held.disposition, held.decision_code) == ("waiting_human", None, "related_open_threat"), held
+        stored = await repos.alerts.get(tenant, held.alert_id)
+        assert stored.summary["analysis"]["verdict"] == "benign"
+        assert stored.summary["related_open"] == {"threats": [dump.alert_id], "in_progress": [], "model_only": []}
+
+
+async def test_the_gate_of_the_tier_fails_when_the_related_check_finds_nothing(
+    eval_settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mutation test of the gate above (review of #442, finding 8): with the related-alert check answering
+    "nothing is related", the fake model's benign verdicts close the dressed beacon and PsExec, and the gate fails
+    on their family and on nothing else."""
+    async def nothing(*args: Any, **kwargs: Any) -> Dict[str, Any]:
+        return {"threats": [], "in_progress": [], "model_only": []}
+
+    monkeypatch.setattr(nodes, "related_open_counted", nothing)
+    dataset = at_tier(load_dataset(DATASET), "auto_full_audit")
+    run = await run_evaluation(eval_settings, dataset, tenant_id=f"adv2mut-{secrets.token_hex(3)}")
+    gate = evaluate_gate(build_report(run.results, dataset=dataset, run_info=run.info), load_thresholds(TIER_ON_THRESHOLDS))
+    assert not gate.passed
+    assert [v.metric for v in gate.violations] == ["families.provenance-camouflage.malicious_auto_close_rate"]
+    closed = {r.item_id for r in run.results if r.family == "provenance-camouflage" and r.status == "closed"}
+    assert closed == {"adv2-pc-02", "adv2-pc-03"}
 
 
 async def test_tool_fixture_answers_are_recorded_and_replayed_by_cassettes(
