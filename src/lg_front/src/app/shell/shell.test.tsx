@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Boxes } from 'lucide-react';
+import { lazy, type ComponentType } from 'react';
 import { Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -562,6 +563,46 @@ describe('Layout', () => {
     await user.keyboard('/');
     expect(await screen.findByRole('dialog', { name: 'Search and commands' })).toBeInTheDocument();
     expect(screen.getByRole('combobox', { name: 'Search' })).toHaveValue('');
+  });
+
+  it('keeps focus in the search field when the page of a navigation arrives after the field opened', async () => {
+    // Issue #441. The page of a route is a lazy chunk and the router applies a navigation as a transition,
+    // so the move of focus to the new page runs only when the chunk arrives. Ctrl+K pressed in between
+    // opened the search field, and the late move then took the focus out of the open dialog for good.
+    const user = userEvent.setup();
+    let arrive: (page: { default: ComponentType }) => void = () => undefined;
+    const SlowAlerts = lazy(() => new Promise<{ default: ComponentType }>((resolve) => (arrive = resolve)));
+    const { api } = shellApi();
+    renderWithSession(
+      <Routes>
+        <Route element={<Layout />}>
+          <Route path="/" element={<h1>Dashboard</h1>} />
+          <Route path="/alerts" element={<SlowAlerts />} />
+        </Route>
+      </Routes>,
+      await signedInSession(api),
+    );
+    await user.click(within(screen.getByRole('navigation', { name: 'Main' })).getByRole('link', { name: 'Alerts' }));
+    // The chunk is still loading: the page before stays, and the search field opens over it.
+    expect(screen.getByRole('heading', { name: 'Dashboard', level: 1 })).toBeInTheDocument();
+    await user.keyboard('{Control>}k{/Control}');
+    const field = await screen.findByRole('combobox', { name: 'Search' }, { timeout: 10_000 });
+    expect(field).toHaveFocus();
+
+    await act(async () => arrive({ default: () => <h1>Alerts</h1> }));
+    expect(await screen.findByRole('heading', { name: 'Alerts', level: 1 })).toBeInTheDocument();
+    expect(document.title).toBe('Alerts · LG-SOTF');
+    expect(screen.getByRole('dialog', { name: 'Search and commands' })).toBeInTheDocument();
+    expect(field).toHaveFocus();
+    await user.keyboard('audit');
+    expect(field).toHaveValue('audit');
+
+    // Without a dialog in the way, a navigation still moves focus to the page.
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    await user.click(within(screen.getByRole('navigation', { name: 'Main' })).getByRole('link', { name: 'Overview' }));
+    expect(await screen.findByRole('heading', { name: 'Dashboard', level: 1 })).toBeInTheDocument();
+    expect(document.getElementById('main')).toHaveFocus();
   });
 
   it('lets single-key shortcuts be switched off: the slash then does nothing, Ctrl+K still works', async () => {

@@ -12,6 +12,11 @@ on:
 
 jobs:
   claude-review:
+    name: Claude review (non-blocking)
+    # Advisory: the review is a comment, not a gate. The check is green when the review could not run
+    # (no token, a usage limit, an outage) and says so in a warning; Dependabot's pull requests, which
+    # the action refuses and which get no secrets, are skipped.
+    if: github.event.pull_request.user.login != 'dependabot[bot]'
     # Optional: Filter by PR author
     # if: |
     #   github.event.pull_request.user.login == 'external-contributor' ||
@@ -36,6 +41,7 @@ jobs:
 
       - name: Run Claude Code Review
         id: claude-review
+        continue-on-error: true
         uses: anthropics/claude-code-action@4d75e5f390ee76b2e09c1980ecc99ff3a2e088c8 # v1.0.275
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -58,3 +64,6 @@ jobs:
           # or https://docs.claude.com/en/docs/claude-code/cli-reference for available options
           claude_args: '--allowed-tools "Bash(gh issue view:*),Bash(gh search:*),Bash(gh issue list:*),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr list:*)"'
 
+      - name: Report a failed review as a warning (advisory)
+        if: steps.claude-review.outcome == 'failure'
+        run: echo "::warning title=Claude review did not run (advisory)::The review step failed; see its log. This does not block a merge."

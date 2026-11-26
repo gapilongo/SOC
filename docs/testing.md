@@ -44,14 +44,34 @@ Suite-wide (`pyproject.toml`): `RuntimeWarning`, `ResourceWarning` and
 `PytestUnraisableExceptionWarning` are errors everywhere; `--strict-markers`;
 `asyncio_mode = "auto"`.
 
-CI (`.github/workflows/ci.yml`) runs `lint` (ruff, mypy, import contracts),
-`fast` (unit + invariants + deploy, no services), and `test` (the whole suite with
-coverage, one process; the total floor and the per-package floors in
-`scripts/ci/coverage_floors.py` only go up). `test-parallel` runs the suite on
-four xdist workers and `parallel-parity` checks that both runs saw the same
-tests with the same outcomes; both are non-blocking until about ten green
-runs. `wazuh-contract` starts the Wazuh lab and runs `tests/live/wazuh`;
+CI (`.github/workflows/ci.yml`) runs `lint` (ruff, mypy, import contracts)
+and `fast` (unit + invariants + deploy, no services) on every change. The
+whole suite runs twice, and which run gates depends on the event:
+
+| Job | Runs | Pull request | Push to main, weekly schedule, manual run |
+|---|---|---|---|
+| `test-parallel`, "Tests in parallel (PostgreSQL 16, Redis 7, four workers)" | the whole suite on four xdist workers | **the backend gate** | blocking |
+| `test`, "Tests (PostgreSQL 16, Redis 7)" | the whole suite in one process, with coverage (the total floor and the per-package floors in `scripts/ci/coverage_floors.py` only go up) | does not run | blocking, and a release gate (`RELEASE_GATES` in `release-train.yml`) |
+| `parallel-parity` | both runs saw the same tests with the same outcomes | does not run | non-blocking |
+
+So a pull request waits for the parallel run, about half the time of the
+serial one, and a release is still cut only from a commit whose serial run,
+with coverage, passed on main. The coverage floors are therefore checked
+after the merge, not before it: a pull request that lowers coverage below a
+floor turns main red, and the release train does not tag that commit.
+`wazuh-contract` starts the Wazuh lab and runs `tests/live/wazuh`;
 it is non-blocking while its image pull and start time settle.
+
+Three jobs are advisory: `parallel-parity`, `wazuh-contract` and the Claude
+review (its own workflow). Their names say "non-blocking", and they never
+show a red check for what they test: the step that may fail is tolerated and
+the job ends with a warning annotation on a green check. The image CVE scan
+does the same on a pull request that changes no image input
+([security.md](security.md), section 9). Every other check on a pull request
+is a gate, so a green page means the pull request can merge. A pull request
+also skips the jobs its change cannot affect: see
+[What a pull request runs](#what-a-pull-request-runs) below.
+
 `.github/workflows/nightly.yml` runs the suite in a random order
 (hash-locked `pytest-randomly` from `scripts/ci/requirements-nightly.txt`).
 
@@ -88,6 +108,31 @@ result. The nightly workflow's `real-model-eval` job runs the same sets through
 a pinned EU or local model and keeps the scorecard as an artifact; it is
 skipped until the model is configured. See
 [evaluation.md](evaluation.md#evaluation-gate-in-ci).
+
+### What a pull request runs
+
+A pull request skips the jobs its change cannot affect. The `changes` job
+runs `scripts/ci/changed_areas.py` on the paths the pull request changes
+against its base, and the heavy jobs read its outputs:
+
+| The pull request changes | Skipped | Still runs |
+|---|---|---|
+| prose only: `changelog.d/`, prose and pictures under `docs/` (`.md`, images, video), Markdown at the repository root and under `.github/` | the backend suites (`test-parallel`, `upgrade`, `wazuh-contract`), the image builds and smoke test (`docker`, `frontend`, `sbom`), the browser suite (`e2e-ui`) | `lint`, `fast` (the unit and deploy tiers, which hold the tests that pin the documentation), `api-compat`, `schemas`, `eval-gate`, `security`, `helm` |
+| the web UI only: `src/lg_front/` (with or without prose) | the backend suites | everything else, with the frontend build, both images and the browser suite |
+| anything else: backend code, tests, a workflow, a lock file, a Dockerfile, a script, the chart, a path no rule names | nothing | everything |
+
+`docs/openapi.json` and `docs/tools/export_feedback.sql` are not prose: the
+API contract checks, the frontend's generated types and an integration test
+read them, so they run everything. Any doubt about the diff runs everything
+too. Try a list of paths locally:
+`python3 scripts/ci/changed_areas.py README.md docs/cicd.md`.
+
+A skipped job reports "skipped". GitHub's required checks and the merge
+script read that as passed. Only a pull request skips anything: a push to
+main, the weekly schedule and a manual run always run every job, because the
+release train reads every gate on the commit it tags.
+`tests/deploy/test_changed_areas.py` pins which jobs run for which paths; a
+new job or a new condition in `ci.yml` fails there until it is placed.
 
 ## The test services
 
@@ -257,8 +302,17 @@ flaky test pass.
   created by a test.
 * Process-wide caches (settings, chat models, usage) are reset around every
   test by `tests/conftest.py`; reset any new one there too.
-* Tests must pass in any order and on any xdist worker (the nightly job and
-  `test-parallel` check both).
+* Logging is process-wide state too. In `tests/conftest.py`,
+  `_isolate_logging` puts the structlog configuration, the root logger's
+  level and its handlers back after every test, and `_no_cached_loggers`
+  keeps structlog from caching a logger on first use while the suite runs: a
+  cached module-level logger stays bound to the processors of the test that
+  first used it, and a later `structlog.testing.capture_logs()` then sees
+  none of its events. A test may call `configure_logging` (or a CLI entry
+  point that does) and needs no cleanup of its own.
+* Tests must pass in any order and on any xdist worker (the nightly job
+  checks the first, and `test-parallel`, the backend gate of every pull
+  request, the second).
 
 ## Flaky tests
 

@@ -462,8 +462,10 @@ incident before retention removes it.
   how updates are triaged, and the patch SLAs (critical 7 days, high 14,
   medium 30, low the next minor release) are in
   [dependency-policy.md](dependency-policy.md).
-* Both images are scanned with Trivy on every change: a fixable critical or
-  high CVE fails CI.
+* Both images are scanned with Trivy on every change. A fixable critical or
+  high CVE fails CI on `main`, so for every release, and on a pull request
+  that changes an image input; on any other pull request it is a warning
+  (see "Pinned inputs and the image CVE gate" below).
 * Every release carries CycloneDX SBOMs and an OpenVEX document, each with
   a build-provenance attestation (see "SBOMs and VEX" below).
 * The container image runs as a non-root user (uid 10001) with a read-only
@@ -557,6 +559,19 @@ and issuer. For air-gapped hosts, see
   trivy image --scanners vuln --severity CRITICAL,HIGH --ignore-unfixed \
       --ignorefile .trivyignore --exit-code 1 lg-sotf:dev
   ```
+
+  **Where the gate blocks.** It blocks on every push to `main`, on the weekly
+  scheduled run and on a manual run. A commit with a fixable critical or
+  high finding therefore never has a green CI run on `main`: no image is
+  published or deployed from it, and the release train tags nothing from it.
+  On a pull request it blocks only when the pull request changes an image
+  input: a Dockerfile, `.dockerignore`, a lock file (`requirements*.txt`,
+  `package.json`, `package-lock.json`), `.trivyignore` or a workflow. On any
+  other pull request the same scan runs and its findings are a warning on
+  the check, not a failure. A CVE published overnight then does not stop
+  work that cannot fix it. The fix (a base-image bump, a re-lock or a
+  reviewed exception) is a pull request the gate does block, and `main` stays
+  red, with no new image and no release, until it merges.
 
 ### SBOMs and VEX
 

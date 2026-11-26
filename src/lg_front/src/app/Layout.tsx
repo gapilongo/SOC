@@ -8,7 +8,7 @@ import { logoutUrl } from '../auth/oidc';
 import { ErrorBoundary, PageFallback } from '../components/ErrorBoundary';
 import { SlotOutlet } from '../components/Slot';
 import { LoadingState } from '../components/ui';
-import { useFocusTrap } from '../components/useFocusTrap';
+import { trappedPanel, useFocusTrap } from '../components/useFocusTrap';
 import { getBrand, getConfig } from '../config';
 import { SHELL_BANNER } from '../core/slots';
 import { useSingleKeys } from '../lib/singleKeys';
@@ -69,6 +69,12 @@ export function Layout() {
       firstRender.current = false;
       return;
     }
+    // A dialog that opened in the meantime keeps the focus. The page of a route is a lazy chunk and a
+    // navigation is a transition, so this runs when the chunk arrives: by then the search field may be
+    // open (Ctrl+K right after a click on a link), and taking the focus from it left typing going
+    // nowhere. The menu of a narrow screen does not count: this navigation is closing it.
+    const dialog = trappedPanel();
+    if (dialog && dialog !== menuRef.current) return;
     mainRef.current?.focus();
   }, [location.pathname]);
 

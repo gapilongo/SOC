@@ -35,6 +35,32 @@ env:
   TRIVY_VERSION: v0.76.1
 
 jobs:
+  changes:
+    name: Changed areas (which jobs this change needs)
+    # scripts/ci/changed_areas.py. On a pull request, a change of prose only (docs/, changelog.d/,
+    # top-level Markdown) skips the backend suites, the image builds and the browser suite; a change of
+    # the web UI only (src/lg_front/) skips the backend suites; anything else, or any doubt about the
+    # diff, runs everything. A push to main, the weekly schedule and a manual run always run everything:
+    # the release train reads every gate on the commit it tags. A skipped job reports "skipped", which
+    # GitHub's required checks and the merge script read as passed. If this job fails, the jobs that
+    # need it do not run and the run is red.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      backend: ${{ steps.areas.outputs.backend }}
+      stack: ${{ steps.areas.outputs.stack }}
+      cve_gate: ${{ steps.areas.outputs.cve_gate }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2 # a pull request's merge commit and its two parents: the base and the head
+      - name: Classify the changed paths
+        id: areas
+        env:
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python3 scripts/ci/changed_areas.py
+
   lint:
     name: Lint and type-check
     runs-on: ubuntu-latest
@@ -150,9 +176,13 @@ jobs:
 
   test:
     name: Tests (PostgreSQL 16, Redis 7)
+    # The whole suite in one process, with coverage. Not on a pull request: there the parallel job below
+    # is the backend gate (issue #382). It runs on every push to main, on the weekly schedule and on a
+    # manual run, and stays a release gate under this name (RELEASE_GATES in release-train.yml).
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     # The serial suite takes 20 to 30 minutes on a hosted runner and grows with every story;
-    # at 30 the runner cancelled it mid-run (2026-11-26). The parallel trial below is the way down.
+    # at 30 the runner cancelled it mid-run (2026-11-26). Pull requests no longer wait for it.
     timeout-minutes: 50
     services:
       postgres:
@@ -290,14 +320,16 @@ jobs:
           if-no-files-found: ignore
 
   test-parallel:
-    name: Tests in parallel (pytest-xdist, non-blocking trial)
-    # Roadmap Q4: four xdist workers, each with its own database (soc_test_gw<N>, created by
-    # tests/integration/conftest.py) and Redis database (5 + N). Non-blocking until about ten green
-    # runs match the serial job (the parallel-parity job); then it becomes blocking and the serial
-    # job keeps only coverage. Locally: `make test-parallel`, `make test-serial`.
+    name: Tests in parallel (PostgreSQL 16, Redis 7, four workers)
+    # The whole suite on four xdist workers, each with its own database (soc_test_gw<N>, created by
+    # tests/integration/conftest.py) and Redis database (5 + N). Blocking, on every event: on a pull
+    # request it is the backend gate (issue #382), about half the time of the serial job, which then
+    # does not run. Locally: `make test-parallel`, `make test-serial`.
+    # Skipped on a pull request that changes only prose or only the web UI (the changes job).
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    continue-on-error: true
     services:
       postgres:
         image: postgres:16@sha256:1a6ab3f5345eb6dbe04a1349529caabdb0ab09293a09590fad07b2246bfa4b54
@@ -354,10 +386,11 @@ jobs:
 
   parallel-parity:
     name: Parallel and serial runs agree (non-blocking trial)
+    # Runs where both suites run: not on a pull request (a job whose need was skipped is skipped).
+    # Advisory: a difference is reported as a warning on a green check, never as a red one.
     needs: [test, test-parallel]
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    continue-on-error: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -369,16 +402,23 @@ jobs:
         with:
           name: test-reports-parallel
       - name: Same tests, same outcomes
+        id: parity
+        continue-on-error: true
         run: python3 scripts/ci/compare_junit.py junit.xml junit-parallel.xml
+      - name: Report a difference as a warning (advisory)
+        if: steps.parity.outcome == 'failure'
+        run: echo "::warning title=Parallel and serial runs differ (advisory)::The two runs did not see the same tests with the same outcomes; see the step 'Same tests, same outcomes'. This does not block a merge or a release."
 
   wazuh-contract:
     name: Wazuh 4.14 live contract tests (non-blocking trial)
     # Roadmap INT3.1: the real Wazuh connector against a Wazuh 4.14 indexer seeded with the template
     # Wazuh publishes (docker/docker-compose.wazuh-test.yml, tests/live/wazuh). Non-blocking while the
     # 2.5 GB image pull and the lab's start time settle; locally: `make test-wazuh-up test-wazuh`.
+    # Advisory: a failed lab or contract test is reported as a warning on a green check, never as a red one.
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    continue-on-error: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -393,11 +433,16 @@ jobs:
           pip install --require-hashes -r requirements-dev.txt
           pip install --no-deps -e .
       - name: Start and seed the Wazuh lab
+        id: lab
+        continue-on-error: true
         run: make test-wazuh-up PYTHON=python
       - name: Pytest (tests/live/wazuh)
+        id: contract
+        if: steps.lab.outcome == 'success'
+        continue-on-error: true
         run: make test-wazuh PYTHON=python PYTEST_ARGS="--junitxml=junit-wazuh.xml"
       - name: Indexer logs
-        if: failure()
+        if: steps.lab.outcome == 'failure' || steps.contract.outcome == 'failure'
         run: docker compose -f docker/docker-compose.wazuh-test.yml logs --tail=200 indexer
       - name: Stop the Wazuh lab
         if: always()
@@ -410,6 +455,9 @@ jobs:
           path: junit-wazuh.xml
           retention-days: 14
           if-no-files-found: ignore
+      - name: Report a failure as a warning (advisory)
+        if: steps.lab.outcome == 'failure' || steps.contract.outcome == 'failure'
+        run: echo "::warning title=Wazuh live contract tests failed (advisory)::The Wazuh lab did not start or a contract test failed; see the steps above. This does not block a merge or a release."
 
   security:
     name: Security scans
@@ -472,6 +520,9 @@ jobs:
 
   docker:
     name: Container image
+    # Skipped on a pull request that changes only prose (the changes job).
+    needs: changes
+    if: needs.changes.outputs.stack == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -504,6 +555,11 @@ jobs:
       - name: Image CVE gate (Trivy, fixable critical and high)
         # Fails on any critical or high finding that has a fix, in OS packages or Python
         # libraries. Exceptions: .trivyignore (reviewed, each with an expiry date).
+        # Blocking on a push to main, on the weekly schedule and on a manual run (so for every release),
+        # and on a pull request that changes an image input (a Dockerfile, a lock file, .trivyignore, a
+        # workflow: the changes job). On any other pull request the next step runs the same scan as a
+        # warning, so a CVE published overnight does not block work that cannot fix it.
+        if: github.event_name != 'pull_request' || needs.changes.outputs.cve_gate == 'true'
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           version: ${{ env.TRIVY_VERSION }}
@@ -514,6 +570,23 @@ jobs:
           ignore-unfixed: true
           trivyignores: .trivyignore
           exit-code: "1"
+      - name: Image CVE report (the same scan, advisory on a pull request that changes no image input)
+        id: cve-report
+        if: github.event_name == 'pull_request' && needs.changes.outputs.cve_gate != 'true'
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: ${{ env.TRIVY_VERSION }}
+          image-ref: lg-sotf:ci
+          scanners: vuln
+          vuln-type: os,library
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          trivyignores: .trivyignore
+          exit-code: "1"
+      - name: Report the findings as a warning (advisory)
+        if: steps.cve-report.outcome == 'failure'
+        run: echo "::warning title=Image CVE gate (advisory on this pull request)::Trivy found a fixable critical or high CVE in the backend image, or could not scan it; see the step before this one. This pull request changes no Dockerfile, lock file or .trivyignore, so it is not blocked. The same scan blocks on main and for a release; fix it with a base-image bump, a re-lock or a reviewed .trivyignore entry (docs/security.md, section 9)."
       - name: Image SBOM (CycloneDX)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -560,6 +633,8 @@ jobs:
 
   upgrade:
     name: Upgrade rehearsal (N-1 runs waiting for an analyst, migrate, decide on N)
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     # scripts/ci/upgrade_rehearsal.sh: the previous release (latest v* tag) migrates a fresh database and
@@ -567,6 +642,8 @@ jobs:
     # close every one of them through its API. Any run that fails, dead-letters or stays open fails the build.
     # The same again from the latest LTS release (lts-X.Y), when it is not the previous release
     # (docs/releases.md). The release train tags nothing whose run of this job failed.
+    # Skipped on a pull request that changes only prose or only the web UI (the changes job); on main it
+    # always runs.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -614,7 +691,7 @@ jobs:
     name: SBOMs and VEX (schema validation)
     # The release assets (docs/security.md, section 9), built the way release-images.yml builds them
     # and validated against the CycloneDX and OpenVEX schemas, so a format break shows up here and not
-    # on release day.
+    # on release day. Skipped with the two jobs it needs, on a pull request that changes only prose.
     needs: [docker, frontend]
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -642,6 +719,9 @@ jobs:
 
   frontend:
     name: Frontend build
+    # Skipped on a pull request that changes only prose (the changes job).
+    needs: changes
+    if: needs.changes.outputs.stack == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -688,7 +768,8 @@ jobs:
         if: steps.detect.outputs.dockerfile == 'true'
         run: docker build -t lg-sotf-frontend:ci src/lg_front
       - name: Image CVE gate (Trivy, fixable critical and high)
-        if: steps.detect.outputs.dockerfile == 'true'
+        # Blocking or advisory as in the Container image job.
+        if: steps.detect.outputs.dockerfile == 'true' && (github.event_name != 'pull_request' || needs.changes.outputs.cve_gate == 'true')
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           version: ${{ env.TRIVY_VERSION }}
@@ -699,6 +780,23 @@ jobs:
           ignore-unfixed: true
           trivyignores: .trivyignore
           exit-code: "1"
+      - name: Image CVE report (the same scan, advisory on a pull request that changes no image input)
+        id: cve-report
+        if: steps.detect.outputs.dockerfile == 'true' && github.event_name == 'pull_request' && needs.changes.outputs.cve_gate != 'true'
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: ${{ env.TRIVY_VERSION }}
+          image-ref: lg-sotf-frontend:ci
+          scanners: vuln
+          vuln-type: os,library
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          trivyignores: .trivyignore
+          exit-code: "1"
+      - name: Report the findings as a warning (advisory)
+        if: steps.cve-report.outcome == 'failure'
+        run: echo "::warning title=Image CVE gate (advisory on this pull request)::Trivy found a fixable critical or high CVE in the frontend image, or could not scan it; see the step before this one. This pull request changes no Dockerfile, lock file or .trivyignore, so it is not blocked. The same scan blocks on main and for a release; fix it with a base-image bump, a re-lock or a reviewed .trivyignore entry (docs/security.md, section 9)."
       - name: Image SBOM (CycloneDX)
         if: steps.detect.outputs.dockerfile == 'true'
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
@@ -718,6 +816,9 @@ jobs:
 
   e2e-ui:
     name: Web UI end-to-end (Playwright, compose stack)
+    # Skipped on a pull request that changes only prose (the changes job).
+    needs: changes
+    if: needs.changes.outputs.stack == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
