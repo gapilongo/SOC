@@ -877,6 +877,11 @@ test('the shell: rail navigation, search opens a page, the tenant in the address
   await menu.getByRole('link', { name: 'Alerts' }).click();
   await expect(menu).toHaveCount(0);
   await expect(page).toHaveURL(new RegExp(`/s/${tenantId}/alerts$`));
+  // The address changes at once; the page is a chunk that may still be loading. What a navigation
+  // guarantees is the page itself, named on the tab, with the focus on its content (issue #441).
+  await expect(page.getByRole('heading', { name: 'Alerts', level: 1 })).toBeVisible();
+  await expect(page).toHaveTitle(/^Alerts · /);
+  await expect(page.locator('#main')).toBeFocused();
   await assertNoSideScroll(page, 'the alerts page at 390 px');
   await page.keyboard.press('Control+k');
   await expect(field).toBeFocused();

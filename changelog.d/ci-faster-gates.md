@@ -30,6 +30,11 @@
 
 ### Fixed
 
+- The search field (Ctrl+K) keeps the keyboard focus when it is opened right
+  after a click on a link. The page of the link could arrive a moment later
+  and take the focus out of the open dialog, so typing went nowhere until the
+  field was clicked. A navigation no longer moves the focus while a dialog is
+  open.
 - Tests that capture log events no longer fail depending on which tests ran
   before them in the same process. Logging configured by one test (the CLI
   entry points configure it) left module loggers bound to that test's

@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { useRef, useState, type ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
-import { useFocusTrap, type FocusTrapOptions } from './useFocusTrap';
+import { trappedPanel, useFocusTrap, type FocusTrapOptions } from './useFocusTrap';
 
 function Trap({ open, options, children }: { open: boolean; options?: FocusTrapOptions; children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -130,5 +130,30 @@ describe('useFocusTrap', () => {
     await user.keyboard('{Escape}');
     expect(inner).toHaveBeenCalledTimes(1);
     expect(outer).not.toHaveBeenCalled();
+  });
+
+  it('tells code that moves focus on its own which panel holds it: the innermost open one, or none', () => {
+    const nested = (outerOpen: boolean, innerOpen: boolean) => (
+      <Trap open={outerOpen}>
+        <button type="button">outer</button>
+        <div data-testid="inner-host">
+          <Trap open={innerOpen}>
+            <button type="button">inner</button>
+          </Trap>
+        </div>
+      </Trap>
+    );
+    expect(trappedPanel()).toBeNull();
+    const { rerender, unmount } = render(nested(true, false));
+    const outer = screen.getByTestId('panel');
+    expect(trappedPanel()).toBe(outer);
+    rerender(nested(true, true));
+    const inner = screen.getByTestId('inner-host').firstElementChild;
+    expect(inner).toContainElement(screen.getByRole('button', { name: 'inner' }));
+    expect(trappedPanel()).toBe(inner);
+    rerender(nested(true, false));
+    expect(trappedPanel()).toBe(outer);
+    unmount();
+    expect(trappedPanel()).toBeNull();
   });
 });

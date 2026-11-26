@@ -14,6 +14,17 @@ function reachable(panel: HTMLElement): HTMLElement[] {
 
 // Open traps, innermost last: only the top one handles Escape and Tab.
 const trapStack: symbol[] = [];
+const trapPanels = new Map<symbol, HTMLElement | null>();
+
+/**
+ * The panel of the innermost open trap, or null when none is open. Code that moves focus on its own
+ * (the shell, when a navigation arrives) asks first: focus belongs inside an open dialog (WCAG 2.4.3),
+ * and the trap puts it there only once, when it opens.
+ */
+export function trappedPanel(): HTMLElement | null {
+  const top = trapStack[trapStack.length - 1];
+  return top ? (trapPanels.get(top) ?? null) : null;
+}
 
 // Scroll locks held by open traps; the page scrolls again when the last one is released.
 let scrollLocks = 0;
@@ -44,6 +55,7 @@ export function useFocusTrap(panelRef: RefObject<HTMLElement | null>, open: bool
     trapStack.push(token);
     const previouslyFocused = document.activeElement as HTMLElement | null;
     const panel = panelRef.current;
+    trapPanels.set(token, panel);
     const first = panel?.querySelector<HTMLElement>('[data-autofocus]') ?? panel?.querySelector<HTMLElement>(FOCUSABLE);
     (first ?? panel)?.focus();
     const onKey = (e: KeyboardEvent) => {
@@ -79,6 +91,7 @@ export function useFocusTrap(panelRef: RefObject<HTMLElement | null>, open: bool
     return () => {
       document.removeEventListener('keydown', onKey, true);
       trapStack.splice(trapStack.indexOf(token), 1);
+      trapPanels.delete(token);
       if (lockScroll && --scrollLocks === 0) document.body.style.overflow = savedOverflow;
       if (restoreFocus && previouslyFocused && document.contains(previouslyFocused)) previouslyFocused.focus();
     };
