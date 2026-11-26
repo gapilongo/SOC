@@ -299,11 +299,6 @@ def test_coverage_floors_are_enforced_in_ci() -> None:
     assert "*/lg_sotf/db/migrations/*" in omit
 
 
-def _is_advisory(job: Dict[str, Any]) -> bool:
-    """A job whose failure never fails the run."""
-    return job.get("continue-on-error") is True
-
-
 def test_the_parallel_run_gates_pull_requests_and_the_serial_run_gates_main_and_releases() -> None:
     """Issue #382: on a pull request the xdist run is the blocking backend job and the serial run does not
     run; on a push to main, on the schedule and on a manual run both do, and the serial one, which keeps
@@ -312,13 +307,14 @@ def test_the_parallel_run_gates_pull_requests_and_the_serial_run_gates_main_and_
     parallel, serial = jobs["test-parallel"], jobs["test"]
     runs = [s.get("run", "") for s in parallel["steps"]]
     assert "pytest -n 4 --dist loadfile --junitxml=junit-parallel.xml" in runs
-    assert not _is_advisory(parallel) and not any("continue-on-error" in s or "if" in s for s in parallel["steps"][:-1])
+    assert "continue-on-error" not in parallel
+    assert not any("continue-on-error" in s or "if" in s for s in parallel["steps"][:-1])
     # A gate on every event; only the changed paths of a pull request can skip it (test_changed_areas.py).
     assert parallel["needs"] == "changes" and parallel["if"] == "needs.changes.outputs.backend == 'true'"
     assert parallel["env"] == serial["env"] and parallel["services"] == serial["services"]
     # The serial job: everywhere but on a pull request, blocking, one process, with coverage.
     assert serial["if"] == "github.event_name != 'pull_request'"
-    assert not _is_advisory(serial) and not any("-n " in s.get("run", "") for s in serial["steps"])
+    assert "continue-on-error" not in serial and not any("-n " in s.get("run", "") for s in serial["steps"])
     assert any("--cov=lg_sotf" in s.get("run", "") for s in serial["steps"])
     # Where both ran, a parity job compares their JUnit reports; a skipped need skips it on a pull request.
     parity = jobs["parallel-parity"]
@@ -328,13 +324,46 @@ def test_the_parallel_run_gates_pull_requests_and_the_serial_run_gates_main_and_
     assert "test-serial:" in make and "-n 4 --dist loadfile" in make
 
 
-def test_only_advisory_jobs_are_named_non_blocking() -> None:
-    """The merge script ignores a failed check whose name contains "non-blocking": the word is on every
-    job that cannot fail the run and on no job that can."""
+# Advisory jobs and the steps of each that may fail without failing the job.
+ADVISORY_JOBS = {"parallel-parity": ["parity"], "wazuh-contract": ["lab", "contract"]}
+
+
+def test_advisory_jobs_are_named_non_blocking_and_warn_on_a_green_check() -> None:
+    """A pull request page is green when it can merge. An advisory job never shows a red check: the steps
+    that may fail are tolerated one by one and the job's last step turns a failure into a warning. The
+    merge script ignores a failed check whose name contains "non-blocking", so the word is on every
+    advisory job and on no job that gates."""
     jobs = workflow()["jobs"]
-    named = {key for key, job in jobs.items() if "non-blocking" in job["name"]}
-    assert named == {key for key, job in jobs.items() if _is_advisory(job)} == {"parallel-parity", "wazuh-contract"}
-    assert not any("trial" in job["name"] for key, job in jobs.items() if key not in named)
+    assert {key for key, job in jobs.items() if "non-blocking" in job["name"]} == set(ADVISORY_JOBS)
+    assert not any("trial" in job["name"] for key, job in jobs.items() if key not in ADVISORY_JOBS)
+    # A job-level continue-on-error keeps the run green but shows the job as a red check.
+    assert not any("continue-on-error" in job for job in jobs.values())
+    tolerated = {(key, step["id"]) for key, job in jobs.items() for step in job["steps"] if "continue-on-error" in step}
+    assert tolerated == {(key, step) for key, ids in ADVISORY_JOBS.items() for step in ids} | {
+        ("docker", "cve-report"), ("frontend", "cve-report"),  # test_supply_chain.py
+    }
+    for key, ids in ADVISORY_JOBS.items():
+        warn = jobs[key]["steps"][-1]
+        assert warn["if"] == " || ".join(f"steps.{step}.outcome == 'failure'" for step in ids), key
+        assert warn["run"].startswith('echo "::warning title=') and "(advisory)::" in warn["run"], key
+    # The Wazuh lab is still stopped and its report uploaded whatever happened.
+    wazuh = {s.get("name"): s for s in jobs["wazuh-contract"]["steps"]}
+    assert wazuh["Pytest (tests/live/wazuh)"]["if"] == "steps.lab.outcome == 'success'"
+    assert wazuh["Stop the Wazuh lab"]["if"] == "always()" and wazuh["Upload the report"]["if"] == "always()"
+
+
+def test_the_review_bot_is_advisory() -> None:
+    """The Claude review comments on a pull request and gates nothing: a review that could not run
+    (no token, a usage limit) is a warning, and Dependabot's pull requests, which the action refuses, are skipped."""
+    wf = yaml.safe_load((REPO_ROOT / ".github" / "workflows" / "claude-code-review.yml").read_text())
+    [job] = wf["jobs"].values()
+    assert "non-blocking" in job["name"] and "continue-on-error" not in job
+    assert job["if"] == "github.event.pull_request.user.login != 'dependabot[bot]'"
+    review = next(s for s in job["steps"] if s.get("uses", "").startswith("anthropics/claude-code-action@"))
+    assert review["continue-on-error"] is True
+    warn = job["steps"][-1]
+    assert warn["if"] == f"steps.{review['id']}.outcome == 'failure'"
+    assert warn["run"].startswith('echo "::warning title=') and "(advisory)::" in warn["run"]
 
 
 def test_a_nightly_job_runs_the_suite_in_random_order_with_a_pinned_plugin() -> None:

@@ -28,6 +28,12 @@ for the first environment and 15 minutes for the second.
    └──> tag v1.3.0-rc.N (or promote to v1.3.0) ──> Release images (as above) ; move :partner / :lts
 ```
 
+* `.github/workflows/ci.yml` gates a pull request on the jobs its change can
+  affect, with the whole test suite on four workers; on `main` it runs every
+  job, including the serial suite with coverage, the upgrade rehearsal and
+  the blocking image CVE scan. Only that run on `main` lets an image be
+  published or a release be tagged. What runs when:
+  [testing.md](testing.md#what-a-pull-request-runs).
 * `.github/workflows/release-images.yml` builds and publishes the images once
   per green commit on main, then calls the deploy workflow for **dev**. A
   release tag `vX.Y.Z` promotes the images of that commit to **uat**: the same

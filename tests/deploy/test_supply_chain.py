@@ -212,6 +212,39 @@ def test_ci_fails_on_fixable_critical_or_high_image_findings() -> None:
     assert images == {"docker": "lg-sotf:ci", "frontend": "lg-sotf-frontend:ci"}
 
 
+GATE_ON = "github.event_name != 'pull_request' || needs.changes.outputs.cve_gate == 'true'"
+REPORT_ON = "github.event_name == 'pull_request' && needs.changes.outputs.cve_gate != 'true'"
+
+
+def test_the_cve_gate_blocks_main_and_image_changes_and_warns_on_other_pull_requests() -> None:
+    """The gate blocks on a push to main, on the schedule and on a manual run (so for every release), and
+    on a pull request that changes an image input (scripts/ci/changed_areas.py, test_changed_areas.py).
+    On any other pull request the same scan, with the same settings, only warns: a CVE published overnight
+    does not block work that cannot fix it."""
+    jobs = _load(CI)["jobs"]
+    for job_name, has_image in (("docker", ""), ("frontend", "steps.detect.outputs.dockerfile == 'true' && ")):
+        job = jobs[job_name]
+        assert job["needs"] == "changes", job_name
+        steps = job["steps"]
+        i = next(n for n, s in enumerate(steps) if s.get("name", "").startswith("Image CVE gate"))
+        gate, report, warn = steps[i : i + 3]
+        assert gate["if"] == (f"{has_image}({GATE_ON})" if has_image else GATE_ON), job_name
+        assert report["name"].startswith("Image CVE report") and report["if"] == has_image + REPORT_ON, job_name
+        assert report["uses"] == gate["uses"] and report["with"] == gate["with"], f"{job_name}: the same scan"
+        assert report["continue-on-error"] is True
+        assert warn["if"] == f"steps.{report['id']}.outcome == 'failure'", job_name
+        assert warn["run"].startswith('echo "::warning title=Image CVE gate (advisory on this pull request)::')
+        # The SBOM steps after the scan run either way.
+        assert steps[i + 3]["name"] == "Image SBOM (CycloneDX)"
+    security = " ".join((REPO_ROOT / "docs" / "security.md").read_text().split())
+    for sentence in (
+        "blocks on every push to `main`, on the weekly scheduled run and on a manual run",
+        "On a pull request it blocks only when the pull request changes an image input",
+        "On any other pull request the same scan runs and its findings are a warning",
+    ):
+        assert sentence in security, sentence
+
+
 def _trivyignore() -> List[Tuple[str, str, str]]:
     """(comment above, id, expiry) per entry."""
     entries, comment = [], ""

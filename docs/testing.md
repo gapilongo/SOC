@@ -62,6 +62,14 @@ floor turns main red, and the release train does not tag that commit.
 `wazuh-contract` starts the Wazuh lab and runs `tests/live/wazuh`;
 it is non-blocking while its image pull and start time settle.
 
+Three jobs are advisory: `parallel-parity`, `wazuh-contract` and the Claude
+review (its own workflow). Their names say "non-blocking", and they never
+show a red check for what they test: the step that may fail is tolerated and
+the job ends with a warning annotation on a green check. The image CVE scan
+does the same on a pull request that changes no image input
+([security.md](security.md), section 9). Every other check on a pull request
+is a gate, so a green page means the pull request can merge.
+
 ### What a pull request runs
 
 A pull request skips the jobs its change cannot affect. The `changes` job
