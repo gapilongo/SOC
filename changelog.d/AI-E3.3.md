@@ -99,7 +99,7 @@
   telemetry and the stand-in model, 452 of 520 alerts were investigated
   (the others are high or critical alerts that go straight to a person
   without the deep analysis), with no failed lookup. At the tier
-  `auto_full_audit`, automation closed 58 attacks with the lookups off and
-  39 with them on: the evidence held 19 and bought none. The 100 benign
-  alerts that close today still close. See docs/evaluation.md ("The investigation
+  `auto_full_audit`, automation closed 37 attacks with the lookups off and
+  32 with them on: the evidence held 5 and bought none. The 78 benign
+  alerts that close with the lookups off still close. See docs/evaluation.md ("The investigation
   harness on the corpus").

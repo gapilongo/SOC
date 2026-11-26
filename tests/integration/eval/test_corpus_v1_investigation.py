@@ -90,9 +90,17 @@ async def test_the_harness_gives_corpus_alerts_facts_and_changes_no_close(
     assert measured["budget"]["steps"]["max"] <= 8 and measured["budget"]["usd"]["max"] == 0
 
     was, now, held_verdicts = outcomes(off), outcomes(on), outcomes(blind)
+    if REPORT:  # what the three runs did, item by item, before anything is asserted about it
+        write_report(REPORT + ".runs.json", {
+            "off": was, "on": now, "blind": held_verdicts, "verdicts_off": verdicts(before),
+            "verdicts_on": verdicts(after), "verdicts_blind": verdicts(unseen)})
     # With the verdicts held (the stand-in blind to the evidence), the harness moves an alert only by holding its
     # close: what ended differently was closed by automation today and is with a person for an evidence blocker.
-    assert verdicts(unseen) == verdicts(before)
+    # The verdicts are today's, but for an alert the deep analysis no longer reaches: an attack the evidence holds
+    # stays open, so a later alert related to it can correlate strongly enough to go straight to a person. Such an
+    # alert was with a person today too, and ends the same.
+    unreached = sorted(i for i in before if verdicts(unseen)[i] != verdicts(before)[i])
+    assert all(unseen[i].get("verdict") is None and was[i] == held_verdicts[i] and was[i][0] != "closed" for i in unreached), unreached
     stopped = sorted(i for i in was if was[i] != held_verdicts[i])
     assert all(was[i][0] == "closed" and held_verdicts[i][2] in EVIDENCE_CODES for i in stopped), stopped
     # With the stand-in reading the evidence, an outcome differs only where the verdict moved or a blocker held.
@@ -147,6 +155,7 @@ async def test_the_harness_gives_corpus_alerts_facts_and_changes_no_close(
             "not_investigated": dict(Counter(
                 f"{now[i][0]}/{now[i][2] or now[i][3] or 'no decision'}" for i in after if not after[i].get("investigation"))),
             "verdict_moved_with_evidence": moved, "outcome_changed": changed,
+            "not_analysed_with_the_harness_on": unreached,
             "outcome_changes": {i: {"off": was[i], "on": now[i], "verdict_off": before[i].get("verdict"),
                                     "verdict_on": after[i].get("verdict")} for i in changed},
         }
