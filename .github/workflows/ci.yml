@@ -182,7 +182,7 @@ jobs:
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     # The serial suite takes 20 to 30 minutes on a hosted runner and grows with every story;
-    # at 30 the runner cancelled it mid-run (2026-11-26). The parallel trial below is the way down.
+    # at 30 the runner cancelled it mid-run (2026-11-26). Pull requests no longer wait for it.
     timeout-minutes: 50
     services:
       postgres:
