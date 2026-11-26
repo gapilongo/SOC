@@ -150,6 +150,10 @@ jobs:
 
   test:
     name: Tests (PostgreSQL 16, Redis 7)
+    # The whole suite in one process, with coverage. Not on a pull request: there the parallel job below
+    # is the backend gate (issue #382). It runs on every push to main, on the weekly schedule and on a
+    # manual run, and stays a release gate under this name (RELEASE_GATES in release-train.yml).
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     services:
@@ -288,14 +292,13 @@ jobs:
           if-no-files-found: ignore
 
   test-parallel:
-    name: Tests in parallel (pytest-xdist, non-blocking trial)
-    # Roadmap Q4: four xdist workers, each with its own database (soc_test_gw<N>, created by
-    # tests/integration/conftest.py) and Redis database (5 + N). Non-blocking until about ten green
-    # runs match the serial job (the parallel-parity job); then it becomes blocking and the serial
-    # job keeps only coverage. Locally: `make test-parallel`, `make test-serial`.
+    name: Tests in parallel (PostgreSQL 16, Redis 7, four workers)
+    # The whole suite on four xdist workers, each with its own database (soc_test_gw<N>, created by
+    # tests/integration/conftest.py) and Redis database (5 + N). Blocking, on every event: on a pull
+    # request it is the backend gate (issue #382), about half the time of the serial job, which then
+    # does not run. Locally: `make test-parallel`, `make test-serial`.
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    continue-on-error: true
     services:
       postgres:
         image: postgres:16@sha256:1a6ab3f5345eb6dbe04a1349529caabdb0ab09293a09590fad07b2246bfa4b54
@@ -352,6 +355,7 @@ jobs:
 
   parallel-parity:
     name: Parallel and serial runs agree (non-blocking trial)
+    # Runs where both suites run: not on a pull request (a job whose need was skipped is skipped).
     needs: [test, test-parallel]
     runs-on: ubuntu-latest
     timeout-minutes: 5

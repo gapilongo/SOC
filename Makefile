@@ -82,11 +82,11 @@ security-scan: ## Bandit over the product and the SOAR examples (bandit from scr
 test: test-serial ## Run the test suite (integration tests need LG_SOTF_TEST_DATABASE_URL / LG_SOTF_TEST_REDIS_URL)
 
 .PHONY: test-serial
-test-serial: ## The whole suite in one process (what CI's blocking test job runs)
+test-serial: ## The whole suite in one process, as CI runs it on main and for a release (add --cov for the coverage floors)
 	$(PYTHON) -m pytest
 
 .PHONY: test-parallel
-test-parallel: ## The whole suite on 4 xdist workers (own database <name>_gw<N> and Redis DB base+N each)
+test-parallel: ## The whole suite on 4 xdist workers, as CI gates a pull request (own database <name>_gw<N> and Redis DB base+N each)
 	$(PYTHON) -m pytest -n 4 --dist loadfile
 
 # Throwaway PostgreSQL and Redis for the integration tier (docker/docker-compose.test.yml, docs/testing.md).

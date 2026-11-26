@@ -8,10 +8,12 @@ fixtures (``db``, ``repos``, ``redis_client``, the API harness) live in
 
 from __future__ import annotations
 
+import logging
 import uuid
-from typing import Any, Callable, Iterator
+from typing import Any, Callable, Iterator, List
 
 import pytest
+import structlog
 
 from lg_sotf.settings import Settings, get_settings, reset_settings
 
@@ -31,6 +33,48 @@ def _isolate_cached_state() -> Iterator[None]:
     _reset_process_state()
     yield
     _reset_process_state()
+
+
+def _own_handlers(root: logging.Logger) -> List[logging.Handler]:
+    """The root logger's handlers except pytest's own, which it installs and removes around each test phase."""
+    return [h for h in root.handlers if not type(h).__module__.startswith("_pytest.")]
+
+
+@pytest.fixture(autouse=True)
+def _isolate_logging(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """Logging configured by one test never reaches the next (issue #382).
+
+    ``configure_logging`` (the CLI entry points and the API app call it, and tests call those in-process)
+    sets structlog's ``cache_logger_on_first_use``. The first call through a module-level logger then
+    binds that logger for good to the processors of the moment, and a later
+    ``structlog.testing.capture_logs()``, which swaps the processors of the *current* configuration, saw
+    no event from it. Which capture test lost its events depended on the tests that ran before it in the
+    same process, so the suite failed only in some orders (pytest-xdist, pytest-randomly).
+
+    While the suite runs no logger is cached, and after every test the structlog configuration, the root
+    logger's level and the handlers the test put on the root logger are back to what the test found.
+    """
+    configure = structlog.configure
+
+    def configure_without_cache(*args: Any, **kwargs: Any) -> None:
+        configure(*args, **{**kwargs, "cache_logger_on_first_use": False})
+
+    monkeypatch.setattr(structlog, "configure", configure_without_cache)
+    root = logging.getLogger()
+    handlers, level = _own_handlers(root), root.level
+    configured, config = structlog.is_configured(), structlog.get_config()
+    yield
+    structlog.reset_defaults()
+    if configured:
+        configure(**config)
+    for handler in _own_handlers(root):
+        if handler not in handlers:
+            root.removeHandler(handler)
+    for handler in handlers:
+        if handler not in root.handlers:
+            root.addHandler(handler)
+    root.setLevel(level)
+    logging.captureWarnings(False)
 
 
 @pytest.fixture

@@ -299,20 +299,41 @@ def test_coverage_floors_are_enforced_in_ci() -> None:
     assert "*/lg_sotf/db/migrations/*" in omit
 
 
-def test_the_parallel_tier_runs_beside_the_serial_job_until_it_is_proven() -> None:
-    """Roadmap Q4: xdist runs non-blocking, and a parity job compares its JUnit report with the serial one."""
+def _is_advisory(job: Dict[str, Any]) -> bool:
+    """A job whose failure never fails the run."""
+    return job.get("continue-on-error") is True
+
+
+def test_the_parallel_run_gates_pull_requests_and_the_serial_run_gates_main_and_releases() -> None:
+    """Issue #382: on a pull request the xdist run is the blocking backend job and the serial run does not
+    run; on a push to main, on the schedule and on a manual run both do, and the serial one, which keeps
+    coverage, stays the release gate (test_release_train_gates_are_the_blocking_rehearsal_jobs)."""
     jobs = workflow()["jobs"]
-    parallel = jobs["test-parallel"]
+    parallel, serial = jobs["test-parallel"], jobs["test"]
     runs = [s.get("run", "") for s in parallel["steps"]]
     assert "pytest -n 4 --dist loadfile --junitxml=junit-parallel.xml" in runs
-    assert parallel["continue-on-error"] is True and parallel["env"] == jobs["test"]["env"]
+    assert not _is_advisory(parallel) and not any("continue-on-error" in s or "if" in s for s in parallel["steps"][:-1])
+    assert "if" not in parallel, "the parallel run is a gate on every event"
+    assert parallel["env"] == serial["env"] and parallel["services"] == serial["services"]
+    # The serial job: everywhere but on a pull request, blocking, one process, with coverage.
+    assert serial["if"] == "github.event_name != 'pull_request'"
+    assert not _is_advisory(serial) and not any("-n " in s.get("run", "") for s in serial["steps"])
+    assert any("--cov=lg_sotf" in s.get("run", "") for s in serial["steps"])
+    # Where both ran, a parity job compares their JUnit reports; a skipped need skips it on a pull request.
     parity = jobs["parallel-parity"]
-    assert parity["needs"] == ["test", "test-parallel"] and parity["continue-on-error"] is True
+    assert parity["needs"] == ["test", "test-parallel"] and "if" not in parity
     assert "python3 scripts/ci/compare_junit.py junit.xml junit-parallel.xml" in [s.get("run", "") for s in parity["steps"]]
-    # The blocking serial job keeps coverage and stays one process.
-    assert not any("-n " in s.get("run", "") for s in jobs["test"]["steps"])
     make = (REPO_ROOT / "Makefile").read_text()
     assert "test-serial:" in make and "-n 4 --dist loadfile" in make
+
+
+def test_only_advisory_jobs_are_named_non_blocking() -> None:
+    """The merge script ignores a failed check whose name contains "non-blocking": the word is on every
+    job that cannot fail the run and on no job that can."""
+    jobs = workflow()["jobs"]
+    named = {key for key, job in jobs.items() if "non-blocking" in job["name"]}
+    assert named == {key for key, job in jobs.items() if _is_advisory(job)} == {"parallel-parity", "wazuh-contract"}
+    assert not any("trial" in job["name"] for key, job in jobs.items() if key not in named)
 
 
 def test_a_nightly_job_runs_the_suite_in_random_order_with_a_pinned_plugin() -> None:

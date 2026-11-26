@@ -44,13 +44,22 @@ Suite-wide (`pyproject.toml`): `RuntimeWarning`, `ResourceWarning` and
 `PytestUnraisableExceptionWarning` are errors everywhere; `--strict-markers`;
 `asyncio_mode = "auto"`.
 
-CI (`.github/workflows/ci.yml`) runs `lint` (ruff, mypy, import contracts),
-`fast` (unit + invariants + deploy, no services), and `test` (the whole suite with
-coverage, one process; the total floor and the per-package floors in
-`scripts/ci/coverage_floors.py` only go up). `test-parallel` runs the suite on
-four xdist workers and `parallel-parity` checks that both runs saw the same
-tests with the same outcomes; both are non-blocking until about ten green
-runs. `wazuh-contract` starts the Wazuh lab and runs `tests/live/wazuh`;
+CI (`.github/workflows/ci.yml`) runs `lint` (ruff, mypy, import contracts)
+and `fast` (unit + invariants + deploy, no services) on every change. The
+whole suite runs twice, and which run gates depends on the event:
+
+| Job | Runs | Pull request | Push to main, weekly schedule, manual run |
+|---|---|---|---|
+| `test-parallel`, "Tests in parallel (PostgreSQL 16, Redis 7, four workers)" | the whole suite on four xdist workers | **the backend gate** | blocking |
+| `test`, "Tests (PostgreSQL 16, Redis 7)" | the whole suite in one process, with coverage (the total floor and the per-package floors in `scripts/ci/coverage_floors.py` only go up) | does not run | blocking, and a release gate (`RELEASE_GATES` in `release-train.yml`) |
+| `parallel-parity` | both runs saw the same tests with the same outcomes | does not run | non-blocking |
+
+So a pull request waits for the parallel run, about half the time of the
+serial one, and a release is still cut only from a commit whose serial run,
+with coverage, passed on main. The coverage floors are therefore checked
+after the merge, not before it: a pull request that lowers coverage below a
+floor turns main red, and the release train does not tag that commit.
+`wazuh-contract` starts the Wazuh lab and runs `tests/live/wazuh`;
 it is non-blocking while its image pull and start time settle.
 `.github/workflows/nightly.yml` runs the suite in a random order
 (hash-locked `pytest-randomly` from `scripts/ci/requirements-nightly.txt`).
@@ -257,8 +266,17 @@ flaky test pass.
   created by a test.
 * Process-wide caches (settings, chat models, usage) are reset around every
   test by `tests/conftest.py`; reset any new one there too.
-* Tests must pass in any order and on any xdist worker (the nightly job and
-  `test-parallel` check both).
+* Logging is process-wide state too. `_isolate_logging` in `tests/conftest.py`
+  puts the structlog configuration, the root logger's level and its handlers
+  back after every test, and keeps structlog from caching a logger on first
+  use while the suite runs: a cached module-level logger stays bound to the
+  processors of the test that first used it, and a later
+  `structlog.testing.capture_logs()` then sees none of its events. A test may
+  call `configure_logging` (or a CLI entry point that does) and needs no
+  cleanup of its own.
+* Tests must pass in any order and on any xdist worker (the nightly job
+  checks the first, and `test-parallel`, the backend gate of every pull
+  request, the second).
 
 ## Flaky tests
 
