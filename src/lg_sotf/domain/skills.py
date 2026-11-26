@@ -31,12 +31,14 @@ from lg_sotf.models.skill import (
     ArgValue,
     Const,
     MaxLevelGe,
+    Maybe,
     Not,
     Predicate,
     SkillSpec,
 )
 
-__all__ = ["IndicatorState", "bind", "evaluate", "indicator_states", "select_skill", "state_name"]
+__all__ = ["IndicatorState", "bind", "evaluate", "indicator_states", "select_skill", "state_name", "true_indicators",
+           "unbound_reason"]
 
 HOST_ACTIVITY = "host_activity"
 IndicatorState = Optional[bool]
@@ -55,18 +57,52 @@ def bind(args: Mapping[str, ArgValue], view: Any, occurred_at: datetime) -> Opti
     """The arguments of one query, or ``None`` when a binding has no value (the query is skipped)."""
     bound: Dict[str, Any] = {}
     for name, arg in args.items():
-        if isinstance(arg, Const):
-            value: Any = arg.const
-        elif isinstance(arg, int):
-            value = arg
-        elif arg == "alert.occurred_at":
+        optional = isinstance(arg, Maybe)
+        source = arg.optional if isinstance(arg, Maybe) else arg
+        if isinstance(source, Const):
+            value: Any = source.const
+        elif isinstance(source, int):
+            value = source
+        elif source == "alert.occurred_at":
             value = occurred_at
         else:
-            value = getattr(view, arg.removeprefix("view."), None)
+            value = getattr(view, source.removeprefix("view."), None)
+        if value is None and optional:
+            continue  # the query runs without it
         if value is None:
             return None
         bound[name] = value
     return bound
+
+
+def unbound_reason(args: Mapping[str, ArgValue], view: Any, default: str) -> str:
+    """Why :func:`bind` gave no arguments: the view's own reason for a field it left out on purpose (a common
+    binary has no prevalence worth asking for), else ``default``."""
+    for arg in args.values():
+        if isinstance(arg, str) and arg.startswith("view."):
+            why = getattr(view, "why_unbound", lambda name: None)(arg.removeprefix("view."))
+            if why and getattr(view, arg.removeprefix("view."), None) is None:
+                return str(why)
+    return default
+
+
+def _reads(predicate: Predicate) -> List[str]:
+    if isinstance(predicate, (AllOf, AnyOf)):
+        inner = predicate.all if isinstance(predicate, AllOf) else predicate.any
+        return [fact for one in inner for fact in _reads(one)]
+    return _reads(predicate.negated) if isinstance(predicate, Not) else [predicate.fact]
+
+
+def true_indicators(skill: SkillSpec, ledger: Sequence[LedgerEntry]) -> Dict[str, List[str]]:
+    """The malicious indicators of ``skill`` that are true over the run's ledger, each with the ids of the
+    facts it read: what blocks a model-led close (ADR 0014 Amendment 1 point 1). An indicator that is
+    unknown (the tool could not answer) is not in it."""
+    held: Dict[str, List[str]] = {}
+    for hypothesis in skill.hypotheses.malicious:
+        if evaluate(hypothesis.indicator, ledger) is True:
+            read = set(_reads(hypothesis.indicator))
+            held[hypothesis.id] = [e.fact_id for e in ledger if e.evidence_id in read and e.fact is not None][:8]
+    return held
 
 
 def _known(entries: Sequence[LedgerEntry], shows: bool) -> IndicatorState:

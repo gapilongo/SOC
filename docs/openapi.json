@@ -896,6 +896,10 @@
                   "investigation": {
                     "description": "What the investigation executor did for an alert (AI-E3.3). Absent when no investigation applies.",
                     "properties": {
+                      "blocking": {
+                        "additionalProperties": true,
+                        "type": "object"
+                      },
                       "budget": {
                         "additionalProperties": {
                           "additionalProperties": {
@@ -1003,6 +1007,12 @@
                       "status": {
                         "type": "string"
                       },
+                      "steering": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
                       "steps": {
                         "items": {
                           "description": "One query of an investigation's plan: ``outcome`` is ``success``, ``empty``, ``failed`` or ``skipped``.",
@@ -1045,6 +1055,21 @@
                       },
                       "stop_reason": {
                         "type": "string"
+                      },
+                      "verdict_findings": {
+                        "items": {
+                          "description": "What is wrong with one citation of a claim (``lg_sotf.domain.ledger.check_citations``).",
+                          "properties": {
+                            "code": {
+                              "type": "string"
+                            },
+                            "fact_id": {
+                              "type": "string"
+                            }
+                          },
+                          "type": "object"
+                        },
+                        "type": "array"
                       }
                     },
                     "type": "object"
@@ -2028,6 +2053,10 @@
                   "investigation": {
                     "description": "What the investigation executor did for an alert (AI-E3.3). Absent when no investigation applies.",
                     "properties": {
+                      "blocking": {
+                        "additionalProperties": true,
+                        "type": "object"
+                      },
                       "budget": {
                         "additionalProperties": {
                           "additionalProperties": {
@@ -2135,6 +2164,12 @@
                       "status": {
                         "type": "string"
                       },
+                      "steering": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
                       "steps": {
                         "items": {
                           "description": "One query of an investigation's plan: ``outcome`` is ``success``, ``empty``, ``failed`` or ``skipped``.",
@@ -2177,6 +2212,21 @@
                       },
                       "stop_reason": {
                         "type": "string"
+                      },
+                      "verdict_findings": {
+                        "items": {
+                          "description": "What is wrong with one citation of a claim (``lg_sotf.domain.ledger.check_citations``).",
+                          "properties": {
+                            "code": {
+                              "type": "string"
+                            },
+                            "fact_id": {
+                              "type": "string"
+                            }
+                          },
+                          "type": "object"
+                        },
+                        "type": "array"
                       }
                     },
                     "type": "object"
@@ -7405,11 +7455,25 @@
         "type": "object"
       },
       "EvidenceIndicator": {
-        "description": "A malicious indicator the playbook declares, over the run's observations. Reported only: nothing is\nblocked on it yet.",
+        "description": "A malicious indicator the playbook declares, over the run's observations.",
         "properties": {
+          "holds_close": {
+            "default": false,
+            "description": "The indicator is true, so the AI may not close the alert on its own. An unknown one never holds.",
+            "title": "Holds Close",
+            "type": "boolean"
+          },
           "id": {
             "title": "Id",
             "type": "string"
+          },
+          "observation_ids": {
+            "description": "The observations a true indicator read.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Observation Ids",
+            "type": "array"
           },
           "state": {
             "description": "unknown: the observations cannot show it either way.",
@@ -7424,7 +7488,9 @@
         },
         "required": [
           "id",
-          "state"
+          "state",
+          "holds_close",
+          "observation_ids"
         ],
         "title": "EvidenceIndicator",
         "type": "object"
@@ -7670,6 +7736,12 @@
       "EvidenceRun": {
         "description": "The evidence lookups made for the alert before the deeper analysis, or why none ran.",
         "properties": {
+          "benign_without_claims": {
+            "default": false,
+            "description": "The deep model was shown the observations, judged the alert benign and gave no claim (recorded only).",
+            "title": "Benign Without Claims",
+            "type": "boolean"
+          },
           "budgets": {
             "description": "What the lookups used of each limit.",
             "items": {
@@ -7683,6 +7755,14 @@
             "description": "The observations were cut to fit the model's prompt: it saw some of them in part.",
             "title": "Evidence Truncated",
             "type": "boolean"
+          },
+          "holds_close": {
+            "description": "What of the evidence keeps the AI from closing the alert on its own: evidence_steering (see steering_observation_ids), evidence_indicator (see indicators) or evidence_citation (see the claims' findings). Empty when the evidence holds nothing.",
+            "items": {
+              "$ref": "#/components/schemas/InvestigationReason"
+            },
+            "title": "Holds Close",
+            "type": "array"
           },
           "indicators": {
             "items": {
@@ -7754,6 +7834,14 @@
             "title": "Status",
             "type": "string"
           },
+          "steering_observation_ids": {
+            "description": "Observations in which the injection scan found text that tries to steer the model. The model was shown a fixed marker in its place; the observation keeps what the tool returned.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Steering Observation Ids",
+            "type": "array"
+          },
           "stop_reason": {
             "anyOf": [
               {
@@ -7777,7 +7865,10 @@
           "lookups",
           "evidence_truncated",
           "budgets",
-          "indicators"
+          "indicators",
+          "steering_observation_ids",
+          "benign_without_claims",
+          "holds_close"
         ],
         "title": "EvidenceRun",
         "type": "object"
@@ -8869,11 +8960,14 @@
           "evidence_run": {
             "$ref": "#/components/schemas/EvidenceRun",
             "default": {
+              "benign_without_claims": false,
               "budgets": [],
               "evidence_truncated": false,
+              "holds_close": [],
               "indicators": [],
               "lookups": [],
-              "status": "not_run"
+              "status": "not_run",
+              "steering_observation_ids": []
             },
             "description": "The evidence lookups of the alert's newest analysis: what ran, what it used, or why none ran."
           },
@@ -9017,7 +9111,7 @@
             "type": "string"
           },
           "findings": {
-            "description": "A cited claim's citation findings (code checked them; nothing is blocked on them yet).",
+            "description": "A cited claim's citation findings (code checked them). unknown_fact, altered_fact and not_benign_evidence on a benign verdict hold a model-led close; the others are recorded only.",
             "items": {
               "$ref": "#/components/schemas/ClaimFinding"
             },

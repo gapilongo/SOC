@@ -382,6 +382,11 @@ class MCPSettings(BaseModel):
     max_output_chars: int = Field(default=60_000, ge=1_000)
 
 
+#: The environments whose settings may name the synthetic ``event_store`` evidence backend, and only when
+#: ``environment`` is set explicitly (an unset environment is not development for this purpose).
+EVENT_STORE_ENVIRONMENTS = ("development", "test")
+
+
 class InvestigationBudget(BaseModel):
     """What one investigation may spend (ADR 0014 section 2.3). A tenant's override is cut to ``tenant_max``."""
 
@@ -405,8 +410,10 @@ class InvestigationSettings(BaseModel):
 
     ``evidence_backend`` says where the Wazuh evidence tools read, and is never guessed: ``indexer`` is the
     tenant's own Wazuh indexer, resolved from the alert's source; ``event_store`` is a dataset's telemetry
-    in memory (``event_store_files``: alerts and context events, ``.jsonl`` or ``.jsonl.gz``), for
-    evaluation and development only. It holds synthetic data, so it is refused in staging and production.
+    in memory (``event_store_files``: alerts and context events, ``.jsonl`` or ``.jsonl.gz``). It holds
+    synthetic data, so it is an allow-list: accepted only when ``environment`` is set, explicitly, to
+    ``development`` or ``test`` (:data:`EVENT_STORE_ENVIRONMENTS`). An install that does not say which
+    environment it is, and any other environment, is refused when the settings load.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -584,6 +591,13 @@ class Settings(BaseSettings):
             self.database.url = SecretStr(os.environ["DATABASE_URL"])
         if "url" not in self.redis.model_fields_set and os.environ.get("REDIS_URL"):
             self.redis.url = SecretStr(os.environ["REDIS_URL"])
+        store = self.investigation.evidence_backend == "event_store"
+        named = "environment" in self.model_fields_set and self.environment in EVENT_STORE_ENVIRONMENTS
+        if store and not named:
+            raise ValueError(
+                "investigation.evidence_backend=event_store answers from synthetic telemetry: it is accepted only "
+                f"when environment is set explicitly to one of {', '.join(EVENT_STORE_ENVIRONMENTS)}"
+            )
         if self.llm.api_key is None:
             env_key = {
                 "anthropic": "ANTHROPIC_API_KEY",
@@ -658,8 +672,6 @@ class Settings(BaseSettings):
             problems.append("auth.cookie_secure must be true")
         if "soc_dev_password" in self.database.url.get_secret_value():
             problems.append("database.url uses the development password")
-        if self.investigation.evidence_backend == "event_store":
-            problems.append("investigation.evidence_backend=event_store answers from synthetic telemetry: use indexer")
         if self.integrations.smtp_host and self.integrations.smtp_security == "none":
             problems.append("integrations.smtp_security=none sends mail and SMTP credentials in clear text")
         break_glass = self.break_glass_problem()

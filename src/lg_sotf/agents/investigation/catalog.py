@@ -25,7 +25,7 @@ from pydantic.fields import FieldInfo
 
 from lg_sotf.domain.skill_views import VIEWS, WAZUH, view_fields
 from lg_sotf.errors import LG_SOTFError
-from lg_sotf.models.skill import AllOf, AnyOf, Const, Not, Predicate, SkillSpec
+from lg_sotf.models.skill import AllOf, AnyOf, Const, Maybe, Not, Predicate, SkillSpec
 from lg_sotf.tools.registry import ToolNotFound, ToolRegistry
 
 __all__ = ["SKILLS_DIR", "SkillError", "check_catalog", "load_catalog", "load_skill"]
@@ -57,6 +57,9 @@ def load_skill(path: Path) -> SkillSpec:
 def load_catalog(directory: Path = SKILLS_DIR) -> Tuple[SkillSpec, ...]:
     """Every skill file of ``directory``, in file-name order."""
     return tuple(load_skill(path) for path in sorted(directory.glob("*.yaml")))
+
+
+OWN_EVENT_ARG, OWN_EVENT_BINDING = "exclude_rule_id", "view.rule_id"
 
 
 def _leaves(predicate: Predicate) -> List[str]:
@@ -98,7 +101,10 @@ def _problems(skill: SkillSpec, registry: ToolRegistry) -> List[str]:
         missing = sorted(name for name, field in fields.items() if field.is_required() and name not in ref.args)
         if unknown or missing:
             problems.append(f"{ref.id}: arguments not taken: {unknown or 'none'}; required and not given: {missing or 'none'}")
-        for name, arg in ref.args.items():
+        for name, given in ref.args.items():
+            arg = given.optional if isinstance(given, Maybe) else given
+            if isinstance(given, Maybe) and name in fields and fields[name].is_required():
+                problems.append(f"{ref.id}: {name} is required by {ref.tool_name}, so its binding cannot be optional")
             if isinstance(arg, str) and arg.startswith("view.") and arg.removeprefix("view.") not in bindable:
                 problems.append(f"{ref.id}: the view has no field {arg}")
             elif not isinstance(arg, str) and name in fields and not _fits(fields[name], arg):
@@ -107,10 +113,17 @@ def _problems(skill: SkillSpec, registry: ToolRegistry) -> List[str]:
         ref.tool_name == HOST_ACTIVITY_TOOL and ref.args.get("host") == "view.host" for ref in skill.evidence
     ):
         problems.append(f"a Wazuh skill runs {HOST_ACTIVITY_TOOL} on the alert's host (host: view.host)")
+    args = {ref.id: ref.args for ref in skill.evidence}
     for hypothesis in skill.hypotheses.malicious:
         for fact in _leaves(hypothesis.indicator):
             if HOST_ACTIVITY_KIND not in produces.get(fact, frozenset({HOST_ACTIVITY_KIND})):
                 problems.append(f"{hypothesis.id}: evidence {fact} holds no {HOST_ACTIVITY_KIND} fact")
+            # A true indicator holds a close, so what it reads never counts the alert under investigation.
+            elif fact in args and args[fact].get(OWN_EVENT_ARG) != Maybe(optional=OWN_EVENT_BINDING):
+                problems.append(
+                    f"{hypothesis.id}: evidence {fact} must leave the alert's own event out "
+                    f"({OWN_EVENT_ARG}: {{optional: {OWN_EVENT_BINDING}}})"
+                )
     return problems
 
 

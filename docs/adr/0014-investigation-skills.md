@@ -1247,13 +1247,26 @@ was built and why; nothing here changes a decision of this record.
   is the indexer client's (per source).
 * **Degrading (section 2.3).** The record said a run that cannot finish "finishes with a verdict on what
   it has and escalates". In this slice a run that does not finish, or returns no fact, gives today's
-  path with the reason recorded, and by itself neither closes nor escalates: the closing rule is not
-  touched until step 4 measures both rules (Amendment 2).
+  path with the reason recorded, and by itself neither closes nor escalates. (The closing rule does
+  read what a finished or unfinished run found: see the two rules pulled forward, below.)
 * **Claims (section 2.3).** A claim is `text`, `supports` (malicious or benign) and `cites`; `ref`,
   `hypothesis` and the narrative rendered from claims come with the checker. The free conclusion stays.
 * **Indicators.** `wazuh.default` declares two, over the host's activity. They are evaluated and
-  reported, not acted on, and the host's window includes the alert itself: the rule that blocks a close
-  (step 4) has to set the alert's own level and technique aside first.
+  reported, and (review of PR 443, below) a true one holds a model-led close.
+* **Two rules of Amendment 1 point 1 pulled forward (review of PR 443, 2026-11-26).** The independent
+  review showed that evidence could buy a close: on `corpus_v1` the stand-in model closed a T1110 attack
+  (`cv1-0351`) once it was shown its host's facts, and steering text typed as a user name reached the
+  deep model inside a fact that nothing scanned. So the closing rule (`lg_sotf.domain.closure`) reads
+  the investigation's record now, and only when an investigation ran: (a) a declared malicious
+  indicator that is true over the facts holds a model-led close (`evidence_indicator`; unknown does not
+  hold); (b) a benign verdict whose claims have a hard citation finding (`unknown_fact`, `altered_fact`,
+  `not_benign_evidence`) is held (`evidence_citation`; `incomplete_fact`, `no_citation` and `no_claims`
+  are recorded only); and steering text in a fact, found by the alert text's own scan, holds every
+  automatic close (`evidence_steering`). The host lookup leaves the alert's own event out
+  (`exclude_rule_id`, an optional binding), so an indicator is never true from the alert's own level
+  or technique; prevalence is taken as of the alert's time and is not asked for a common system binary
+  or interpreter. INV-03 says so. The full checker (#207) and the skills with benign proofs (#199)
+  stay in step 4.
 * **Amendment 2's additions for this story** (forced verification before finish, loop detection,
   two-pass calls for open-weight models) concern the planner loop, which this slice does not have.
 

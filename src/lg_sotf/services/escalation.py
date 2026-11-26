@@ -100,6 +100,10 @@ REASON_WEIGHTS: Dict[str, int] = {
     "response_review": 1,
     "group_review": 1,
     "false_positive_review": 0,
+    # The evidence of the alert's investigation held a model-led close (lg_sotf.domain.closure.evidence_holds).
+    "evidence_steering": 2,
+    "evidence_indicator": 2,
+    "evidence_citation": 1,
     # An analyst labelled an auto-closed alert malicious in a blind audit (lg_sotf.services.blind_audit).
     "blind_audit": 5,
 }

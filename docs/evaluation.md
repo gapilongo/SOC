@@ -1313,8 +1313,10 @@ or `LG_SOTF_INVESTIGATION__EVIDENCE_BACKEND=event_store` and
 `LG_SOTF_INVESTIGATION__EVENT_STORE_FILES='["...","..."]'`. The evaluation
 tenants turn the lookups on with the dataset's
 `_meta.tenant_settings.tools.wazuh_indexer: {enabled: true}`. `lg-sotf eval`
-and `lg-sotf worker` build the store; `event_store` is refused in staging
-and production.
+and `lg-sotf worker` build the store. `event_store` is an allow-list: the
+settings load only when `environment` is set, explicitly, to `development`
+or `test` (`LG_SOTF_ENVIRONMENT`, or `environment:` in the settings file).
+An install that does not say which environment it is does not start with it.
 
 The store answers as of the alert's own time, so an investigation never sees
 what happened after the alert. The alert must be one of the store's
@@ -1324,8 +1326,9 @@ that receives corpus alerts "now") gets the whole store moved by the same
 amount. An alert the store does not hold has no telemetry: its lookups fail
 with `no_telemetry`.
 
-**On a development stack.** Give the worker the two settings above, with the
-two corpus files readable at the paths named (mount
+**On a development stack.** Give the worker the two settings above and
+`LG_SOTF_ENVIRONMENT=development` (the shipped `docker/docker-compose.yml`
+sets it), with the two corpus files readable at the paths named (mount
 `tests/fixtures/eval` read-only into the worker), restart it (it prints
 `evidence backend: event store (811 synthetic documents), not the tenants'
 indexers`), and turn the lookups on for the tenant:
@@ -1341,46 +1344,72 @@ against the corpus telemetry, whatever time they are sent at.
 **Measured offline** (`tests/integration/eval/test_corpus_v1_investigation.py`;
 `LG_SOTF_CORPUS_INVESTIGATION_REPORT=path.json` runs all 520 items and writes
 the numbers). `corpus_v1` at the tier `auto_full_audit`, stand-in model,
-network blocked, 2026-11-15:
+network blocked, 2026-11-26 (after the review of PR 443):
 
 | | |
 |---|---|
 | Alerts investigated | 452 of 520. The other 68 are high or critical alerts with strong correlation: they go straight to a person without the deep analysis, where the lookups run |
-| Facts per alert | mean 1.73, median 2, least 1, most 3 |
-| Lookups | 813 made: 784 returned a fact, 29 found nothing, 0 failed. 995 skipped because the alert names no such value. 68 answers incomplete |
-| Budget used | lookups: mean 1.8, most 3 of 8. Time: mean 23 ms, most under 0.1 s of 60 s (an in-memory store; an indexer takes longer). Tokens and money: 0 |
-| Claims | 452, every cited id one the ledger minted. Findings: 33 `incomplete_fact`, 5 `not_benign_evidence` |
-| Indicators true | an alert of a never-close class on the host: 120. An alert of level 12 or higher: 67 |
+| Alone on their host | 271 of the 452: the host raised nothing else in the hour, so the host lookup is empty (the alert's own event is left out). 54 of them are of a never-close class or of level 12 or higher themselves, and would have shown a true indicator had the alert counted itself. None of the 271 shows one |
+| Facts per alert | mean 1.02, median 1, least 0, most 3 |
+| Lookups | 762 made: 462 returned a fact, 300 found nothing (271 are the empty host lookups above), 0 failed. 1,046 skipped: 995 because the alert names no such value, 51 because its program is one every host runs (`common_binary`). 41 answers incomplete |
+| Shown to the model | 292 investigations had at least one fact and used the cited prompt. 160 had none (`no_facts`) and used today's prompt |
+| Budget used | lookups: mean 1.7, most 3 of 8. Time: mean 36 ms, most 0.12 s of 60 s (an in-memory store; an indexer takes longer). Tokens and money: 0 |
+| Claims | 292, every cited id one the ledger minted. Findings: 55 `not_benign_evidence`, 21 `incomplete_fact` |
+| Indicators true | an alert of a never-close class on the host: 67. An alert of level 12 or higher: 56. No fact lists the alert's own event |
 
-**What closes is unchanged.** Three runs of the same alerts: today's path;
-the harness on; and the harness on with the stand-in model made blind to the
-evidence (it still cites the ids).
+**The evidence holds closes and buys none.** Three runs of the same alerts:
+today's path; the harness on; and the harness on with the stand-in model made
+blind to the evidence (it still cites the ids), so that its verdicts are
+today's.
 
 | Run | Benign closed | Attacks closed |
 |---|---|---|
 | Today's path | 100 | 58 |
-| Harness on, stand-in blind to the evidence | 100 | 58 |
-| Harness on, stand-in reads the evidence | 100 | 59 |
+| Harness on, stand-in blind to the evidence | 82 | 35 |
+| Harness on, stand-in reads the evidence | 82 | 35 |
+
+What held the closes, in the run where the stand-in reads the evidence (the
+decide code of each alert):
+
+| Blocker | Benign held | Attacks held | |
+|---|---|---|---|
+| `evidence_indicator` | 0 | 20 | `high_level_alert_on_host` true for all 20, `never_close_class_on_host` for 10 of them |
+| `evidence_citation` | 18 | 4 | every one is `not_benign_evidence`: a benign claim that cites a lookup that found nothing |
+| `evidence_steering` | 0 | 0 | the corpus holds no steering text in telemetry |
+
+With the verdicts held, 41 alerts end differently from today, and every one
+was a model-led close that an evidence blocker now sends to a person: 23
+attacks and 18 benign alerts. No alert closes that did not close before, in
+either run.
+
+- **The indicators cost no benign close** and hold 19 attacks (20 when the
+  stand-in reads the evidence, below).
+- **All 18 benign alerts are held by `evidence_citation`, and the cause is
+  the stand-in.** It cites every observation id it is shown, for a benign
+  claim too. Since an alert alone on its host now has an empty host lookup,
+  the stand-in cites "nothing found" as benign evidence, which the rule
+  refuses. The cited prompt tells a model that an empty or failed observation
+  shows that something is not known; whether a real model follows that is
+  the first thing a real-model run has to measure. Had the stand-in not
+  cited empty lookups, these 22 alerts (18 benign, 4 attacks) would have
+  closed as they do today: 100 benign and 39 attacks. That figure is derived
+  from the run, not measured.
+- **`cv1-0351`** is the attack the evidence bought a close for before the
+  review: the stand-in reads the words `update` and `test` in the host's
+  facts and its verdict moves from `inconclusive` to `benign`. It no longer
+  closes: two level-15 alerts on the same host in the hour make
+  `high_level_alert_on_host` true, and the decision is `evidence_indicator`.
+  Three verdicts moved with the evidence (`cv1-0345`, `cv1-0351`,
+  `cv1-0392`); all three alerts are held by an indicator.
 
 The store receives an event at its own time, so a window that ends at the
 alert is closed and most facts here are complete. A production Wazuh source
 allows 15 minutes for late events by default (`max_event_lag_s`), so the
-lookups of an alert analysed within that time say `complete: false`: the 68
-incomplete answers and 33 `incomplete_fact` findings above understate what a
-live indexer will show.
-
-With the verdicts held, every one of the 520 alerts ends exactly where it
-ends today, with the same verdict and score: the harness changes no routing.
-The third row differs by one alert, `cv1-0351`, and the cause is the
-stand-in, not the closing rule. The stand-in is a keyword scorer over
-everything untrusted it is shown. The host's activity for that alert lists a
-`certutil` download of `update.exe` from a `.test` host, and it scores the
-words `update` and `test` as benign, so its verdict moved from
-`inconclusive` to `benign` and policy v3 closed it. (To a real model that
-fact is evidence of the attack.) Three verdicts moved this way; one changed
-an outcome. These numbers say nothing about a real model: the first
-measurement of `inconclusive` with evidence is a real-model run, which needs
-new cassettes recorded with the harness on.
+lookups of an alert analysed within that time say `complete: false`: an
+indicator that is not shown is then `unknown`, not `false` (neither holds a
+close), and the 41 incomplete answers and 21 `incomplete_fact` findings
+above understate what a live indexer will show. These numbers say nothing
+about a real model: that needs new cassettes recorded with the harness on.
 
 ## AIT-ADS
 

@@ -88,13 +88,17 @@ describe('deadlines', () => {
 
 describe('why a row needs a person', () => {
   it('maps every routing code to plain words in one table', () => {
-    for (const code of ['grey_zone', 'false_positive_review', 'inconclusive', 'model_refused', 'llm_normalized', 'analyst_request', 'response_review', 'group_review', 'blind_audit', 'high_risk']) {
+    for (const code of ['grey_zone', 'false_positive_review', 'inconclusive', 'model_refused', 'llm_normalized', 'analyst_request', 'response_review', 'group_review', 'blind_audit', 'high_risk', 'evidence_indicator', 'evidence_citation', 'evidence_steering']) {
       expect(routingWhy({ code }), code).toMatch(/^[A-Z].*\.$/);
     }
     expect(routingWhy({ code: 'grey_zone' })).toBe('Not proven either way: the assessed threat is in the grey zone.');
     expect(routingWhy({ code: 'new_code' })).toBe('Needs a person: new code.');
     expect(routingWhy(null)).toBeNull();
     expect(routingLabel('high_risk')).toBe('High risk');
+    // The evidence of the AI's own lookups held its close (AI-E3.3): a known reason, never a humanized code.
+    expect(routingWhy({ code: 'evidence_indicator' })).toBe('The AI judged it benign, but the facts it looked up show a sign of an attack.');
+    expect(routingWhy({ code: 'evidence_citation' })).toBe('The AI judged it benign, but the facts it cited for that do not hold.');
+    expect(routingLabel('evidence_steering')).toBe('Steering text in the evidence');
   });
 
   it('puts the reason first, then what the analysis concluded', () => {

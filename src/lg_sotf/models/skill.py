@@ -64,7 +64,14 @@ class Const(_Strict):
     const: Annotated[str, Field(pattern=r"^[a-z][a-z0-9_]{0,31}$")]
 
 
-ArgValue = Union[Binding, StrictInt, Const]
+class Maybe(_Strict):
+    """A binding the query can do without: when the alert has no value for it, the argument is left out and
+    the query still runs (``exclude_rule_id: {optional: view.rule_id}``)."""
+
+    optional: Binding
+
+
+ArgValue = Union[Binding, StrictInt, Const, Maybe]
 
 
 class EvidenceRef(_Strict):

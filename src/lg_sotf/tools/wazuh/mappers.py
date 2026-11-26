@@ -216,17 +216,45 @@ def _host_event(doc: Mapping[str, Any], path: str, notes: List[Redaction]) -> Op
     )
 
 
-def host_activity(answer: Answer, start: datetime, end: datetime) -> Optional[Mapped[HostActivityValue]]:
-    """``None`` when the host raised nothing in the window."""
+def _less(rows: List[Tuple[str, int]], own: Mapping[str, int]) -> List[Tuple[str, int]]:
+    """``rows`` with the alert's own counts taken out; a value only the alert's own event had is gone."""
+    left = [(key, n - own.get(key, 0)) for key, n in rows]
+    return [(key, n) for key, n in left if n > 0]
+
+
+def _own_event(doc: Mapping[str, Any], own: Answer) -> bool:
+    """Whether a listed event is the alert's own: the same rule at the same instant as one of ``own``'s."""
+    mine = {(first(doc_, dsl.RULE_ID), when(first(doc_, dsl.TIME))) for doc_ in own.hits}
+    return (first(doc, dsl.RULE_ID), when(first(doc, dsl.TIME))) in mine
+
+
+def host_activity(
+    answer: Answer, start: datetime, end: datetime, own: Optional[Answer] = None
+) -> Optional[Mapped[HostActivityValue]]:
+    """``None`` when the host raised nothing in the window.
+
+    ``own`` is the search for the investigated alert's own event (and its exact duplicates) with the same
+    aggregations: its counts are taken out of every number, group and technique, its events are not listed,
+    and the highest level is the highest of what is left. An alert alone on its host shows nothing.
+    """
     total = count(answer.aggs, "total")
     groups, all_groups = buckets(answer.aggs, "groups")
-    techniques, all_techniques = _keys(answer.aggs, "techniques")
+    technique_rows, all_techniques = buckets(answer.aggs, "techniques")
     level = _number(answer.aggs, "max_level")
-    if not total and not answer.hits:
+    hits = answer.hits
+    if own is not None and count(own.aggs, "total") > 0:
+        total = max(0, total - count(own.aggs, "total"))
+        groups = _less(groups, dict(buckets(own.aggs, "groups")[0]))
+        technique_rows = _less(technique_rows, dict(buckets(own.aggs, "techniques")[0]))
+        hits = tuple(doc for doc in hits if not _own_event(doc, own))
+        levels = [n for n in (_level(doc) for doc in hits) if n is not None]
+        level = max(levels) if levels else level if total else None  # the others' highest is among the listed
+    techniques = [key for key, _ in sorted(technique_rows, key=lambda row: -row[1])]  # stable: the index order on a tie
+    if not total and not hits:
         return None
     notes: List[Redaction] = []
     events: List[HostEvent] = []
-    for doc in answer.hits[:MAX_LIST_ITEMS]:
+    for doc in hits[:MAX_LIST_ITEMS]:
         event = _host_event(doc, f"/value/events/{len(events)}", notes)
         if event is not None:
             events.append(event)

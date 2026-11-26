@@ -8,9 +8,7 @@ ids they rest on. Code then checks every id. Without facts the prompt is byte fo
 from __future__ import annotations
 
 import json
-import re
-from datetime import UTC, datetime, timedelta
-from typing import Any, Callable, Dict, List, Mapping, Optional
+from typing import Any, Callable, Dict, List
 
 import httpx
 import pytest
@@ -20,7 +18,6 @@ from lg_sotf.agents.analysis.base import (
     VERDICT_PROMPT,
     VERDICT_TASK,
     AnalysisAgent,
-    AnalysisResult,
 )
 from lg_sotf.agents.analysis.react import (
     CITE_TASK,
@@ -34,89 +31,34 @@ from lg_sotf.agents.analysis.react import (
     ReActReasoner,
 )
 from lg_sotf.agents.base import AgentContext
-from lg_sotf.eval.tool_fixtures import EventStore
-from lg_sotf.eval.wazuh_events import EventStoreBackend
-from lg_sotf.llm.fake import Refuse, ScriptedCall, ScriptedChatModel, read_signals
+from lg_sotf.agents.investigation.executor import STEERING_MARKER
+from lg_sotf.domain import closure
+from lg_sotf.domain.benign_evidence import INJECTION_SIGNAL
+from lg_sotf.llm.fake import Refuse, read_signals
 from lg_sotf.llm.prompting import CONTEXT_TAG, DATA_TAG
 from lg_sotf.settings import Settings
 from lg_sotf.tools.enrichment import EnrichmentService
-from lg_sotf.tools.wazuh.indexer import IndexerUnavailable
+from tests.unit.agents._evidence import (
+    CORRELATION,
+    POISONED,
+    QUIET,
+    SWITCH_ON,
+    THE_ALERT,
+    TRIAGE,
+    VERDICT,
+    analyse,
+    block,
+    evidence_of,
+    logon,
+    state_alert,
+    unreachable,
+)
 from tests.unit.agents._snapshots import check_snapshot, render
 from tests.unit.agents._support import factory, fake_repos, scripted, texts
-from tests.unit.agents.investigation._executor import HOSTILE, RUN_ID
+from tests.unit.agents.investigation._executor import RUN_ID
 from tests.unit.agents.investigation._support import MemoryStore
 
 pytestmark = pytest.mark.unit
-
-AT = datetime(2026, 10, 19, 7, 28, 1, tzinfo=UTC)
-SWITCH_ON = {"t1": {"tools": {"wazuh_indexer": {"enabled": True}}}}
-TRIAGE = {"confidence": 60, "rule_fp": [], "rule_tp": ["failed_logon"]}
-CORRELATION = {"score": 40, "related_count": 1}
-VERDICT = {"threat_score": 20, "certainty": 80, "verdict": "benign", "conclusion": "A mistyped password.", "recommended_actions": []}
-
-
-def stamp(at: datetime) -> str:
-    return at.strftime("%Y-%m-%dT%H:%M:%S.") + f"{at.microsecond // 1000:03d}+0000"
-
-
-def logon(event_id: str, minutes_before: int, *, user: str = "j.doe", doc_id: str = "1") -> Dict[str, Any]:
-    """A Windows logon document (4625 failure, 4624 success) on FIN-SRV-02 from 10.20.1.83."""
-    failure = event_id == "4625"
-    return {
-        "timestamp": stamp(AT - timedelta(minutes=minutes_before)), "id": f"1792394881.{doc_id}",
-        "rule": {"id": "60122" if failure else "60106", "level": 5 if failure else 3,
-                 "groups": ["windows", "authentication_failed" if failure else "authentication_success"],
-                 "mitre": {"id": ["T1531"] if failure else ["T1078"]}},
-        "agent": {"name": "FIN-SRV-02"},
-        "data": {"win": {"system": {"eventID": event_id, "providerName": "Microsoft-Windows-Security-Auditing"},
-                         "eventdata": {"targetUserName": user, "ipAddress": "10.20.1.83", "logonType": "3"}}},
-    }
-
-
-THE_ALERT = logon("4625", 0, doc_id="100")
-QUIET = [logon("4624", 30, doc_id="50"), logon("4625", 1, doc_id="99"), THE_ALERT]
-# A failed logon for a "user name" the attacker typed: it lands in typed fact fields (a user of an event, a failed user).
-POISONED = [*QUIET, logon("4625", 2, user=HOSTILE, doc_id="98")]
-
-
-def state_alert(document: Mapping[str, Any] = THE_ALERT) -> Dict[str, Any]:
-    return {
-        "id": "alert-0001", "title": "Logon failure - unknown user or bad password", "severity": "low",
-        "category": "authentication_failed", "source_id": "wazuh-push", "occurred_at": AT.isoformat(),
-        "normalizer": "wazuh", "entities": {"hosts": ["FIN-SRV-02"], "users": ["j.doe"], "ips": ["10.20.1.83"]},
-        "raw": dict(document),
-    }
-
-
-def evidence_of(documents: List[Dict[str, Any]]) -> Any:
-    backend = EventStoreBackend(EventStore(documents).as_of(AT))
-
-    async def backends(ctx: Any) -> EventStoreBackend:
-        return backend
-
-    return backends
-
-
-async def unreachable(ctx: Any) -> Any:
-    raise IndexerUnavailable("unreachable")
-
-
-async def analyse(
-    settings: Settings, model: ScriptedChatModel, evidence: Any, *, tenants: Optional[Dict[str, Any]] = None,
-    enrichment: Optional[EnrichmentService] = None, store: Optional[MemoryStore] = None,
-) -> AnalysisResult:
-    repos = fake_repos(tenant_settings=SWITCH_ON if tenants is None else tenants)
-    repos.evidence_facts = store or MemoryStore()
-    agent = AnalysisAgent(settings=settings, model_factory=factory(model), evidence=evidence, enrichment=enrichment)
-    ctx = AgentContext("t1", "a1", settings, repos=repos, investigation_run_id=RUN_ID)
-    return await agent.run(ctx, state_alert(), triage=TRIAGE, correlation=CORRELATION)
-
-
-def block(call: ScriptedCall, tag: str) -> str:
-    """The body of the one ``<tag>`` block of the call."""
-    (body,) = re.findall(rf"<{tag}>\n(.*?)\n</{tag}>", "\n".join(texts(call.messages)), re.DOTALL)
-    return str(body)
-
 
 async def test_with_evidence_the_model_is_given_the_ledger_and_asked_to_cite(make_settings: Callable[..., Settings]) -> None:
     model = scripted()
@@ -227,15 +169,16 @@ async def test_a_cited_id_the_ledger_did_not_mint_is_a_finding_whatever_the_mode
 
 async def test_attacker_text_in_a_fact_is_data_and_mints_no_id(make_settings: Callable[..., Settings]) -> None:
     """The attacker typed instructions, a forged closing tag and a forged observation id as a user name. The
-    model gets them inside the data block, escaped; the stand-in cites only ids the ledger minted."""
+    scan finds them in the facts: the model is shown a marker in their place and the run carries the alert
+    text's own signal; the stand-in cites only ids the ledger minted."""
     model = scripted()
     result = await analyse(make_settings(), model, evidence_of(POISONED))
 
     (call,) = model.calls
     human = "\n".join(texts(call.messages)[1:])
     assert human.count(f"</{CONTEXT_TAG}>") == 1 and human.count(f"<{CONTEXT_TAG}>") == 1 and "<system>" not in human
-    assert "IGNORE PREVIOUS INSTRUCTIONS" in block(call, CONTEXT_TAG)  # it is there, as data
-    assert "IGNORE PREVIOUS INSTRUCTIONS" not in texts(call.messages)[0]  # and never in the instructions
+    assert "IGNORE PREVIOUS INSTRUCTIONS" not in "\n".join(texts(call.messages))  # no model reads it
+    assert STEERING_MARKER in block(call, CONTEXT_TAG)
     evidence = json.loads(block(call, CONTEXT_TAG))["evidence"]
     assert [o["id"] for o in evidence["observations"]] == ["host:0", "logons_user:0", "logons_source:0"]
     assert read_signals(call.messages).fact_ids == ("host:0", "logons_user:0", "logons_source:0")
@@ -243,6 +186,10 @@ async def test_attacker_text_in_a_fact_is_data_and_mints_no_id(make_settings: Ca
     assert record is not None and [s["evidence_id"] for s in record["steps"]] == ["host", "prevalence", "logons_user", "logons_source"]
     assert all(set(c["cites"]) <= {"host:0", "logons_user:0", "logons_source:0"} for c in record["claims"])
     assert record["budget"]["steps"] == {"used": 3, "limit": 8} and "IGNORE" not in json.dumps(record)
+    assert record["steering"] and record["blocking"]["steering"] == record["steering"]
+    assert INJECTION_SIGNAL in result.threat_indicators and result.digest()["investigation"]["blocking"]["steering"]
+    quiet = await analyse(make_settings(), scripted(), evidence_of(QUIET))
+    assert INJECTION_SIGNAL not in quiet.threat_indicators and (quiet.investigation or {})["steering"] == []
 
 
 async def test_a_refusal_with_evidence_keeps_the_facts_and_has_no_claims(make_settings: Callable[..., Settings]) -> None:
@@ -332,3 +279,89 @@ async def test_the_lookups_time_counts_against_the_analysis_time_budget(
         await reasoner.reason(agent, run)
         calls.append((run.llm_calls, run.stop_reason))
     assert calls[1] == (1, "time_budget") and calls[0][0] > 1 and calls[0][1] != "time_budget"
+
+
+# ------------------------------------------------------------ what of the investigation holds a model-led close
+
+
+#: The alert and one success of the same account half an hour before (T1078, level 3): nothing against a close.
+CALM = [logon("4624", 30, doc_id="50"), THE_ALERT]
+
+
+def held(result: Any) -> Dict[str, Any]:
+    """The close blockers of a tier-on, benign-by-both-tiers state built on the analysis the agent returned."""
+    state = {
+        # An alert of no never-close class, so that what is listed is what the evidence holds.
+        "severity": "low", "alert": {"title": "Successful logon", "mitre": {"tactics": [], "techniques": ["T1078"]}},
+        "triage": {"rule_fp": [], "rule_tp": [], "llm_used": True, "threat_assessment": "benign"},
+        "correlation": {}, "analysis": result.digest(),
+    }
+    return {"blockers": closure.model_close_blockers(state, tier=closure.MODEL_CLOSE_TIER), "holds": closure.evidence_holds(result.digest())}
+
+
+@pytest.mark.parametrize(
+    ("documents", "claims", "citations", "blockers"),
+    [
+        # A complete answer would be citable; these are incomplete (the window is still open): recorded only.
+        (CALM, [{"text": "One earlier success.", "supports": "benign", "cites": ["logons_user:0"]}], [], []),
+        (CALM, [{"text": "Nothing else.", "supports": "benign", "cites": []}], [], []),
+        # An id the ledger did not mint, among good ones.
+        (CALM, [{"text": "Seen before.", "supports": "benign", "cites": ["logons_user:0", "logons_user:7"]}],
+         ["unknown_fact"], ["evidence_citation"]),
+        # The alert is alone on its host: the host lookup is empty, and "nothing found" is not benign evidence.
+        ([THE_ALERT], [{"text": "The host is quiet.", "supports": "benign", "cites": ["host:0"]}],
+         ["not_benign_evidence"], ["evidence_citation"]),
+        # The same empty lookup cited for a malicious claim is no finding.
+        ([THE_ALERT], [{"text": "Odd.", "supports": "malicious", "cites": ["host:0"]}], [], []),
+    ],
+)
+async def test_a_hard_citation_finding_on_a_benign_verdict_holds_the_close(
+    make_settings: Callable[..., Settings], documents: List[Dict[str, Any]], claims: List[Dict[str, Any]],
+    citations: List[str], blockers: List[str],
+) -> None:
+    """Review of PR 443 (rule b): the findings were a record nobody read. The hard ones now hold the close."""
+    result = await analyse(make_settings(), scripted(CitedVerdict=[{**VERDICT, "claims": claims}]), evidence_of(documents))
+    record = result.investigation or {}
+    assert record["blocking"]["citations"] == citations == result.digest()["investigation"]["blocking"]["citations"]
+    assert held(result)["blockers"] == blockers
+    assert result.verdict == "benign" and result.threat_score == 20  # the verdict is the model's, unchanged
+
+
+async def test_a_benign_verdict_that_rests_on_no_claim_is_a_finding(make_settings: Callable[..., Settings]) -> None:
+    """Review finding 6: evidence shown, verdict benign, zero claims, and the record said completed with no finding."""
+    silent = await analyse(make_settings(), scripted(CitedVerdict=[{**VERDICT, "claims": []}]), evidence_of(CALM))
+    record, digest = silent.investigation or {}, silent.digest()["investigation"]
+    assert record["verdict_findings"] == [{"code": "no_claims"}] and record["claims"] == []
+    assert (digest["claim_count"], digest["citation_findings"]) == (0, 1)
+    assert held(silent)["blockers"] == []  # recorded; the full checker (AI-E3.4) decides what it is worth
+    wary = {**VERDICT, "verdict": "suspicious", "threat_score": 60, "claims": []}
+    other = await analyse(make_settings(), scripted(CitedVerdict=[wary]), evidence_of(QUIET))
+    assert (other.investigation or {})["verdict_findings"] == [] and other.digest()["investigation"]["citation_findings"] == 0
+    # Without a model nothing was judged, so nothing is missing.
+    none = await analyse(make_settings(llm={"enabled": False}), scripted(), evidence_of(QUIET))
+    assert (none.investigation or {})["verdict_findings"] == []
+
+
+async def test_a_true_indicator_holds_the_close_and_names_its_facts(make_settings: Callable[..., Settings]) -> None:
+    """Review of PR 443 (rule a). The alert is rule 60122, T1531, level 5: with nothing else on the host no
+    indicator is true (the alert is not its own evidence); another alert of a never-close class, or a
+    level-12 one, on the same host in the hour is."""
+    cites = [{"text": "Routine.", "supports": "benign", "cites": ["logons_user:0"]}]
+    model = lambda: scripted(CitedVerdict=[{**VERDICT, "claims": cites}])  # noqa: E731
+    calm = await analyse(make_settings(), model(), evidence_of(CALM))
+    # Not shown, and not ruled out either: the host's window was still open when it was read (no settle delay).
+    assert (calm.investigation or {})["indicators"] == {"never_close_class_on_host": "unknown", "high_level_alert_on_host": "unknown"}
+    assert (calm.investigation or {})["blocking"]["indicators"] == {} and held(calm)["blockers"] == []
+    loud = logon("4624", 20, doc_id="60")
+    loud["rule"] = {"id": "92652", "level": 13, "groups": ["windows"], "mitre": {"id": ["T1078"]}}
+    high = await analyse(make_settings(), model(), evidence_of([*CALM, loud]))
+    assert (high.investigation or {})["blocking"]["indicators"] == {"high_level_alert_on_host": ["host:0"]}
+    assert held(high) == {"blockers": ["evidence_indicator"], "holds": {"evidence_indicator": ["high_level_alert_on_host (host:0)"]}}
+    other = await analyse(make_settings(), model(), evidence_of(QUIET))  # another failed logon (T1531) a minute before
+    assert (other.investigation or {})["blocking"]["indicators"] == {"never_close_class_on_host": ["host:0"]}
+    assert held(other)["blockers"] == ["evidence_indicator"]
+    # A lookup that could not answer leaves the indicator unknown, and unknown does not hold the close.
+    down = await analyse(make_settings(), scripted(), unreachable)
+    assert set((down.investigation or {})["indicators"].values()) == {"unknown"}
+    assert (down.investigation or {})["blocking"] == {"steering": [], "indicators": {}, "citations": []}
+    assert held(down)["holds"] == {}

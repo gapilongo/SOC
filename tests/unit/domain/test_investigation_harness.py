@@ -35,7 +35,8 @@ def run_record(reason: Optional[str] = None, **changes: Any) -> Dict[str, Any]:
                 "tokens": {"used": 0, "limit": 20_000}, "usd": {"used": 0.0, "limit": 0.25}},
         indicators={"never_close_class_on_host": "false", "high_level_alert_on_host": "unknown"}, facts=1, reason=reason,
     )
-    return {**run.record(), "claims": [], **changes}
+    quiet = {"steering": [], "indicators": {}, "citations": []}
+    return {**run.record(), "claims": [], "verdict_findings": [], "blocking": quiet, **changes}
 
 
 def claim(text: str, cites: List[str], supports: str = "benign", findings: Optional[List[Dict[str, str]]] = None) -> Dict[str, Any]:
@@ -217,3 +218,49 @@ def test_a_number_too_large_for_a_float_is_no_budget_and_the_cut_is_shown() -> N
     run = view(analysed(record)).evidence_run
     assert [(b.kind, b.used) for b in run.budgets] == [("tokens", 3)] and run.evidence_truncated is True
     assert view(analysed(run_record())).evidence_run.evidence_truncated is False
+
+
+# ---------------------------------------------------------------- what of the evidence holds a model-led close
+
+TRIAGED = {"rule_fp": [], "rule_tp": [], "llm_used": True, "threat_assessment": "benign", "confidence": 20}
+
+
+def test_the_view_shows_what_of_the_evidence_holds_the_close() -> None:
+    """Review of PR 443: the two blockers and the steering scan are shown where an analyst reads the lookups,
+    by the closing rule's own reading of the stored record."""
+    quiet = view(analysed(run_record())).evidence_run
+    assert quiet.holds_close == [] and quiet.steering_observation_ids == [] and quiet.benign_without_claims is False
+    assert [(i.holds_close, i.observation_ids) for i in quiet.indicators] == [(False, []), (False, [])]
+    held = run_record(
+        indicators={"never_close_class_on_host": "true", "high_level_alert_on_host": "unknown"}, steering=["logons_user:0"],
+        verdict_findings=[{"code": "no_claims"}],
+        blocking={"steering": ["logons_user:0"], "indicators": {"never_close_class_on_host": ["host:0"]}, "citations": ["unknown_fact"]},
+    )
+    summary = {**analysed(held), "triage": TRIAGED}
+    shown = view(summary)
+    run = shown.evidence_run
+    assert [(r.code, r.sentence) for r in run.holds_close] == [
+        (code, words.BLOCKER_SENTENCES[code]) for code in ("evidence_steering", "evidence_indicator", "evidence_citation")]
+    assert [(i.id, i.state, i.holds_close, i.observation_ids) for i in run.indicators] == [
+        ("never_close_class_on_host", "true", True, ["host:0"]), ("high_level_alert_on_host", "unknown", False, [])]
+    assert run.steering_observation_ids == ["logons_user:0"] and run.benign_without_claims is True
+    # And among the reasons the AI may not close the alert on its own, beside the policy's other blockers.
+    codes = [b.code for b in shown.outcome.blockers]
+    assert codes[-3:] == ["evidence_steering", "evidence_indicator", "evidence_citation"] and "tier_off" in codes
+    assert all(b.sentence == words.BLOCKER_SENTENCES[b.code] for b in shown.outcome.blockers)
+
+
+def test_a_stored_record_is_data_when_it_says_what_holds_the_close() -> None:
+    hostile = run_record(
+        steering=["x" * 5_000, 7, None, {"a": 1}] + [f"host:{n}" for n in range(500)], verdict_findings="no_claims",
+        blocking={"steering": "all", "indicators": {"i" * 5_000: ["f" * 5_000] * 500, 3: ["host:0"]}, "citations": [{"code": "x"}]},
+    )
+    run = view(analysed(hostile)).evidence_run
+    assert len(run.steering_observation_ids) <= 32 and all(len(i) <= 128 for i in run.steering_observation_ids)
+    assert run.benign_without_claims is False and [r.code for r in run.holds_close] == ["evidence_indicator"]
+    assert all(len(i.observation_ids) <= 32 for i in run.indicators) and len(run.model_dump_json()) < 40_000
+    # A record that does not say what it holds (written by nothing this release knows): the rule fails closed, and
+    # the view says the same thing the decision did.
+    old = {key: value for key, value in run_record().items() if key != "blocking"}
+    assert [r.code for r in view(analysed(old)).evidence_run.holds_close] == ["evidence_indicator"]
+    assert view({"analysis": {"verdict": "benign"}}).evidence_run.holds_close == []  # no investigation, nothing held

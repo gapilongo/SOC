@@ -130,5 +130,9 @@ def test_the_backend_is_named_by_the_settings_and_never_guessed(make_settings: C
         evidence_backends(offline, None, None)
     with pytest.raises(OSError):
         telemetry_backends(make_settings(investigation={**store, "event_store_files": ["/nonexistent/corpus.jsonl.gz"]}))
+    with pytest.raises(ValueError, match="set explicitly"):  # refused when the settings load
+        make_settings(environment="staging", investigation=store)
+    # And the loader refuses on its own a settings object that was not validated (built around the check).
+    unsaid = offline.model_copy(update={"environment": "staging"})
     with pytest.raises(ValueError, match="evaluation and development only"):
-        telemetry_backends(make_settings(environment="staging", investigation=store))
+        telemetry_backends(unsaid)

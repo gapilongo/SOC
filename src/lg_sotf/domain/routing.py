@@ -45,7 +45,7 @@ Safety rules enforced here (contract section 8):
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal, Mapping, Optional, Tuple, cast
+from typing import TYPE_CHECKING, Any, List, Literal, Mapping, Optional, Tuple, cast
 
 from pydantic import BaseModel, ConfigDict
 
@@ -239,6 +239,9 @@ def decide(state: Mapping[str, Any], t: RoutingThresholds, tier: str = "off") ->
     model = _model_close(state, tier)
     if model is not None:
         return model
+    held = _held_by_evidence(state, tier)
+    if held is not None:
+        return held
     if grey:
         return Decision("escalate", "assessment in the grey zone", None, "grey_zone")
     if low is not None:
@@ -258,6 +261,33 @@ def _model_close(state: Mapping[str, Any], tier: str) -> Optional[Decision]:
     return Decision("close", reason, "benign", closure.MODEL_CLOSED)
 
 
+def _evidence_holds(state: Mapping[str, Any]) -> Mapping[str, List[str]]:
+    analysis = state.get("analysis")
+    return closure.evidence_holds(analysis if isinstance(analysis, Mapping) else {})
+
+
+def _steering_in_evidence(state: Mapping[str, Any]) -> Decision:
+    facts = ", ".join(_evidence_holds(state).get(closure.EVIDENCE_STEERING, []))
+    return Decision("escalate", f"steering text in the evidence ({facts})", None, "evidence_steering")
+
+
+def _held_by_evidence(state: Mapping[str, Any], tier: str) -> Optional[Decision]:
+    """The models would have closed the alert and only the evidence of its investigation holds it
+    (:func:`closure.evidence_holds`, ADR 0014 Amendment 1 point 1): a person decides, and the reason names what
+    the evidence holds. ``None`` when anything else blocks the close too (the alert then routes as it always did)."""
+    blockers = closure.model_close_blockers(state, tier=tier)
+    if not blockers or any(name not in closure.EVIDENCE_BLOCKERS for name in blockers):
+        return None
+    held = _evidence_holds(state)
+    if closure.EVIDENCE_STEERING in held:
+        return _steering_in_evidence(state)
+    if closure.EVIDENCE_INDICATOR in held:
+        named = "; ".join(held[closure.EVIDENCE_INDICATOR])
+        return Decision("escalate", f"a malicious indicator is true over the evidence: {named}", None, "evidence_indicator")
+    findings = ", ".join(held.get(closure.EVIDENCE_CITATION, []))
+    return Decision("escalate", f"the benign verdict's citations do not hold: {findings}", None, "evidence_citation")
+
+
 def _low_threat(state: Mapping[str, Any], triage: Mapping[str, Any], verdict: Optional[str]) -> Decision:
     """A low threat: close on approved benign evidence, else an analyst (the model-led close is tried after)."""
     if _is_high(state):
@@ -270,6 +300,8 @@ def _low_threat(state: Mapping[str, Any], triage: Mapping[str, Any], verdict: Op
         return Decision("escalate", "low threat score without a benign verdict", None, "false_positive_review")
     if benign_evidence(triage):
         overruled = closure.evidence_close_blockers(state)
+        if overruled == [closure.EVIDENCE_STEERING]:  # only the facts of the investigation hold it: say so
+            return _steering_in_evidence(state)
         if overruled:
             reason = f"approved benign evidence overruled by {', '.join(overruled)}"
             return Decision("escalate", reason, None, "false_positive_review")

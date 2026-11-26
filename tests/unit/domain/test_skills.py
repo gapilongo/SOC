@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 from datetime import UTC, datetime
 from typing import Any, Dict, List, Mapping, Optional
 
@@ -9,10 +10,17 @@ import pytest
 
 from lg_sotf.agents.investigation.catalog import load_catalog
 from lg_sotf.domain.ledger import LedgerEntry, ToolStep, build_entries
-from lg_sotf.domain.skill_views import VIEWS, WazuhAlertView, view_fields, wazuh_alert_view
-from lg_sotf.domain.skills import bind, evaluate, indicator_states, select_skill
+from lg_sotf.domain.skill_views import (
+    COMMON_BINARY,
+    VIEWS,
+    WazuhAlertView,
+    common_binary,
+    view_fields,
+    wazuh_alert_view,
+)
+from lg_sotf.domain.skills import bind, evaluate, indicator_states, select_skill, true_indicators, unbound_reason
 from lg_sotf.models.evidence_fact import parse_fact
-from lg_sotf.models.skill import AllOf, AnyGroupIn, AnyOf, AnyTechniqueIn, Const, MaxLevelGe, Not
+from lg_sotf.models.skill import AllOf, AnyGroupIn, AnyOf, AnyTechniqueIn, Const, MaxLevelGe, Maybe, Not
 from tests.unit.tools.wazuh._support import corpus
 
 pytestmark = pytest.mark.unit
@@ -69,8 +77,11 @@ def test_only_an_alert_the_wazuh_normalizer_built_has_a_view() -> None:
         ({"agent": {"name": "web-01"}, "syscheck": {"sha256_after": "not-a-hash"}}, WazuhAlertView(host="web-01")),
         ({"agent": {"name": "WS-7"}, "data": {"win": {"eventdata": {"imagePath": "C:\\\\Windows\\\\PSEXESVC.exe", "image": "x"}}}},
          WazuhAlertView(host="WS-7", logon_family="windows", object_kind="service_image_path", object_value="C:\\Windows\\PSEXESVC.exe")),
-        ({"agent": {"name": "WS-7"}, "data": {"win": {"eventdata": {"image": "C:\\\\Windows\\\\System32\\\\whoami.exe"}}}},
-         WazuhAlertView(host="WS-7", logon_family="windows", object_kind="process_image", object_value="C:\\Windows\\System32\\whoami.exe")),
+        ({"agent": {"name": "WS-7"}, "data": {"win": {"eventdata": {"image": "C:\\\\Users\\\\Public\\\\loader.exe"}}}},
+         WazuhAlertView(host="WS-7", logon_family="windows", object_kind="process_image", object_value="C:\\Users\\Public\\loader.exe")),
+        ({"agent": {"name": "WS-7"}, "rule": {"id": "92018"}}, WazuhAlertView(host="WS-7", rule_id="92018")),
+        ({"agent": {"name": "WS-7"}, "rule": {"id": "9 or 1=1"}}, WazuhAlertView(host="WS-7")),
+        ({"agent": {"name": "WS-7"}, "rule": {"id": 92018}}, WazuhAlertView(host="WS-7")),
         ({"_omitted": "raw event too large for workflow state", "rule": {"id": "1"}}, WazuhAlertView()),
         # A value ingestion changed (a masked secret, a cut string) is not what the index holds: no lookup of it.
         ({"agent": {"name": "WS-7"}, "data": {"win": {"eventdata": {"imagePath": "C:\\\\svc.exe -password=[REDACTED]"}}}},
@@ -86,10 +97,40 @@ def test_a_field_that_does_not_parse_is_none(document: Dict[str, Any], expected:
     assert wazuh_alert_view(alert(document)) == expected
 
 
+WITHHELD = (("object_kind", COMMON_BINARY), ("object_value", COMMON_BINARY))
+
+
+@pytest.mark.parametrize(
+    "image, common",
+    [
+        ("C:\\Windows\\System32\\whoami.exe", True), ("C:\\Windows\\SysWOW64\\x.exe", True), ("C:\\Windows\\explorer.exe", True),
+        ("C:\\Program Files\\PowerShell\\7\\pwsh.exe", True), ("D:\\tools\\PowerShell.EXE", True), ("/usr/bin/scp", True),
+        ("/sbin/iptables", True), ("/opt/app/venv/bin/python3", True), ("certutil.exe", True),
+        # Not the system's own: a writable place under the Windows directory, a look-alike directory, a user's file.
+        ("C:\\Windows\\Temp\\x.exe", False), ("C:\\Windows\\Tasks\\a\\svchost.exe", False),
+        ("C:\\Users\\Public\\Windows\\System32\\x.exe", False), ("C:\\Users\\Public\\loader.exe", False),
+        ("/home/u/usr/bin/tool", False), ("/usr/local/bin/tool", False), ("\\\\fileserver\\share\\tool.exe", False),
+    ],
+)
+def test_a_program_every_host_runs_has_no_prevalence_worth_asking_for(image: str, common: bool) -> None:
+    """Review of PR 443, finding 2: `powershell.exe` on 12 hosts read as reassuring. A system program or an
+    interpreter is withheld from the view, with why; a hash or a service binary is used when the alert has one."""
+    assert common_binary(image) is common
+    view = wazuh_alert_view(alert({"agent": {"name": "WS-7"}, "data": {"win": {"eventdata": {"image": image}}}}))
+    assert view is not None and (view.object_value is None) is common
+    assert view.withheld == (WITHHELD if common else ()) and view.why_unbound("object_value") == (COMMON_BINARY if common else None)
+    prevalence = load_catalog()[0].evidence[1].args
+    assert unbound_reason(prevalence, view, "no_binding") == (COMMON_BINARY if common else "no_binding")
+    hashed = {"agent": {"name": "WS-7"}, "syscheck": {"sha256_after": HASH}, "data": {"win": {"eventdata": {"image": image}}}}
+    assert wazuh_alert_view(alert(hashed)).object_kind == "sha256"  # type: ignore[union-attr]
+    assert "withheld" not in view_fields("wazuh.alert") and "rule_id" in view_fields("wazuh.alert")
+
+
 def test_every_corpus_alert_has_a_host_and_only_well_formed_values() -> None:
     views = [wazuh_alert_view(alert(item.alert)) for item in corpus("corpus_v1").items.values()]
-    assert all(view is not None and view.host for view in views)
-    assert sum(bool(view and view.object_kind) for view in views) > 100
+    assert all(view is not None and view.host and view.rule_id for view in views)
+    assert sum(bool(view and view.object_kind) for view in views) > 50
+    assert sum(bool(view and view.withheld) for view in views) > 30  # system programs and interpreters
     assert sum(bool(view and view.user) for view in views) > 100
 
 
@@ -111,6 +152,10 @@ def test_bindings_take_values_from_the_view_the_alert_time_and_the_file() -> Non
     view = wazuh_alert_view(alert(logon()))
     host, prevalence, by_user, by_source = (ref.args for ref in skill.evidence)
     assert bind(host, view, AT) == {"host": "FIN-SRV-02", "at": AT, "before_min": 60, "after_min": 0}
+    # The alert's rule, when it can be read, names the alert's own event; without it the host is still read.
+    ruled = dataclasses.replace(view, rule_id="60122")  # type: ignore[type-var]
+    assert bind(host, ruled, AT) == {"host": "FIN-SRV-02", "at": AT, "before_min": 60, "after_min": 0, "exclude_rule_id": "60122"}
+    assert host["exclude_rule_id"] == Maybe(optional="view.rule_id")
     assert bind(prevalence, view, AT) is None  # no object on a logon: the query is skipped
     assert bind(by_user, view, AT) == {"pivot": "target_user", "value": "j.doe", "at": AT, "before_min": 1440, "family": "windows"}
     assert bind(by_source, view, AT) == {"pivot": "source_ip", "value": "10.20.1.83", "at": AT, "before_min": 1440, "family": "windows"}
@@ -180,3 +225,10 @@ def test_the_default_skills_indicators_are_reported_by_name() -> None:
     loud = indicator_states(skill, host_entries(value={"max_level": 14, "techniques": ["T1486"]}))
     assert loud == {"never_close_class_on_host": "true", "high_level_alert_on_host": "true"}
     assert set(indicator_states(skill, []).values()) == {"unknown"}
+    # What holds a close: the indicators that are true, each with the ids of the facts it read. An unknown one
+    # (the lookup failed or was incomplete) is not among them.
+    assert true_indicators(skill, host_entries()) == {} and true_indicators(skill, []) == {}
+    assert true_indicators(skill, host_entries(value={"max_level": 14, "techniques": ["T1486"]})) == {
+        "never_close_class_on_host": ["host:0"], "high_level_alert_on_host": ["host:0"]}
+    assert true_indicators(skill, host_entries(value={"max_level": 14})) == {"high_level_alert_on_host": ["host:0"]}
+    assert true_indicators(skill, host_entries(outcome="failed")) == {}

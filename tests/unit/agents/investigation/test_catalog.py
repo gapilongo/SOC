@@ -69,6 +69,13 @@ def _arg(doc: Dict[str, Any], name: str, value: Any) -> None:
         (lambda d: _arg(d, "host", "view.user"), "a Wazuh skill runs wazuh.host_activity on the alert's host"),
         (lambda d: d["hypotheses"]["malicious"][0]["indicator"].update(fact="prevalence"),
          "never_close_class_on_host: evidence prevalence holds no host_activity fact"),
+        # A true indicator holds a close, so the lookup it reads must leave the alert's own event out.
+        (lambda d: d["evidence"][0]["args"].pop("exclude_rule_id"), "never_close_class_on_host: evidence host must leave the alert's own event out"),
+        (lambda d: _arg(d, "exclude_rule_id", {"const": "x"}), "high_level_alert_on_host: evidence host must leave the alert's own event out"),
+        # Only an argument the tool can do without may be optional.
+        (lambda d: _arg(d, "host", {"optional": "view.host"}), "host: host is required by wazuh.host_activity, so its binding cannot be optional"),
+        (lambda d: _arg(d, "exclude_rule_id", {"optional": "view.rule"}), "the view has no field view.rule"),
+        (lambda d: _arg(d, "exclude_rule_id", {"optional": "view.withheld"}), "the view has no field view.withheld"),
     ],
 )
 def test_a_skill_that_does_not_fit_the_registry_refuses_the_catalogue(change: Callable[[Dict[str, Any]], Any], problem: str) -> None:

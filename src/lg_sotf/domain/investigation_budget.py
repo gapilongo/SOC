@@ -83,7 +83,10 @@ class BudgetLimits:
 def _number(value: Any) -> Optional[float]:
     if isinstance(value, bool) or not isinstance(value, (int, float)) or value != value or value < 0:
         return None
-    return float(value)
+    try:
+        return float(value)
+    except OverflowError:  # an integer too large for a float asks for more than any maximum: it is cut to it
+        return float("inf")
 
 
 def tenant_limits(

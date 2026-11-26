@@ -26,7 +26,7 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from lg_sotf.db.errors import NotFound
 from lg_sotf.eval.tool_fixtures import EventQuery, EventStore, EventView, event_time, field_values, load_documents
-from lg_sotf.settings import Settings
+from lg_sotf.settings import EVENT_STORE_ENVIRONMENTS, Settings
 from lg_sotf.tools.registry import ToolContext
 from lg_sotf.tools.wazuh import dsl
 from lg_sotf.tools.wazuh.indexer import IndexerUnavailable
@@ -196,7 +196,7 @@ def telemetry_backends(settings: Settings) -> Optional[TelemetryBackends]:
     """
     if settings.investigation.evidence_backend != "event_store":
         return None
-    if settings.is_production:
+    if "environment" not in settings.model_fields_set or settings.environment not in EVENT_STORE_ENVIRONMENTS:
         raise ValueError("investigation.evidence_backend=event_store is for evaluation and development only")
     return TelemetryBackends.load(settings.investigation.event_store_files)
 

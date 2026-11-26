@@ -161,9 +161,15 @@ before the deep model is called: values come from the alert's detector
 fields, the plan from the file, the limits from the install and the tenant.
 Each result is recorded on the run's fact ledger under an id that code mints.
 The model is shown those observations as untrusted data and asked which ids
-its claims rest on; code then checks every cited id against the ledger. The
-findings are recorded and shown; they do not change routing yet
-([evidence-facts.md](evidence-facts.md#the-investigation-executor)).
+its claims rest on; code then checks every cited id against the ledger.
+Before a model sees a fact, the scan that reads the alert's text for steering
+instructions reads every string of it; a flagged string is replaced by a
+fixed marker in the model's copy. The evidence can hold a model-led close and
+never buy one: a malicious indicator of the playbook that is true over the
+facts, a benign verdict that cites an observation the ledger did not record
+(or an empty or failed lookup), or steering text in a fact sends the alert to
+a person, and the decision says which
+([evidence-facts.md](evidence-facts.md#what-the-evidence-holds)).
 
 **The tools are read-only.** The lookups query reputation services and the
 tenant's own history. Their targets are restricted to indicators the rules

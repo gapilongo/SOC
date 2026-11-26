@@ -118,7 +118,14 @@ INVARIANTS: Tuple[Invariant, ...] = (
             "vendor's authentication-failure rules and T1531, a Wazuh alert whose rule cannot be read, log "
             "clearing, security-tool tampering, ransomware behaviour, persistence through attacker-named objects), "
             "steering text, entities with a recent true positive, an alert normalised by a model or one reopened; "
-            "such a close is marked model_closed for audit. When an alert becomes a threat, the safety net looks "
+            "such a close is marked model_closed for audit. When evidence lookups ran for the alert (the "
+            "investigation executor), their facts can hold such a close and never buy one: a malicious indicator "
+            "the reviewed skill declares that is true over the facts (never from the alert's own event, which the "
+            "host lookup leaves out; an indicator the lookups could not settle does not hold), a benign verdict "
+            "whose claims cite an observation the ledger did not record, an altered one, or a lookup that found "
+            "nothing or failed, and steering text in any fact (the alert text's own scan; the model is shown a "
+            "marker, and approved benign evidence does not close past it either) each send the alert to a person, "
+            "and the decision names what held it. When an alert becomes a threat, the safety net looks "
             "at every model-closed alert sharing a host, user or IP with it in the previous 24 hours. A model's "
             "judgement is not a confirmation: a threat only a model stands behind (an escalation a model judged a "
             "threat: deep verdict malicious, or fast tier likely_threat or confirmed_threat, never a merely "
@@ -149,7 +156,8 @@ INVARIANTS: Tuple[Invariant, ...] = (
             "src/lg_sotf/domain/routing.py", "src/lg_sotf/domain/closure.py", "src/lg_sotf/domain/benign_evidence.py",
             "src/lg_sotf/domain/noise_families.py", "src/lg_sotf/domain/verdict_key.py",
             "src/lg_sotf/core/verdict_cache.py", "src/lg_sotf/core/benign_learning.py",
-            "src/lg_sotf/core/retro_reopen.py",
+            "src/lg_sotf/core/retro_reopen.py", "src/lg_sotf/agents/investigation/claims.py",
+            "src/lg_sotf/agents/investigation/executor.py",
         ),
         proofs=(
             "tests/unit/domain/test_routing.py::test_llm_only_evidence_never_closes_high_or_critical_at_triage",
@@ -165,6 +173,20 @@ INVARIANTS: Tuple[Invariant, ...] = (
             "tests/unit/domain/test_closure.py::test_a_scanner_or_test_source_never_closes_a_never_close_class",
             "tests/unit/domain/test_closure.py::"
             "test_an_unmapped_alert_closes_on_the_models_word_but_an_unreadable_wazuh_rule_does_not",
+            "tests/unit/domain/test_closure.py::test_the_evidence_of_an_investigation_holds_a_model_led_close",
+            "tests/unit/domain/test_closure.py::test_what_is_recorded_only_does_not_hold_a_close",
+            "tests/unit/domain/test_closure.py::test_without_an_investigation_policy_v3_is_unchanged",
+            "tests/unit/domain/test_closure.py::test_an_investigation_whose_record_cannot_be_read_holds_the_close",
+            "tests/unit/domain/test_closure.py::"
+            "test_steering_text_in_the_evidence_stops_a_close_on_approved_benign_evidence_too",
+            "tests/unit/agents/test_analysis_evidence.py::test_a_true_indicator_holds_the_close_and_names_its_facts",
+            "tests/unit/agents/test_analysis_evidence.py::"
+            "test_a_hard_citation_finding_on_a_benign_verdict_holds_the_close",
+            "tests/unit/tools/wazuh/test_own_event.py::test_an_alert_alone_on_its_host_shows_nothing",
+            "tests/integration/engine/test_review_443_steering.py::"
+            "test_probe_steering_text_in_evidence_blocks_a_model_close_like_steering_text_in_the_alert",
+            "tests/integration/engine/test_review_443_steering.py::"
+            "test_a_true_indicator_or_a_citation_that_does_not_hold_sends_the_alert_to_a_person",
             "tests/integration/engine/test_retro_reopen.py::"
             "test_an_escalation_a_model_judged_a_threat_links_related_model_closes_and_reopens_nothing",
             "tests/integration/engine/test_retro_reopen.py::"

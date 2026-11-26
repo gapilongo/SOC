@@ -10,7 +10,7 @@ import yaml
 from pydantic import ValidationError
 
 from lg_sotf.agents.investigation.catalog import SKILLS_DIR
-from lg_sotf.models.skill import SKILL_SCHEMA, AnyTechniqueIn, Const, MaxLevelGe, Not, SkillSpec
+from lg_sotf.models.skill import SKILL_SCHEMA, AnyTechniqueIn, Const, MaxLevelGe, Maybe, Not, SkillSpec
 
 pytestmark = pytest.mark.unit
 
@@ -36,9 +36,12 @@ def test_the_default_skill_is_what_amendment_1_asks_for() -> None:
         ("logons_user", "wazuh.logon_fanout:1", "always"), ("logons_source", "wazuh.logon_fanout:1", "always"),
     ]
     assert skill.evidence[0].required and (skill.evidence[0].tool_name, skill.evidence[0].tool_version) == ("wazuh.host_activity", 1)
-    # Every argument is a binding, a whole number or a constant of the file.
-    args = [arg for ref in skill.evidence for arg in ref.args.values()]
+    # Every argument is a binding, a whole number or a constant of the file. One binding is optional: the
+    # alert's rule, which names the alert's own event for the host lookup to leave out.
+    args = [arg.optional if isinstance(arg, Maybe) else arg for ref in skill.evidence for arg in ref.args.values()]
     assert all(isinstance(arg, (int, Const)) or arg.startswith(("view.", "alert.")) for arg in args)
+    assert skill.evidence[0].args["exclude_rule_id"] == Maybe(optional="view.rule_id")
+    assert skill.evidence[1].args["at"] == "alert.occurred_at"  # prevalence as of the alert, not as of now
     assert skill.evidence[2].args["pivot"] == Const(const="target_user")
     # Malicious indicators are declared; it has no benign proof (the model has no such field at all).
     assert [h.id for h in skill.hypotheses.malicious] == ["never_close_class_on_host", "high_level_alert_on_host"]
@@ -69,7 +72,8 @@ def test_a_file_that_uses_anything_else_is_refused(patch: Dict[str, Any]) -> Non
 @pytest.mark.parametrize(
     "arg",
     ["SRV-01", "view.host; DROP", "alert.title", "model.answer", 1.5, True, {"const": "Target User"}, {"literal": "x"}, None,
-     ["view.host"]],
+     ["view.host"], {"optional": "SRV-01"}, {"optional": "alert.title"}, {"optional": 5}, {"optional": {"const": "x"}},
+     {"optional": "view.host", "default": "SRV-01"}],
 )
 def test_an_argument_is_never_free_text(arg: Any) -> None:
     """A host name typed into the file, a field of the alert that an attacker writes, a model's answer: refused."""

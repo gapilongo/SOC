@@ -45,6 +45,7 @@ from typing import TYPE_CHECKING, Annotated, Any, Callable, Dict, List, Literal,
 from pydantic import BaseModel, BeforeValidator, Field
 
 from lg_sotf.agents.base import AgentContext, LLMResult
+from lg_sotf.llm.prompting import context_truncated
 from lg_sotf.llm.registry import PromptTemplate, register_prompt
 from lg_sotf.llm.schema import clipped_list, clipped_str, lenient_literal
 from lg_sotf.observability.logging import get_logger
@@ -221,6 +222,8 @@ class AnalysisRunContext:
     assessments: List[InvestigationStep] = field(default_factory=list)
     thoughts: List[str] = field(default_factory=list)
     lookups: int = 0
+    evidence_truncated: bool = False
+    """A prompt that carried the evidence was cut to fit its size limit (the model saw some of it in part)."""
     spent_s: float = 0.0
     """Seconds of the analysis already used before the loop (the evidence lookups): they count against its time budget."""
     llm_calls: int = 0
@@ -303,12 +306,15 @@ class ReActReasoner:
                 self._finish(run, run.assessments[-1], "time_budget")
                 run.notes.append("analysis: time budget spent, last model assessment kept")
                 return
+            shown = run.tool_data()
+            if run.evidence is not None and context_truncated(shown, run.agent_ctx.settings):
+                run.evidence_truncated = True  # what this step's prompt really cut, lookups and evidence together
             llm = await agent.call_llm(
                 run.agent_ctx,
                 tier="deep",
                 prompt=STEP_PROMPT if run.evidence is None else _CITED_STEP,
                 untrusted=run.alert_block,
-                context=run.tool_data(),
+                context=shown,
                 cache_untrusted=True,
             )
             run.notes.extend(llm.notes)

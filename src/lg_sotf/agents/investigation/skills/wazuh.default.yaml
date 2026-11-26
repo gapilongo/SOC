@@ -27,6 +27,8 @@ evidence:
       at: alert.occurred_at
       before_min: 60
       after_min: 0
+      # The alert's own event (its rule, at its time) is left out: an alert is never its own evidence.
+      exclude_rule_id: {optional: view.rule_id}
   - id: prevalence
     tool: wazuh.prevalence:1
     when: always
@@ -34,6 +36,7 @@ evidence:
       kind: view.object_kind
       value: view.object_value
       days: 30
+      at: alert.occurred_at
   - id: logons_user
     tool: wazuh.logon_fanout:1
     when: always
@@ -53,9 +56,9 @@ evidence:
       before_min: 1440
       family: view.logon_family
 hypotheses:
-  # Declared and reported. Whether a true indicator blocks a close is the checker's and the decision
-  # policy's rule (issues 207 and 330), not this file's. The host's window holds the alert itself, so
-  # that rule has to set the alert's own level and technique aside first.
+  # A true indicator blocks a model-led close (lg_sotf.domain.closure, ADR 0014 Amendment 1 point 1); an
+  # unknown one does not. The host's activity leaves the alert's own event out, so an indicator is never
+  # true from the alert's own level or technique.
   malicious:
     - id: never_close_class_on_host
       says: The host raised an alert of a class only a person may close in the hour up to this alert.

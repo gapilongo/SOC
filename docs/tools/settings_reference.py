@@ -317,7 +317,7 @@ DESCRIPTIONS: Dict[str, str] = {
     "mcp.max_response_bytes": "Largest API response the MCP server reads.",
     "mcp.max_output_chars": "Largest tool result handed to the model; longer results are truncated with a note.",
     # investigation (the evidence lookups before the deep analysis, ADR 0014)
-    "investigation.evidence_backend": "Where the Wazuh evidence tools read: `indexer` (each tenant's own Wazuh indexer, resolved from the alert's source) or `event_store` (a dataset's telemetry in memory, for evaluation and development; synthetic data, refused in staging and production). Never guessed: a process asked for `event_store` that was not given one does not start.",
+    "investigation.evidence_backend": "Where the Wazuh evidence tools read: `indexer` (each tenant's own Wazuh indexer, resolved from the alert's source) or `event_store` (a dataset's telemetry in memory, for evaluation and development; synthetic data, so the settings load only when `environment` is set explicitly to `development` or `test`). Never guessed: a process asked for `event_store` that was not given one does not start.",
     "investigation.event_store_files": "With `evidence_backend: event_store`: the dataset files to load (alerts and context events, `.jsonl` or `.jsonl.gz`). In an environment variable, a JSON list.",
     "investigation.budget.steps": "Evidence lookups one investigation may make (the ones a resumed run finds on its ledger included).",
     "investigation.budget.wall_s": "Seconds one investigation may take; never more than a quarter of `worker.analysis_timeout_s`. A lookup still running when they are spent is cut and recorded as failed.",

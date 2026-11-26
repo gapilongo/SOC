@@ -161,6 +161,9 @@ class InvestigationRecord(TypedDict, total=False):
     empty: int
     failed: int
     skipped: int
+    #: What of the investigation holds a model-led close (``lg_sotf.domain.closure.evidence_holds``):
+    #: ``{steering: [fact ids], indicators: {indicator: [fact ids]}, citations: [finding codes]}``.
+    blocking: Dict[str, Any]
     # Digest only: how many claims the model made, and how many citation findings code raised on them.
     claim_count: int
     citation_findings: int
@@ -176,6 +179,10 @@ class InvestigationRecord(TypedDict, total=False):
     evidence_truncated: bool
     #: False when the citation check itself failed (the claims are then left out).
     claims_checked: bool
+    #: Ids of the facts in which the injection scan found steering text (the model was shown a marker instead).
+    steering: List[str]
+    #: Findings about the verdict as a whole: ``no_claims`` (a benign verdict that rests on no claim).
+    verdict_findings: List[CitationFinding]
 
 
 class AnalysisDigest(TypedDict, total=False):

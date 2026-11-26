@@ -14,7 +14,7 @@ import pytest
 
 from lg_sotf.agents.analysis.react import Claim
 from lg_sotf.agents.base import AgentContext
-from lg_sotf.agents.investigation.claims import checked_claims
+from lg_sotf.agents.investigation.claims import blocking, checked_claims
 from lg_sotf.agents.investigation.executor import InvestigationRun, SkillInvestigator, switched_on
 from lg_sotf.domain.investigation import words
 from lg_sotf.domain.investigation_budget import tenant_limits
@@ -51,7 +51,9 @@ async def investigated(api: ApiHarness, tenant_id: str, answers: Answers, *claim
     state = {"normalizer": "wazuh", "occurred_at": AT.isoformat(), "raw": dict(LOGON)}
     run = await SkillInvestigator(answers.registry, settings).investigate(ctx, state)
     assert run is not None
-    record = {**run.record(), "claims": checked_claims(run.ledger, [Claim.model_validate(c) for c in claims])}
+    record = {**run.record(), "claims": checked_claims(run.ledger, [Claim.model_validate(c) for c in claims]),
+              "claims_checked": True, "verdict_findings": []}
+    record["blocking"] = blocking(run, record)
     analysis = {"verdict": "benign", "threat_score": 20, "llm_used": True, "conclusion": "A mistyped password.",
                 "investigation": record}
     await api.repos.alerts.update(tenant_id, alert_id, summary={"analysis": analysis})
@@ -86,6 +88,10 @@ async def test_the_view_shows_the_lookups_the_budgets_and_each_claim_beside_its_
         "steps": (3, 8), "tokens": (0, 20_000), "usd": (0, 0.25)}
     assert {i["id"]: i["state"] for i in shown["indicators"]} == {
         "never_close_class_on_host": "false", "high_level_alert_on_host": "false"}
+    # What of the evidence holds a model-led close: the second claim cites a failed lookup and an id nobody recorded.
+    assert shown["holds_close"] == [{"code": "evidence_citation", "sentence": words.BLOCKER_SENTENCES["evidence_citation"]}]
+    assert [(i["holds_close"], i["observation_ids"]) for i in shown["indicators"]] == [(False, []), (False, [])]
+    assert (shown["steering_observation_ids"], shown["benign_without_claims"]) == ([], False)
     # The observations are the ledger's, under the ids the lookups name; each claim sits beside what it cites.
     observations = {o["id"]: o for o in body["observations"]}
     assert set(observations) == {"host:0", "logons_user:0", "logons_source:0"}
@@ -109,6 +115,7 @@ async def test_a_degraded_run_and_an_alert_without_lookups_say_why(api: ApiHarne
     shown = body["evidence_run"]
     assert (shown["status"], shown["reason"]) == ("degraded", {"code": "circuit_open", "sentence": words.EVIDENCE_REASONS["circuit_open"]})
     assert [look["outcome"] for look in shown["lookups"]] == ["failed", "skipped", "failed", "skipped"]
+    assert shown["holds_close"] == []  # lookups that could not answer leave the indicators unknown: nothing is held
     assert any(s["text"] == words.EVIDENCE_REASONS["circuit_open"] and s["produced"] == "2 lookups · 2 failed · 2 skipped" for s in body["steps"])
 
     # Tenant B never switched the lookups on: its Wazuh alert, another source's alert, an alert not analysed.

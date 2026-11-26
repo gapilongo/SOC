@@ -6,21 +6,41 @@ of the claim's own run, as the executor left it (:attr:`InvestigationRun.ledger`
 not mint is ``unknown_fact`` whatever the model wrote, and a benign claim that cites an empty, failed or
 incomplete observation, or nothing, is a finding too. The check reads no store and calls nothing.
 
-Findings only: nothing here changes the verdict or the routing. The checker and the decision policy that
-act on them are AI-E3.4 and AI-E3.8a.
+Nothing here changes the verdict. The record says what of the investigation holds a model-led close
+(:func:`blocking`): the decision policy reads it (:func:`lg_sotf.domain.closure.evidence_holds`). The
+full claim checker is AI-E3.4.
 """
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Protocol, Sequence
+from typing import Any, Dict, List, Mapping, Optional, Protocol, Sequence
 
 from lg_sotf.agents.investigation.executor import InvestigationRun
+from lg_sotf.domain.closure import HARD_CITATION_FINDINGS
 from lg_sotf.domain.ledger import LedgerEntry, check_citations
 from lg_sotf.observability.logging import get_logger, log_failure
 
-__all__ = ["CitedClaim", "checked_claims", "investigation_record"]
+__all__ = ["DIGEST_KEYS", "CitedClaim", "blocking", "checked_claims", "investigation_digest", "investigation_record"]
 
 log = get_logger(__name__)
+
+NO_CLAIMS = "no_claims"
+UNCHECKED = "unchecked"
+#: What of the record graph state carries: counts and codes, and what holds a close. No step, no claim.
+DIGEST_KEYS = (
+    "status", "reason", "skill", "skill_version", "stop_reason", "lookups", "facts", "empty", "failed", "skipped",
+    "blocking",
+)
+
+
+def investigation_digest(record: Mapping[str, Any]) -> Dict[str, Any]:
+    """The stored record made small for graph state and the node's event: :data:`DIGEST_KEYS`, the number
+    of claims, and the number of findings (on the claims' citations and on the verdict as a whole)."""
+    small = {key: record.get(key) for key in DIGEST_KEYS}
+    claims = record.get("claims") or []
+    findings = sum(len(claim["findings"]) for claim in claims) + len(record.get("verdict_findings") or [])
+    small.update(claim_count=len(claims), citation_findings=findings)
+    return small
 
 
 class CitedClaim(Protocol):
@@ -71,4 +91,20 @@ def investigation_record(
     except Exception as exc:  # noqa: BLE001 - the citation check never fails the alert's run
         log_failure(log, "investigation.citation_check_failed", exc, level="warning", error_type=type(exc).__name__)
         record.update(claims=[], claims_checked=False)
+    # A benign verdict that was shown the evidence and rests on no claim at all: a finding, like a claim
+    # that cites nothing.
+    benign = shown and getattr(final, "verdict", None) == "benign"
+    record["verdict_findings"] = [{"code": NO_CLAIMS}] if benign and record["claims_checked"] and not record["claims"] else []
+    record["blocking"] = blocking(investigation, record)
     return record
+
+
+def blocking(investigation: InvestigationRun, record: Dict[str, Any]) -> Dict[str, Any]:
+    """What of the investigation holds a model-led close (read by :mod:`lg_sotf.domain.closure`): the facts
+    with steering text, the malicious indicators that are true with their fact ids, and the hard citation
+    findings (an id the ledger did not mint, an altered entry, an empty or failed lookup cited as benign
+    evidence). A check that failed counts as a hard finding: nothing closes on claims nobody checked."""
+    codes = sorted({f["code"] for claim in record["claims"] for f in claim["findings"]} & HARD_CITATION_FINDINGS)
+    if not record["claims_checked"]:
+        codes.append(UNCHECKED)
+    return {"steering": list(investigation.steering), "indicators": dict(investigation.held_indicators), "citations": codes}

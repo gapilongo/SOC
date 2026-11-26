@@ -343,6 +343,12 @@ def _scan_form(text: str) -> str:
     return "".join(ch for ch in normalised if unicodedata.category(ch) != "Cf")
 
 
+def steering_text(text: str) -> bool:
+    """Whether one string contains model-steering text: the scan of :func:`injection_suspected`, for a string
+    that reaches a model from somewhere other than the alert (a field of an evidence fact)."""
+    return bool(_INJECTION_RE.search(_scan_form(text)))
+
+
 def injection_suspected(alert: Mapping[str, Any]) -> bool:
     """Whether any alert field (bounded scan, raw event included) contains model-steering text."""
     budget = [MAX_INJECTION_SCAN_CHARS]

@@ -48,10 +48,11 @@ from pydantic import ValidationError
 from lg_sotf.agents.base import AgentContext
 from lg_sotf.agents.investigation.catalog import check_catalog, load_catalog
 from lg_sotf.agents.investigation.ledger import FactLedger, tool_step
+from lg_sotf.agents.triage.base import steering_text
 from lg_sotf.domain.investigation_budget import Budget, BudgetLimits, tenant_limits
 from lg_sotf.domain.ledger import LedgerEntry, ToolStep
-from lg_sotf.domain.skill_views import VIEWS
-from lg_sotf.domain.skills import bind, indicator_states, select_skill
+from lg_sotf.domain.skill_views import COMMON_BINARY, VIEWS
+from lg_sotf.domain.skills import bind, indicator_states, select_skill, true_indicators, unbound_reason
 from lg_sotf.llm.trace import tool_input_hash
 from lg_sotf.models.skill import EvidenceRef, SkillSpec
 from lg_sotf.observability.logging import get_logger, log_failure
@@ -72,11 +73,13 @@ SKIPPED = "skipped"
 NO_FACTS, NO_RUN_ID, ERROR = "no_facts", "no_run_id", "error"
 NO_SOURCE, NO_MODEL = "no_source", "no_model"
 NO_BINDING, BINDING_REFUSED = "no_binding", "binding_refused"
+STEERING_MARKER = "[withheld: text that tries to steer the model]"
+"""What the model is shown in place of a string of a fact that the injection scan flagged."""
 BUDGET_STOPS = ("budget_steps", BUDGET_WALL, "budget_tokens", "budget_usd")
 """What :meth:`lg_sotf.domain.investigation_budget.Budget.spent` answers when a budget is spent."""
 DEGRADED_REASONS = (*BUDGET_STOPS, CIRCUIT_OPEN, NO_SOURCE, NO_FACTS, NO_RUN_ID, NO_MODEL, ERROR)
 """Every value of :attr:`InvestigationRun.reason`: why the analysis ran without the evidence."""
-SKIP_REASONS = (NO_BINDING, BINDING_REFUSED, CIRCUIT_OPEN, NO_SOURCE, *BUDGET_STOPS)
+SKIP_REASONS = (NO_BINDING, BINDING_REFUSED, COMMON_BINARY, CIRCUIT_OPEN, NO_SOURCE, *BUDGET_STOPS)
 """Every reason of a skipped :class:`StepRecord`. The investigation view has a sentence for each of both."""
 NO_SOURCE_ERRORS = frozenset({"no_wazuh_source", "not_configured", "no_telemetry"})
 """A tool's fixed error codes that say this alert has no event data to read at all (an alert pushed by a
@@ -137,6 +140,11 @@ class InvestigationRun:
     :data:`DEGRADED_REASONS`."""
     ledger: Tuple[LedgerEntry, ...] = field(default=(), repr=False)
     """The run's ledger as the executor left it: what a claim's citations are checked against. Not stored."""
+    steering: List[str] = field(default_factory=list)
+    """Ids of the facts in which the scan found text that tries to steer the model. The model was shown a
+    fixed marker in its place; the ledger keeps the original."""
+    held_indicators: Dict[str, List[str]] = field(default_factory=dict)
+    """The skill's malicious indicators that are true over the facts, each with the fact ids it read."""
 
     def _count(self, outcome: str) -> int:
         return sum(step.outcome == outcome for step in self.steps)
@@ -154,8 +162,48 @@ class InvestigationRun:
         """For ``alerts.summary.analysis.investigation``: the digest, the plan's steps, budgets and indicators."""
         return {
             **self.digest(), "run_id": self.run_id, "steps": [step.as_dict() for step in self.steps],
-            "budget": self.budget, "indicators": self.indicators,
+            "budget": self.budget, "indicators": self.indicators, "steering": list(self.steering),
         }
+
+
+def _scrubbed(value: Any, found: List[bool]) -> Any:
+    """``value`` with every string the steering scan flags replaced by :data:`STEERING_MARKER` (a copy)."""
+    if isinstance(value, str):
+        if steering_text(value):
+            found.append(True)
+            return STEERING_MARKER
+        return value
+    if isinstance(value, Mapping):
+        return {key: _scrubbed(item, found) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_scrubbed(item, found) for item in value]
+    return value
+
+
+def steers(fact: Mapping[str, Any]) -> bool:
+    """Whether a string of the fact (its subject or its value, at any depth) is flagged by the steering scan."""
+    found: List[bool] = []
+    _scrubbed({key: fact.get(key) for key in ("subject", "value")}, found)
+    return bool(found)
+
+
+def scrub_steering(context: Dict[str, Any]) -> List[str]:
+    """Run the alert text's injection scan over every string of every fact the model is about to be shown.
+
+    A typed field can hold a string the attacker chose (a user name typed at a logon, a command line, a
+    service name). A flagged string is replaced by the marker in ``context``, its observation is marked, and
+    the ids of those observations are returned. The ledger is not touched: it keeps what the tool returned.
+    """
+    flagged: List[str] = []
+    for observation in context.get("observations") or []:
+        found: List[bool] = []
+        for key in ("subject", "value"):
+            if key in observation:
+                observation[key] = _scrubbed(observation[key], found)
+        if found:
+            observation["steering_text_withheld"] = True
+            flagged.append(str(observation.get("id")))
+    return flagged
 
 
 def _occurred_at(alert: Mapping[str, Any]) -> Optional[datetime]:
@@ -247,7 +295,9 @@ class SkillInvestigator:
                     run.stop_reason = stop
                     run.steps.append(StepRecord(ref.id, ref.tool_name, SKIPPED, stop))
                     continue
-                done = await self._query(ctx, ledger, ref, spec, bind(ref.args, view, at) if at else None, budget)
+                args = bind(ref.args, view, at) if at else None
+                unbound = NO_BINDING if args is not None or not at else unbound_reason(ref.args, view, NO_BINDING)
+                done = await self._query(ctx, ledger, ref, spec, args, budget, unbound)
                 run.steps.append(done)
                 if done.outcome == "failed":
                     failures += 1
@@ -263,21 +313,26 @@ class SkillInvestigator:
         run.ledger = entries
         run.facts = sum(entry.fact is not None for entry in entries)
         run.indicators = indicator_states(skill, entries)
+        run.held_indicators = true_indicators(skill, entries)
+        # Every fact is scanned, shown to a model or not (a run that stops early, a fact that did not fit).
+        run.steering = [entry.fact_id for entry in entries if entry.fact is not None and steers(entry.fact)]
         if run.stop_reason != FINISHED:
             run.reason = run.stop_reason
         elif run.facts == 0:
             run.reason = NO_FACTS
         else:
-            run.context = await ledger.planner_context()
+            context = await ledger.planner_context()
+            scrub_steering(context)  # before any model sees it
+            run.context = context
         log.info("investigation.completed", **run.digest())
 
     async def _query(
         self, ctx: AgentContext, ledger: FactLedger, ref: EvidenceRef, spec: ToolSpec,
-        args: Optional[Dict[str, Any]], budget: Budget,
+        args: Optional[Dict[str, Any]], budget: Budget, unbound: str = NO_BINDING,
     ) -> StepRecord:
         """One query of the plan: skipped without values, reused from the ledger, or called and recorded."""
         if args is None:
-            return StepRecord(ref.id, ref.tool_name, SKIPPED, NO_BINDING)
+            return StepRecord(ref.id, ref.tool_name, SKIPPED, unbound)
         try:
             valid = spec.params.model_validate(args)
         except ValidationError:  # a view value the tool's own parameter model refuses: the query is skipped

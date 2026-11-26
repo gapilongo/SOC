@@ -29,7 +29,23 @@ unreadable value blocks the close.
   corroborates a threat (``rule_corroborated``);
 * not normalised by a model (the LLM-fallback normalizer chose its fields),
   and not reopened by the safety net (``reopened``): a reopened alert goes
-  to an analyst.
+  to an analyst;
+* when an investigation ran for the alert (ADR 0014 Amendment 1 point 1,
+  :func:`evidence_holds`), its evidence does not hold the close:
+
+  * no fact carries steering text (``evidence_steering``: the same scan as
+    the alert's own text, on every string of every fact the deep model was
+    about to be shown; this also stops a close on approved benign evidence);
+  * no malicious indicator the skill declares is true over the facts
+    (``evidence_indicator``). An indicator that is *unknown*, because a
+    lookup failed or its answer was incomplete, does not block;
+  * the benign verdict's claims have no hard citation finding
+    (``evidence_citation``): an id the ledger did not mint, an entry that
+    was altered, an empty or failed lookup cited as benign evidence, or
+    claims nobody could check. A claim that cites an incomplete fact, or
+    nothing, is recorded and does not block.
+
+  Without an investigation none of the three applies: policy v3 is as above.
 
 Removed in v3: the install thresholds on the model tiers (likelihood 8,
 certainty 85), the campaign check and the ``unmapped`` block.
@@ -69,6 +85,11 @@ from lg_sotf.domain.noise_families import NoiseFamily, noise_family, vendor_neve
 
 __all__ = [
     "AUTONOMY_TIERS",
+    "EVIDENCE_BLOCKERS",
+    "EVIDENCE_CITATION",
+    "EVIDENCE_INDICATOR",
+    "EVIDENCE_STEERING",
+    "HARD_CITATION_FINDINGS",
     "AiClosureSettings",
     "AutonomyTier",
     "CLOSABLE_SEVERITIES",
@@ -85,6 +106,7 @@ __all__ = [
     "autonomy_tier",
     "catalogued_noise",
     "evidence_close_blockers",
+    "evidence_holds",
     "linked_only_cases",
     "model_close_blockers",
     "model_close_class",
@@ -262,6 +284,57 @@ def _steering_text(triage: Mapping[str, Any]) -> bool:
     return not isinstance(rule_tp, list) or INJECTION_SIGNAL in rule_tp
 
 
+#: The close blockers an investigation's evidence adds (and the decide codes of an alert only they hold).
+EVIDENCE_STEERING = "evidence_steering"
+EVIDENCE_INDICATOR = "evidence_indicator"
+EVIDENCE_CITATION = "evidence_citation"
+EVIDENCE_BLOCKERS: Tuple[str, ...] = (EVIDENCE_STEERING, EVIDENCE_INDICATOR, EVIDENCE_CITATION)
+#: Citation findings that hold a benign verdict's close (``lg_sotf.domain.ledger.check_citations``), and
+#: ``unchecked``: the check itself failed. ``incomplete_fact`` and ``no_citation`` are recorded only.
+HARD_CITATION_FINDINGS: FrozenSet[str] = frozenset({"unknown_fact", "altered_fact", "not_benign_evidence", "unchecked"})
+UNREADABLE = "unreadable"
+MAX_HELD = 16
+MAX_HELD_CHARS = 80
+
+
+def _names(value: Any) -> List[str]:
+    items = value if isinstance(value, (list, tuple)) else []
+    return [item[:MAX_HELD_CHARS] for item in items if isinstance(item, str) and item][:MAX_HELD]
+
+
+def evidence_holds(analysis: Mapping[str, Any]) -> Dict[str, List[str]]:
+    """What the evidence of the alert's investigation holds against a close: ``{blocker: what it names}``.
+
+    Read from ``analysis.investigation.blocking``, which code wrote when the investigation ran
+    (``lg_sotf.agents.investigation.claims.blocking``): the ids of facts with steering text, the true
+    malicious indicators with the fact ids they read, the hard citation findings of the claims. Empty
+    without an investigation. An investigation whose ``blocking`` cannot be read holds the close (fail
+    closed). Citation findings hold only a benign verdict.
+    """
+    investigation = analysis.get("investigation")
+    if investigation is None:
+        return {}
+    blocking = investigation.get("blocking") if isinstance(investigation, Mapping) else None
+    if not isinstance(blocking, Mapping):
+        return {EVIDENCE_INDICATOR: [UNREADABLE]}
+    held: Dict[str, List[str]] = {}
+    steering = _names(blocking.get("steering"))
+    if steering:
+        held[EVIDENCE_STEERING] = steering
+    indicators = blocking.get("indicators")
+    if isinstance(indicators, Mapping) and indicators:
+        held[EVIDENCE_INDICATOR] = [
+            f"{name[:MAX_HELD_CHARS]} ({', '.join(_names(facts))})" for name, facts in list(indicators.items())[:MAX_HELD]
+            if isinstance(name, str)
+        ] or [UNREADABLE]
+    elif indicators is not None and not isinstance(indicators, Mapping):
+        held[EVIDENCE_INDICATOR] = [UNREADABLE]
+    citations = [code for code in _names(blocking.get("citations")) if code in HARD_CITATION_FINDINGS]
+    if citations and analysis.get("verdict") == "benign":
+        held[EVIDENCE_CITATION] = citations
+    return held
+
+
 def _digest(state: Mapping[str, Any], key: str) -> Mapping[str, Any]:
     value = state.get(key)
     return value if isinstance(value, Mapping) else {}
@@ -285,6 +358,7 @@ def evidence_close_blockers(state: Mapping[str, Any]) -> List[str]:
     found = never_close_class(state.get("alert"))
     checks = (
         ("steering_text", _steering_text(triage)),
+        ("evidence_steering", EVIDENCE_STEERING in evidence_holds(_digest(state, "analysis"))),
         ("recent_true_positive", _recent_true_positive(_digest(state, "analysis"), _digest(state, "correlation"))),
         ("never_close_class", context and found not in (None, UNMAPPED)),
     )
@@ -300,6 +374,7 @@ def model_close_blockers(state: Mapping[str, Any], *, tier: str) -> List[str]:
     """Why the models may not close this alert on their own; empty when they may (see the module docs)."""
     triage, analysis, correlation = _digest(state, "triage"), _digest(state, "analysis"), _digest(state, "correlation")
     alert = state.get("alert")
+    held = evidence_holds(analysis)
     checks = (
         ("tier_off", tier != MODEL_CLOSE_TIER),
         ("severity", state.get("severity") not in CLOSABLE_SEVERITIES),
@@ -310,5 +385,8 @@ def model_close_blockers(state: Mapping[str, Any], *, tier: str) -> List[str]:
         ("recent_true_positive", _recent_true_positive(analysis, correlation)),
         ("fast_tier_threat", _fast_tier_threat(triage)),
         ("deep_tier_not_benign", not _deep_tier_benign(analysis)),
+        ("evidence_steering", EVIDENCE_STEERING in held),
+        ("evidence_indicator", EVIDENCE_INDICATOR in held),
+        ("evidence_citation", EVIDENCE_CITATION in held),
     )
     return [name for name, blocked in checks if blocked]

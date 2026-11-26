@@ -95,8 +95,12 @@ async def test_a_wazuh_alert_gets_facts_and_the_deep_verdict_cites_them(
     assert [entry.tool for entry in ledger] == ["wazuh.host_activity", "wazuh.logon_fanout", "wazuh.logon_fanout"]
     made = [step for step in record["steps"] if step["outcome"] != "skipped"]
     assert [step["fact_ids"] for step in made] == [[entry.fact_id] for entry in ledger]
-    assert record["facts"] == sum(entry.fact is not None for entry in ledger) == 3
-    assert all(step["outcome"] == entry.outcome == "success" for step, entry in zip(made, ledger, strict=True))
+    # The alert is alone on its host in the hour: with its own event left out, the host lookup found nothing
+    # (recorded as an empty observation, never as "one event"), and no indicator is true.
+    assert record["facts"] == sum(entry.fact is not None for entry in ledger) == 2
+    assert [(step["outcome"], entry.outcome) for step, entry in zip(made, ledger, strict=True)] == [
+        ("empty", "empty"), ("success", "success"), ("success", "success")]
+    assert "true" not in record["indicators"].values() and record["blocking"]["indicators"] == {}
     # The deep model got the ledger's view as untrusted tool data, with the cited template.
     (call,) = deep_calls(model)
     assert call.schema == "CitedVerdict"
@@ -286,7 +290,7 @@ async def test_a_shadow_run_reads_the_evidence_and_writes_nothing(
     outcome = await ShadowRunner(engine.node_deps).run(TENANT_A, alert_id)
 
     digest = outcome.state["analysis"]["investigation"]
-    assert digest["status"] == "completed" and digest["facts"] == 3 and len(evidence.resolved) == 3
+    assert digest["status"] == "completed" and digest["facts"] == 2 and len(evidence.resolved) == 3
     assert [step.tool for step in outcome.trace if step.kind == "tool" and step.tool.startswith("wazuh.")] == [
         "wazuh.host_activity", "wazuh.logon_fanout", "wazuh.logon_fanout"]
     assert await counts() == {**before, "shadow_effects": before["shadow_effects"] + len(outcome.effects)}

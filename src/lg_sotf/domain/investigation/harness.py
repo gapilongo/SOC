@@ -3,8 +3,9 @@
 Read from ``alerts.summary.analysis.investigation``, which the analysis node wrote
 (:class:`lg_sotf.core.state.InvestigationRecord`): what the executor did, what it used of each budget, the
 playbook's indicators, and the model's claims with the citation findings code raised on them. Nothing is
-computed again here, and nothing is read from a model: a finding is the one stored when the claim was
-checked against the ledger of its own run.
+read from a model: a finding is the one stored when the claim was checked against the ledger of its own
+run. What of the evidence holds a model-led close is read from the same record by the closing rule itself
+(:func:`lg_sotf.domain.closure.evidence_holds`), so the view and the decision cannot disagree.
 
 An alert without that record had no lookups. :func:`evidence_run` then says why, from what the alert
 itself shows: it never reached the deeper analysis, its source has no evidence tools, or the customer
@@ -20,6 +21,7 @@ from __future__ import annotations
 import math
 from typing import Any, List, Mapping, Optional, Sequence, Tuple, get_args
 
+from lg_sotf.domain import closure
 from lg_sotf.domain.investigation import words
 from lg_sotf.domain.investigation.facts import MAX_CLAIM_CHARS, MAX_CODE_CHARS, MAX_TARGET_CHARS, bounded, mapping
 from lg_sotf.domain.investigation.model import (
@@ -103,11 +105,27 @@ def _budgets(record: Mapping[str, Any]) -> List[EvidenceBudget]:
     return out
 
 
+def _ids(value: Any) -> List[str]:
+    return [bounded(i, MAX_TARGET_CHARS) for i in value if isinstance(i, str)][:MAX_LOOKUPS] if isinstance(value, list) else []
+
+
 def _indicators(record: Mapping[str, Any]) -> List[EvidenceIndicator]:
+    held = mapping(mapping(record.get("blocking")).get("indicators"))
     return [
-        EvidenceIndicator(id=bounded(name, MAX_CODE_CHARS), state=state if state in _STATES else "unknown")
+        EvidenceIndicator(
+            id=bounded(name, MAX_CODE_CHARS), state=state if state in _STATES else "unknown",
+            holds_close=name in held, observation_ids=_ids(held.get(name)),
+        )
         for name, state in list(mapping(record.get("indicators")).items())[:MAX_LOOKUPS]
         if isinstance(name, str)
+    ]
+
+
+def _holds(summary: Mapping[str, Any]) -> List[InvestigationReason]:
+    """What of the evidence holds a model-led close, by the closing rule's own reading of the stored record."""
+    return [
+        InvestigationReason(code=name, sentence=words.BLOCKER_SENTENCES.get(name, words.UNKNOWN_REASON))
+        for name in closure.evidence_holds(mapping(summary.get("analysis")))
     ]
 
 
@@ -150,6 +168,9 @@ def evidence_run(summary: Mapping[str, Any], view: Mapping[str, Any], *, listed:
         lookups=lookups,
         budgets=_budgets(record),
         indicators=_indicators(record),
+        steering_observation_ids=_ids(record.get("steering")),
+        benign_without_claims=any(f.get("code") == "no_claims" for f in _items(record.get("verdict_findings"), 4)),
+        holds_close=_holds(summary),
     )
 
 

@@ -132,7 +132,10 @@ class InvestigationClaim(_Model):
     check_reason: Optional[str] = Field(default=None, description="Why the claim is not supported, in plain words.")
     findings: List[ClaimFinding] = Field(
         default_factory=list,
-        description="A cited claim's citation findings (code checked them; nothing is blocked on them yet).",
+        description=(
+            "A cited claim's citation findings (code checked them). unknown_fact, altered_fact and "
+            "not_benign_evidence on a benign verdict hold a model-led close; the others are recorded only."
+        ),
     )
 
 
@@ -209,11 +212,15 @@ class EvidenceBudget(_Model):
 
 
 class EvidenceIndicator(_Model):
-    """A malicious indicator the playbook declares, over the run's observations. Reported only: nothing is
-    blocked on it yet."""
+    """A malicious indicator the playbook declares, over the run's observations."""
 
     id: str
     state: IndicatorState = Field(description="unknown: the observations cannot show it either way.")
+    holds_close: bool = Field(
+        default=False,
+        description="The indicator is true, so the AI may not close the alert on its own. An unknown one never holds.",
+    )
+    observation_ids: List[str] = Field(default_factory=list, description="The observations a true indicator read.")
 
 
 class EvidenceRun(_Model):
@@ -241,6 +248,25 @@ class EvidenceRun(_Model):
     )
     budgets: List[EvidenceBudget] = Field(default_factory=list, description="What the lookups used of each limit.")
     indicators: List[EvidenceIndicator] = Field(default_factory=list)
+    steering_observation_ids: List[str] = Field(
+        default_factory=list,
+        description=(
+            "Observations in which the injection scan found text that tries to steer the model. The model was "
+            "shown a fixed marker in its place; the observation keeps what the tool returned."
+        ),
+    )
+    benign_without_claims: bool = Field(
+        default=False,
+        description="The deep model was shown the observations, judged the alert benign and gave no claim (recorded only).",
+    )
+    holds_close: List[InvestigationReason] = Field(
+        default_factory=list,
+        description=(
+            "What of the evidence keeps the AI from closing the alert on its own: evidence_steering (see "
+            "steering_observation_ids), evidence_indicator (see indicators) or evidence_citation (see the "
+            "claims' findings). Empty when the evidence holds nothing."
+        ),
+    )
 
 
 class NotCheckedItem(_Model):

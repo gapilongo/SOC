@@ -2111,6 +2111,9 @@ export interface components {
                     }[];
                     /** @description What the investigation executor did for an alert (AI-E3.3). Absent when no investigation applies. */
                     investigation?: {
+                        blocking?: {
+                            [key: string]: unknown;
+                        };
                         budget?: {
                             [key: string]: {
                                 [key: string]: number;
@@ -2142,6 +2145,7 @@ export interface components {
                         skill_version?: string;
                         skipped?: number;
                         status?: string;
+                        steering?: string[];
                         steps?: {
                             complete?: boolean;
                             evidence_id?: string;
@@ -2152,6 +2156,10 @@ export interface components {
                             tool?: string;
                         }[];
                         stop_reason?: string;
+                        verdict_findings?: {
+                            code?: string;
+                            fact_id?: string;
+                        }[];
                     };
                     llm_calls?: number;
                     /** @description ``llm_refusal`` in an agent digest: the model declined to assess the alert. */
@@ -2410,6 +2418,9 @@ export interface components {
                     }[];
                     /** @description What the investigation executor did for an alert (AI-E3.3). Absent when no investigation applies. */
                     investigation?: {
+                        blocking?: {
+                            [key: string]: unknown;
+                        };
                         budget?: {
                             [key: string]: {
                                 [key: string]: number;
@@ -2441,6 +2452,7 @@ export interface components {
                         skill_version?: string;
                         skipped?: number;
                         status?: string;
+                        steering?: string[];
                         steps?: {
                             complete?: boolean;
                             evidence_id?: string;
@@ -2451,6 +2463,10 @@ export interface components {
                             tool?: string;
                         }[];
                         stop_reason?: string;
+                        verdict_findings?: {
+                            code?: string;
+                            fact_id?: string;
+                        }[];
                     };
                     llm_calls?: number;
                     /** @description ``llm_refusal`` in an agent digest: the model declined to assess the alert. */
@@ -4359,12 +4375,22 @@ export interface components {
         };
         /**
          * EvidenceIndicator
-         * @description A malicious indicator the playbook declares, over the run's observations. Reported only: nothing is
-         *     blocked on it yet.
+         * @description A malicious indicator the playbook declares, over the run's observations.
          */
         EvidenceIndicator: {
+            /**
+             * Holds Close
+             * @description The indicator is true, so the AI may not close the alert on its own. An unknown one never holds.
+             * @default false
+             */
+            holds_close: boolean;
             /** Id */
             id: string;
+            /**
+             * Observation Ids
+             * @description The observations a true indicator read.
+             */
+            observation_ids: string[];
             /**
              * State
              * @description unknown: the observations cannot show it either way.
@@ -4523,6 +4549,12 @@ export interface components {
          */
         EvidenceRun: {
             /**
+             * Benign Without Claims
+             * @description The deep model was shown the observations, judged the alert benign and gave no claim (recorded only).
+             * @default false
+             */
+            benign_without_claims: boolean;
+            /**
              * Budgets
              * @description What the lookups used of each limit.
              */
@@ -4533,6 +4565,11 @@ export interface components {
              * @default false
              */
             evidence_truncated: boolean;
+            /**
+             * Holds Close
+             * @description What of the evidence keeps the AI from closing the alert on its own: evidence_steering (see steering_observation_ids), evidence_indicator (see indicators) or evidence_citation (see the claims' findings). Empty when the evidence holds nothing.
+             */
+            holds_close: components["schemas"]["InvestigationReason"][];
             /** Indicators */
             indicators: components["schemas"]["EvidenceIndicator"][];
             /** Lookups */
@@ -4557,6 +4594,11 @@ export interface components {
              * @enum {string}
              */
             status: "ran" | "degraded" | "not_run";
+            /**
+             * Steering Observation Ids
+             * @description Observations in which the injection scan found text that tries to steer the model. The model was shown a fixed marker in its place; the observation keeps what the tool returned.
+             */
+            steering_observation_ids: string[];
             /**
              * Stop Reason
              * @description finished, a spent budget (budget_steps, budget_wall, ...), circuit_open or error.
@@ -5002,11 +5044,14 @@ export interface components {
             /**
              * @description The evidence lookups of the alert's newest analysis: what ran, what it used, or why none ran.
              * @default {
+             *       "benign_without_claims": false,
              *       "budgets": [],
              *       "evidence_truncated": false,
+             *       "holds_close": [],
              *       "indicators": [],
              *       "lookups": [],
-             *       "status": "not_run"
+             *       "status": "not_run",
+             *       "steering_observation_ids": []
              *     }
              */
             evidence_run: components["schemas"]["EvidenceRun"];
@@ -5074,7 +5119,7 @@ export interface components {
             direction: "malicious" | "benign";
             /**
              * Findings
-             * @description A cited claim's citation findings (code checked them; nothing is blocked on them yet).
+             * @description A cited claim's citation findings (code checked them). unknown_fact, altered_fact and not_benign_evidence on a benign verdict hold a model-led close; the others are recorded only.
              */
             findings: components["schemas"]["ClaimFinding"][];
             /** Id */

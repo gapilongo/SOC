@@ -90,6 +90,16 @@ DECIDE_SENTENCES: Final[Mapping[str, str]] = {
     "conflicting_evidence": "The evidence points both ways, so a person decides.",
     "policy_exception": "A policy exception applies to this alert, so a person decides.",
     "reopened": "A related threat appeared after the AI closed this alert, so it was reopened for a person.",
+    "evidence_steering": (
+        "The AI judged the alert benign, but a fact its lookups found contains text that tries to steer the model, "
+        "so a person decides."
+    ),
+    "evidence_indicator": (
+        "The AI judged the alert benign, but the facts its lookups found show a sign of an attack, so a person decides."
+    ),
+    "evidence_citation": (
+        "The AI judged the alert benign, but the facts it cited for that do not hold, so a person decides."
+    ),
     "awaiting_approval": "A response was proposed and waits for a person to approve it.",
 }
 
@@ -111,6 +121,15 @@ BLOCKER_SENTENCES: Final[Mapping[str, str]] = {
     ),
     "fast_tier_threat": "The first model assessment called it a likely or confirmed threat.",
     "deep_tier_not_benign": "The deeper analysis did not judge it benign.",
+    "evidence_steering": "A fact the evidence lookups found contains text that tries to steer the model.",
+    "evidence_indicator": (
+        "The facts the evidence lookups found show a sign of an attack that the playbook declares, such as another "
+        "high-level alert or an alert of a class only a person may close on the same host."
+    ),
+    "evidence_citation": (
+        "The benign verdict cites an observation the investigation did not record, or a lookup that found nothing "
+        "or failed, as its evidence."
+    ),
 }
 
 
@@ -256,6 +275,10 @@ UNKNOWN_EVIDENCE_REASON: Final = "The evidence lookups did not complete, so the 
 SKIPPED_LOOKUP_REASONS: Final[Mapping[str, str]] = {
     "no_binding": "The alert does not carry the value this lookup needs.",
     "binding_refused": "The alert's value for this lookup is not well-formed, so it was not sent.",
+    "common_binary": (
+        "Not asked: the alert's program is one every host runs (a system program or an interpreter), so how "
+        "widely it is seen says nothing."
+    ),
     "circuit_open": "Skipped: the source's event data had stopped answering.",
     "no_source": "Skipped: there is no event data to read for this alert's source.",
     "budget_steps": "Skipped: the lookups had reached their limit.",

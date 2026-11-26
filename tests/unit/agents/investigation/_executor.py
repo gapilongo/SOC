@@ -46,7 +46,8 @@ def logon_fact(value: str = "j.doe", **changes: Any) -> EvidenceFact:
 
 
 #: A logon failure the default skill binds three queries for (no object: prevalence has no value).
-LOGON = {"agent": {"name": "FIN-SRV-02"}, "data": {"win": {"eventdata": {"targetUserName": "j.doe", "ipAddress": "10.20.1.83"}}}}
+LOGON = {"agent": {"name": "FIN-SRV-02"}, "rule": {"id": "60122"},
+         "data": {"win": {"eventdata": {"targetUserName": "j.doe", "ipAddress": "10.20.1.83"}}}}
 #: An alert about a file: host activity and prevalence.
 FILE = {"agent": {"name": "FIN-SRV-02"}, "syscheck": {"sha256_after": "ab" * 32}}
 

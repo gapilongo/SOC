@@ -341,3 +341,105 @@ def test_a_scanner_or_test_source_never_closes_a_never_close_class(mitre: Dict[s
         assert routing.decide(state, T, "off").code == "rule_corroborated_benign"
     unmapped = benign_state(**{"triage.rule_fp": ["known_scanner"], "alert.mitre": {"tactics": [], "techniques": []}})
     assert routing.decide(unmapped, T, "off").code == "rule_corroborated_benign"
+
+
+# ------------------------------------------------- the evidence of an investigation (ADR 0014 Amendment 1, point 1)
+
+QUIET = {"steering": [], "indicators": {}, "citations": []}
+
+
+def investigated(**blocking: Any) -> Dict[str, Any]:
+    """The digest of an investigation as the analysis leaves it in graph state."""
+    return {"status": "completed", "reason": None, "skill": "wazuh.default", "blocking": {**QUIET, **blocking}}
+
+
+@pytest.mark.parametrize(
+    ("blocking", "blocker", "names"),
+    [
+        ({"indicators": {"never_close_class_on_host": ["host:0"]}}, "evidence_indicator", "never_close_class_on_host (host:0)"),
+        ({"indicators": {"high_level_alert_on_host": ["host:0", "host:1"]}}, "evidence_indicator", "high_level_alert_on_host (host:0, host:1)"),
+        ({"citations": ["unknown_fact"]}, "evidence_citation", "unknown_fact"),
+        ({"citations": ["altered_fact"]}, "evidence_citation", "altered_fact"),
+        ({"citations": ["not_benign_evidence"]}, "evidence_citation", "not_benign_evidence"),
+        ({"citations": ["unchecked"]}, "evidence_citation", "unchecked"),  # nothing closes on claims nobody checked
+        ({"steering": ["logons_user:0"]}, "evidence_steering", "logons_user:0"),
+    ],
+)
+def test_the_evidence_of_an_investigation_holds_a_model_led_close(blocking: Dict[str, Any], blocker: str, names: str) -> None:
+    """Review of PR 443, findings 1 and 3 (the corpus item cv1-0351 closed on evidence): a malicious indicator
+    of the skill that is true over the facts, a benign verdict with a hard citation finding, or steering text in
+    a fact, each alone, sends the alert to a person, and the decision names what held it."""
+    state = benign_state(**{"analysis.investigation": investigated(**blocking)})
+    assert model_close_blockers(state, tier=AUTO) == [blocker]
+    decision = routing.decide(state, T, AUTO)
+    assert (decision.route, decision.disposition, decision.code) == ("escalate", None, blocker)
+    assert names in decision.reason
+    assert closure.evidence_holds(state["analysis"]) == {blocker: [names]}
+    # The same evidence with the tier off: the alert goes to a person for the reason it always did.
+    assert routing.decide(state, T, "off").code == "false_positive_review"
+
+
+@pytest.mark.parametrize(
+    "blocking",
+    [
+        {},  # an investigation that found nothing against the close
+        {"citations": ["incomplete_fact", "no_citation", "no_claims"]},  # recorded, and do not block
+        {"citations": ["a_code_of_a_newer_release"]},
+        {"indicators": {}},
+    ],
+)
+def test_what_is_recorded_only_does_not_hold_a_close(blocking: Dict[str, Any]) -> None:
+    """An unknown indicator is not in ``blocking`` at all (the tool could not answer): it does not block."""
+    state = benign_state(**{"analysis.investigation": investigated(**blocking)})
+    assert model_close_blockers(state, tier=AUTO) == [] and routing.decide(state, T, AUTO).code == MODEL_CLOSED
+
+
+def test_without_an_investigation_policy_v3_is_unchanged() -> None:
+    plain = benign_state()
+    assert "investigation" not in plain["analysis"] and closure.evidence_holds(plain["analysis"]) == {}
+    assert routing.decide(plain, T, AUTO).code == MODEL_CLOSED
+    assert closure.evidence_holds({"investigation": None}) == {}
+
+
+@pytest.mark.parametrize("record", [{}, {"status": "completed"}, {"blocking": "nothing"}, {"blocking": None}, "x", 7, []])
+def test_an_investigation_whose_record_cannot_be_read_holds_the_close(record: Any) -> None:
+    """Fail closed: an investigation ran and what it holds cannot be read."""
+    state = benign_state(**{"analysis.investigation": record})
+    assert model_close_blockers(state, tier=AUTO) == ["evidence_indicator"]
+    assert routing.decide(state, T, AUTO).code == "evidence_indicator"
+    unreadable = benign_state(**{"analysis.investigation": investigated(indicators="all of them")})
+    assert model_close_blockers(unreadable, tier=AUTO) == ["evidence_indicator"]
+
+
+def test_citation_findings_hold_only_a_benign_verdict() -> None:
+    state = benign_state(**{"analysis.investigation": investigated(citations=["unknown_fact"]), "analysis.verdict": "suspicious"})
+    assert closure.evidence_holds(state["analysis"]) == {}
+    assert model_close_blockers(state, tier=AUTO) == ["deep_tier_not_benign"]
+
+
+def test_evidence_blockers_come_with_the_others_and_never_replace_their_reason() -> None:
+    """With another blocker the alert routes as it always did; the evidence blocker is listed beside it."""
+    held = investigated(indicators={"high_level_alert_on_host": ["host:0"]}, steering=["host:0"], citations=["unknown_fact"])
+    state = benign_state(**{"analysis.investigation": held, "alert.flags": ["llm_normalized"]})
+    assert model_close_blockers(state, tier=AUTO) == ["llm_normalized", "evidence_steering", "evidence_indicator", "evidence_citation"]
+    assert routing.decide(state, T, AUTO).code == "llm_normalized"
+    only = benign_state(**{"analysis.investigation": held})
+    assert routing.decide(only, T, AUTO).code == "evidence_steering"  # steering first: the verdict itself is suspect
+    # A long list a hostile or broken record carries is bounded in the reason.
+    many = investigated(indicators={f"i{n}": [f"host:{m}" for m in range(99)] for n in range(99)})
+    reason = routing.decide(benign_state(**{"analysis.investigation": many}), T, AUTO).reason
+    assert len(reason) < 4_000 and len(closure.evidence_holds({"investigation": many})["evidence_indicator"]) == 16
+
+
+def test_steering_text_in_the_evidence_stops_a_close_on_approved_benign_evidence_too() -> None:
+    """The alert text's scan stops every automatic close (F1); the same text in a fact does the same. A true
+    indicator does not: approved benign evidence is not the models' word."""
+    for signal, tier in itertools.product(EVIDENCE, AUTONOMY_TIERS):
+        steered = benign_state(**{"triage.rule_fp": [signal], "analysis.investigation": investigated(steering=["host:0"])})
+        decision = routing.decide(steered, T, tier)
+        assert (decision.route, decision.code) == ("escalate", "evidence_steering"), (signal, tier)
+        assert decision.reason == "steering text in the evidence (host:0)"
+        assert closure.evidence_close_blockers(steered) == ["evidence_steering"]
+        shown = benign_state(**{"triage.rule_fp": [signal], "analysis.investigation": investigated(
+            indicators={"high_level_alert_on_host": ["host:0"]})})
+        assert routing.decide(shown, T, tier).code == "rule_corroborated_benign", (signal, tier)

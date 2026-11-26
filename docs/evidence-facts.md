@@ -96,14 +96,15 @@ explicit `true`.
 Four registered tools read what surrounds an alert on the tenant's own Wazuh
 indexer and answer with facts (`lg_sotf.tools.wazuh`). They are query
 templates: a caller gives typed, bounded values and never a query, a field
-or an index. They are not called by the analysis yet.
+or an index. The [investigation executor](#the-investigation-executor) calls
+them for a tenant that switched them on.
 
 | Tool | Parameters | Fact |
 |---|---|---|
-| `wazuh.host_activity` | `host`, `at`, `before_min` and `after_min` (0 to 60 each) | `host_activity`: the host's alerts in the window, counted by rule group and technique, and the 50 with the highest rule level |
+| `wazuh.host_activity` | `host`, `at`, `before_min` and `after_min` (0 to 60 each), optional `exclude_rule_id` | `host_activity`: the host's alerts in the window, counted by rule group and technique, and the 50 with the highest rule level. With `exclude_rule_id`, the host's events of that rule at exactly `at` (the investigated alert's own event and its exact duplicates) are left out of every number and of the list |
 | `wazuh.logon_fanout` | `pivot` (`source_ip`, `source_host`, `target_user`, `target_host`), `value`, `at`, `before_min` (1 to 1440), `after_min` (0 to 60), `family` (`windows`, `sshd`) | `logon_fanout`: failures, successes, lockouts, distinct users, sources and hosts, who failed and who got in, and the seconds from the first failure to the first success after it. Always every outcome and every logon type of the pivot: a caller cannot narrow it |
 | `wazuh.process_lineage` | `host`, `process_guid` or `image`, `at`, `after_min` (0 to 30), `depth` (parents, 0 to 8), `child_depth` (1 to 4, default 2) | `process_lineage`: the process's parents, and what it started, down to what its children started. One fact per process that matches (at most 3) |
-| `wazuh.prevalence` | `kind` (`sha256`, `process_image`, `service_image_path`, `service_name`), `value`, `days` (1 to 30) | `prevalence`: on how many of the tenant's agents the value was seen, how often, first and last |
+| `wazuh.prevalence` | `kind` (`sha256`, `process_image`, `service_image_path`, `service_name`), `value`, `days` (1 to 30), optional `at` | `prevalence`: on how many of the tenant's agents the value was seen, how often, first and last. The window ends at `at` (the alert's time: what was seen up to the alert); without it, where the index is settled |
 
 A call returns the facts it observed and a typed outcome: `success`, `empty`
 (the search ran and matched nothing: there is no fact) or `failed`, with a
@@ -158,6 +159,10 @@ What the tools read and how:
   name for sshd) are matched whatever their case: Windows compares them
   that way and logs them as the client typed them. The spellings of one name
   are counted together, and the fact gives the name in lower case.
+- **An address in the detector's spelling.** A `source_ip` is asked for as
+  the event wrote it and, when that differs, in its canonical form too
+  (`2001:0DB8:0000:0000:0000:0000:0000:0001` and `2001:db8::1`). No other
+  spelling is tried.
 - **Everything else is exact.** Addresses, process GUIDs, hashes, paths,
   service names, sshd user names, and the `host` of host activity and
   process lineage (the agent's name as the alert carries it) are compared
@@ -195,7 +200,9 @@ Limits measured on a Wazuh 4.14 indexer:
   (`unknown_user_failures`) but not listed.
 - **A busy host** with more than 50 alerts in the window always gives an
   incomplete `host_activity` fact: its counts are exact, its event list is
-  the 50 highest.
+  the 50 highest. Whoever can raise louder alerts on the host can push a
+  quieter one out of that list (the counts, techniques and highest level
+  still include it); choosing the list better is #452.
 - **Shared clusters.** A tenant is separated by its source's index pattern
   and indexer user. No setting scopes a tenant by agent group or label yet
   (INT3.2).
@@ -342,7 +349,7 @@ not implement does not load, and the process does not start):
 | Lookup | Tool | Runs when the alert carries |
 |---|---|---|
 | `host` | `wazuh.host_activity`: the host's alerts in the hour up to the alert | the agent's name (every Wazuh alert) |
-| `prevalence` | `wazuh.prevalence`: on how many agents the object was seen over 30 days | a file hash (file integrity), a service's binary path, or a process image |
+| `prevalence` | `wazuh.prevalence`: on how many agents the object was seen over the 30 days up to the alert | a file hash (file integrity), a service's binary path, or a process image that is not a common binary (below) |
 | `logons_user` | `wazuh.logon_fanout`: every logon of the account over the day before | an account name (Windows logon events, sshd) |
 | `logons_source` | `wazuh.logon_fanout`: every logon from the address over the day before | a source address |
 
@@ -353,18 +360,36 @@ description, and nothing from a model: the plan is the file, in the file's
 order. The lookups run at once, without waiting for their time windows to
 close; a fact whose window had not closed says `complete: false`.
 
+**An alert is never its own evidence.** The `host` lookup leaves out the
+alert's own event: the host's events of the alert's rule at the alert's exact
+time (its exact duplicates included). An alert alone on its host therefore
+gets an empty host lookup, not "one event in the hour". The logon lookups
+still count the alert's own logon: a fan-out is a count of logons, the
+alert's among them.
+
+**No prevalence for a program every host runs.** When the alert's object is
+a process image under a system directory (`C:\Windows\System32`, `SysWOW64`,
+`WinSxS`, a file directly in `C:\Windows`, `/bin`, `/sbin`, `/usr/bin`,
+`/usr/sbin`, `/usr/libexec`) or one of a short reviewed list of interpreters
+and living-off-the-land programs (`powershell.exe`, `cmd.exe`, `rundll32.exe`,
+`mshta.exe`, `certutil.exe`, `python`, `bash`, `curl` and the like:
+`lg_sotf.domain.skill_views`), the lookup is skipped with the reason
+`common_binary` and there is no fact: "seen on 12 hosts" would read as
+reassuring and say nothing. A file hash or a service's binary is used when
+the alert carries one.
+
 Each lookup goes through the tool registry and is recorded on the run's
 [fact ledger](#the-fact-ledger) whatever its outcome. The playbook also
 declares two malicious indicators over the host's activity (an alert of a
 class only a person may close, an alert of rule level 12 or higher). They are
-evaluated to `true`, `false` or `unknown` and reported. They do not block a
-close in this release, and the host's window includes the alert itself.
+evaluated to `true`, `false` or `unknown` and reported, and a true one holds a
+model-led close ([below](#what-the-evidence-holds)).
 
 **Budgets.** One investigation may make 8 lookups, take 60 seconds (and never
 more than a quarter of `worker.analysis_timeout_s`), spend 20,000 tokens on
 its own model calls and $0.25. A tenant overrides these in
 `investigation.budget` (`steps`, `wall_s`, `tokens`, `usd`) up to the
-install's `investigation.tenant_max`; a higher value is cut to it. Today the
+install's `investigation.tenant_max`; a higher value, however large, is cut to it. Today the
 plan is fixed, so the executor makes no model call and spends no token, and
 the Wazuh tools cost nothing: the money budget counts the price a tool
 declares in the registry (`price_usd`). After two lookups in a row without an
@@ -387,8 +412,41 @@ and the record says so (`evidence_truncated`). These are two separate prompt tem
 without evidence are unchanged. Code then checks every cited id against the
 ledger of the same run and stores the claims with the findings
 (`unknown_fact`, `not_benign_evidence`, `incomplete_fact`, `no_citation`,
-`altered_fact`). The findings are recorded and shown. They change no verdict
-and no routing in this release.
+`altered_fact`). A benign verdict that was shown the evidence and gives no
+claim at all is recorded as `no_claims`. The findings never change the
+verdict; the hard ones hold a model-led close (next).
+
+**Steering text in a fact.** A typed field of a fact can hold a string an
+attacker chose: a user name typed at a logon, a command line, a service
+name. Before any model sees the facts, the scan that reads the alert's own
+text for steering instructions reads every string of every fact. A flagged
+string is replaced, in what the model is shown, by the fixed marker
+`[withheld: text that tries to steer the model]`; the observation is marked
+`steering_text_withheld`, the record lists its id under `steering`, and the
+analysis carries `prompt_injection_suspected` among its indicators, as it
+does for the alert's own text. The ledger keeps what the tool returned.
+
+### What the evidence holds
+
+Evidence can hold a close and can never buy one. When an investigation ran
+for the alert, the closing rule (`lg_sotf.domain.closure`) reads three things
+from its record (`blocking`), and each alone sends the alert to a person:
+
+| Decide code | Holds the close when | Does not hold it |
+|---|---|---|
+| `evidence_steering` | a fact carries steering text. This also stops a close on approved benign evidence | |
+| `evidence_indicator` | a malicious indicator of the playbook is `true` over the facts. The decision names the indicator and the observations it read | an `unknown` indicator: the lookup failed, or did not show it and was not complete |
+| `evidence_citation` | the verdict is benign and a claim has a hard finding: `unknown_fact`, `altered_fact`, `not_benign_evidence`; or the claims could not be checked | `incomplete_fact`, `no_citation`, `no_claims`: recorded and shown |
+
+These apply only to a model-led close (and steering text to every automatic
+close). With no investigation the decision policy is unchanged. An
+investigation whose record does not say what it holds is read as holding the
+close. The decision's reason names what held it
+(`a malicious indicator is true over the evidence: high_level_alert_on_host
+(host:0)`), the alert's view lists it among the reasons the AI may not close
+the alert (`outcome.blockers`, `evidence_run.holds_close`), and the queue
+shows a plain sentence for each code. The full claim checker and the skills
+with benign proofs are AI-E3.4 (#207) and AI-E3.1 (#199).
 
 **When it cannot finish.** The alert's run never fails, closes or escalates
 because of the lookups. In each case below the deep model gets today's
@@ -420,9 +478,11 @@ no third party) and keep the ledger in memory: nothing is written.
 **Where the tools read.** `investigation.evidence_backend` names it, and it
 is never guessed. `indexer` (the default): the tenant's own Wazuh indexer,
 found from the alert's source. `event_store`: a dataset's telemetry in
-memory (`investigation.event_store_files`), for evaluation and development;
-it is synthetic, is refused in staging and production, and is announced on
-the worker's standard error when it starts. See
+memory (`investigation.event_store_files`), for evaluation and development.
+It is synthetic, so it is an allow-list: the settings load only when
+`environment` is set, explicitly, to `development` or `test`. An install that
+does not say which environment it is, and any other environment, does not
+start. It is announced on the worker's standard error when it starts. See
 [evaluation.md](evaluation.md#the-investigation-harness-on-the-corpus).
 
 `GET /api/v1/alerts/{id}/investigation` shows the lookups, the budgets, the

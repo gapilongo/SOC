@@ -75,7 +75,7 @@ from lg_sotf.agents.analysis.react import (
     ReActReasoner,
 )
 from lg_sotf.agents.base import AccountedRun, AgentContext, BaseAgent, LLMResult
-from lg_sotf.agents.investigation.claims import investigation_record
+from lg_sotf.agents.investigation.claims import investigation_digest, investigation_record
 from lg_sotf.agents.investigation.executor import NO_MODEL, InvestigationRun, SkillInvestigator
 from lg_sotf.agents.triage.base import INJECTION_SIGNAL, agent_refusal, injection_suspected, source_environment
 from lg_sotf.domain.indicators import Indicator, extract_indicators
@@ -183,10 +183,6 @@ CITED_VERDICT_PROMPT = register_prompt(
     "analysis.verdict_cited", system=SYSTEM_PROMPT, task=f"{VERDICT_TASK} {CITE_TASK}", schema=CitedVerdict
 )
 _CITED_VERDICT = cast("PromptTemplate[AnalysisVerdict]", CITED_VERDICT_PROMPT)
-#: What of an investigation's record the graph state and the node's timeline event carry (counts and codes).
-INVESTIGATION_DIGEST_KEYS = (
-    "status", "reason", "skill", "skill_version", "stop_reason", "lookups", "facts", "empty", "failed", "skipped",
-)
 
 
 @dataclass
@@ -242,10 +238,7 @@ class AnalysisResult:
         if self.llm_refusal is not None:
             out["llm_refusal"] = cast("LlmRefusal", self.llm_refusal)
         if self.investigation is not None:
-            small = {key: self.investigation.get(key) for key in INVESTIGATION_DIGEST_KEYS}
-            claims = self.investigation.get("claims") or []
-            small.update(claim_count=len(claims), citation_findings=sum(len(claim["findings"]) for claim in claims))
-            out["investigation"] = cast("InvestigationRecord", small)
+            out["investigation"] = cast("InvestigationRecord", investigation_digest(self.investigation))
         return out
 
     def summary(self) -> AnalysisSummary:
@@ -376,7 +369,7 @@ def rule_evidence(indicators: Sequence[str]) -> List[str]:
 
 def is_corroborated(alert: Mapping[str, Any], triage: Mapping[str, Any], indicators: Sequence[str]) -> bool:
     """Whether rule evidence (never severity, field presence or the model) supports an automatic response."""
-    if INJECTION_SIGNAL in (triage.get("rule_tp") or []) or injection_suspected(alert):
+    if INJECTION_SIGNAL in (triage.get("rule_tp") or []) or INJECTION_SIGNAL in indicators or injection_suspected(alert):
         return False
     return sum(EVIDENCE_WEIGHTS[i] for i in rule_evidence(indicators)) >= CORROBORATION_WEIGHT
 
@@ -710,8 +703,10 @@ class AnalysisAgent(BaseAgent):
         )
         final, refusal = await self._reason(ctx, run)
 
+        # Steering text in a fact is the alert text's own signal (and is never shown to the model).
+        steered = [INJECTION_SIGNAL] if investigation is not None and investigation.steering else []
         indicators = rule_threat_indicators(
-            alert, correlation, evidence_indicators(history, run.observations) + email_evidence
+            alert, correlation, evidence_indicators(history, run.observations) + email_evidence + steered
         )
         corroborated = is_corroborated(alert, triage, indicators)
         rule_score = rule_threat_score(
@@ -734,10 +729,7 @@ class AnalysisAgent(BaseAgent):
             "history": history_stored,
             "reasoning": run.thoughts,
             "notes": run.notes,
-            "investigation": investigation_record(
-                investigation, final,
-                evidence_truncated=evidence is not None and context_truncated({"evidence": evidence}, ctx.settings),
-            ),
+            "investigation": investigation_record(investigation, final, evidence_truncated=run.evidence_truncated),
         }
         return _assemble_result(
             final, refusal, upstream_refusal(triage, correlation), rule_score, common, agent=self.name
@@ -771,12 +763,14 @@ class AnalysisAgent(BaseAgent):
         if run.candidates:
             await self.reasoner.reason(self, run)
             return run.final, run.refusal
+        context = None if run.evidence is None else {"evidence": run.evidence}
+        run.evidence_truncated = context is not None and context_truncated(context, ctx.settings)
         llm: LLMResult[AnalysisVerdict] = await self.call_llm(
             ctx,
             tier="deep",
             prompt=VERDICT_PROMPT if run.evidence is None else _CITED_VERDICT,
             untrusted=run.alert_block,
-            context=None if run.evidence is None else {"evidence": run.evidence},
+            context=context,
             enabled=self.enable_llm,
         )
         run.notes.extend(llm.notes)

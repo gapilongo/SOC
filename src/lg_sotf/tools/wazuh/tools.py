@@ -156,7 +156,9 @@ def _found(mapped: Optional[Mapped[Any]]) -> List[Mapped[Any]]:
 
 async def _host_activity(reader: _Reader, params: HostActivityParams) -> Evidence:
     start, end = params.at - minutes(params.before_min), params.at + minutes(params.after_min)
-    mapped = mappers.host_activity(await reader.ask(templates.host_activity(params)), start, end)
+    answer = await reader.ask(templates.host_activity(params))
+    mine = templates.own_event(params)  # the alert under investigation is never its own evidence
+    mapped = mappers.host_activity(answer, start, end, await reader.ask(mine) if mine is not None else None)
     return await _evidence(reader, HOST_ACTIVITY, "host_activity", ("host", params.host), _found(mapped), start, end)
 
 
@@ -251,8 +253,10 @@ async def _process_lineage(reader: _Reader, params: ProcessLineageParams) -> Evi
 
 
 async def _prevalence(reader: _Reader, params: PrevalenceParams) -> Evidence:
-    """The window ends where the index is settled (now less the source's ingest lag) and reaches back ``days``."""
-    end = reader.backend.now() - reader.backend.lag
+    """The window reaches back ``days`` from ``at`` (the alert's time: what was seen up to the alert); without
+    ``at``, from where the index is settled (now less the source's ingest lag)."""
+    settled = reader.backend.now() - reader.backend.lag
+    end = settled if params.at is None else min(params.at, reader.backend.now())
     start = end - timedelta(days=params.days)
     answer = await reader.ask(templates.prevalence(params, end))
     oldest = await reader.oldest()

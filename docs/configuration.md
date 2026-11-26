@@ -368,7 +368,7 @@ The investigation harness (ADR 0014): evidence lookups in the customer's own Waz
 
 | Setting | Environment variable | Type | Default | Description |
 |---|---|---|---|---|
-| `investigation.evidence_backend` | `LG_SOTF_INVESTIGATION__EVIDENCE_BACKEND` | `indexer` \| `event_store` | `indexer` | Where the Wazuh evidence tools read: `indexer` (each tenant's own Wazuh indexer, resolved from the alert's source) or `event_store` (a dataset's telemetry in memory, for evaluation and development; synthetic data, refused in staging and production). Never guessed: a process asked for `event_store` that was not given one does not start. |
+| `investigation.evidence_backend` | `LG_SOTF_INVESTIGATION__EVIDENCE_BACKEND` | `indexer` \| `event_store` | `indexer` | Where the Wazuh evidence tools read: `indexer` (each tenant's own Wazuh indexer, resolved from the alert's source) or `event_store` (a dataset's telemetry in memory, for evaluation and development; synthetic data, so the settings load only when `environment` is set explicitly to `development` or `test`). Never guessed: a process asked for `event_store` that was not given one does not start. |
 | `investigation.event_store_files` | `LG_SOTF_INVESTIGATION__EVENT_STORE_FILES` | list[string] | `[]` | With `evidence_backend: event_store`: the dataset files to load (alerts and context events, `.jsonl` or `.jsonl.gz`). In an environment variable, a JSON list. |
 | `investigation.breaker_failures` | `LG_SOTF_INVESTIGATION__BREAKER_FAILURES` | integer | `2` | Lookups in a row that give no answer before the rest of an investigation's lookups are skipped (the source's event data is taken to be unreachable). |
 
