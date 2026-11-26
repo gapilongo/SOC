@@ -130,7 +130,18 @@ INVARIANTS: Tuple[Invariant, ...] = (
             "critical one on the same host that is being processed, holds the close back and the alert goes to an "
             "analyst; so does a check that did not complete (a failed read, more open threats than one decision "
             "compares), without failing the run. A low or medium threat only a model stands behind holds nothing: "
-            "the alert closes and is linked to that threat's case at once. When an alert becomes a threat after "
+            "the alert closes and is linked to that threat's case at once. "
+            "When evidence lookups ran for the alert (the "
+            "investigation executor), their facts can hold such a close and never buy one: a malicious indicator "
+            "the reviewed skill declares that is true over the facts (never from the alert's own event, which the "
+            "host lookup leaves out; an indicator the lookups could not settle does not hold), a benign verdict "
+            "whose claims cite an observation the ledger did not record or an altered one (forgery or "
+            "corruption), and steering text in any fact (the alert text's own scan; the model is shown a "
+            "marker, and approved benign evidence does not close past it either) each send the alert to a person, "
+            "and the decision names what held it. The harness holds nothing else: a benign claim that rests on a "
+            "lookup that found nothing, failed or was incomplete is recorded, the close is made on the models' "
+            "word as without a harness, and the record never calls it evidence-backed. "
+            "When an alert becomes a threat after "
             "the close, the safety net looks at every model-closed alert of the previous 24 hours that relates to "
             "it. Below hold grade a model's judgement is not a confirmation: such a threat (a low or medium "
             "escalation a model judged a threat; a response the workflow only proposes, or only simulates in "
@@ -161,7 +172,8 @@ INVARIANTS: Tuple[Invariant, ...] = (
             "src/lg_sotf/domain/routing.py", "src/lg_sotf/domain/closure.py", "src/lg_sotf/domain/benign_evidence.py",
             "src/lg_sotf/domain/noise_families.py", "src/lg_sotf/domain/verdict_key.py",
             "src/lg_sotf/core/verdict_cache.py", "src/lg_sotf/core/benign_learning.py",
-            "src/lg_sotf/core/retro_reopen.py",
+            "src/lg_sotf/core/retro_reopen.py", "src/lg_sotf/agents/investigation/claims.py",
+            "src/lg_sotf/agents/investigation/executor.py",
         ),
         proofs=(
             "tests/unit/domain/test_routing.py::test_llm_only_evidence_never_closes_high_or_critical_at_triage",
@@ -200,6 +212,22 @@ INVARIANTS: Tuple[Invariant, ...] = (
             "tests/unit/domain/test_closure.py::test_a_scanner_or_test_source_never_closes_a_never_close_class",
             "tests/unit/domain/test_closure.py::"
             "test_an_unmapped_alert_closes_on_the_models_word_but_an_unreadable_wazuh_rule_does_not",
+            "tests/unit/domain/test_closure.py::test_the_evidence_of_an_investigation_holds_a_model_led_close",
+            "tests/unit/domain/test_closure.py::test_what_is_recorded_only_does_not_hold_a_close",
+            "tests/unit/domain/test_closure.py::test_without_an_investigation_policy_v3_is_unchanged",
+            "tests/unit/domain/test_closure.py::test_an_investigation_whose_record_cannot_be_read_holds_the_close",
+            "tests/unit/domain/test_closure.py::"
+            "test_steering_text_in_the_evidence_stops_a_close_on_approved_benign_evidence_too",
+            "tests/unit/domain/test_closure.py::"
+            "test_the_holds_are_named_in_the_order_steering_related_threat_evidence",
+            "tests/unit/agents/test_analysis_evidence.py::test_a_true_indicator_holds_the_close_and_names_its_facts",
+            "tests/unit/agents/test_analysis_evidence.py::"
+            "test_a_hard_citation_finding_on_a_benign_verdict_holds_the_close",
+            "tests/unit/tools/wazuh/test_own_event.py::test_an_alert_alone_on_its_host_shows_nothing",
+            "tests/integration/engine/test_review_443_steering.py::"
+            "test_probe_steering_text_in_evidence_blocks_a_model_close_like_steering_text_in_the_alert",
+            "tests/integration/engine/test_review_443_steering.py::"
+            "test_a_true_indicator_or_a_citation_that_does_not_hold_sends_the_alert_to_a_person",
             "tests/integration/engine/test_retro_reopen.py::"
             "test_an_escalation_a_model_judged_a_threat_links_related_model_closes_and_reopens_nothing",
             "tests/integration/engine/test_retro_reopen.py::"

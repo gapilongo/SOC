@@ -382,6 +382,59 @@ class MCPSettings(BaseModel):
     max_output_chars: int = Field(default=60_000, ge=1_000)
 
 
+#: The environments whose settings may name the synthetic ``event_store`` evidence backend, and only when
+#: ``environment`` is set explicitly (an unset environment is not development for this purpose).
+EVENT_STORE_ENVIRONMENTS = ("development", "test")
+
+
+class InvestigationBudget(BaseModel):
+    """What one investigation may spend (ADR 0014 section 2.3). A tenant's override is cut to ``tenant_max``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    # Tool calls, the ones a resumed run finds on its ledger included (ADR: at most 8 queries an investigation).
+    steps: int = Field(default=8, ge=1, le=32)
+    # Seconds from the first call to the last; never more than a quarter of ``worker.analysis_timeout_s``.
+    wall_s: float = Field(default=60.0, gt=0, le=300.0)
+    # Tokens of the model calls the executor makes itself (none while the plan is fixed).
+    tokens: int = Field(default=20_000, ge=0, le=1_000_000)
+    # Money: the price the registry declares for a tool, and the executor's own model calls.
+    usd: float = Field(default=0.25, ge=0, le=10.0)
+
+
+class InvestigationSettings(BaseModel):
+    """The investigation harness (ADR 0014, Amendment 1): evidence lookups before the deep analysis.
+
+    It runs for an alert only when the alert's source has evidence tools (Wazuh) and its tenant switched
+    them on (``tenants.settings.tools.wazuh_indexer.enabled: true``).
+
+    ``evidence_backend`` says where the Wazuh evidence tools read, and is never guessed: ``indexer`` is the
+    tenant's own Wazuh indexer, resolved from the alert's source; ``event_store`` is a dataset's telemetry
+    in memory (``event_store_files``: alerts and context events, ``.jsonl`` or ``.jsonl.gz``). It holds
+    synthetic data, so it is an allow-list: accepted only when ``environment`` is set, explicitly, to
+    ``development`` or ``test`` (:data:`EVENT_STORE_ENVIRONMENTS`). An install that does not say which
+    environment it is, and any other environment, is refused when the settings load.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    evidence_backend: Literal["indexer", "event_store"] = "indexer"
+    event_store_files: List[str] = Field(default_factory=list, max_length=8)
+    budget: InvestigationBudget = InvestigationBudget()
+    tenant_max: InvestigationBudget = InvestigationBudget(steps=16, wall_s=120.0, tokens=100_000, usd=1.0)
+    # Calls in a row that give no answer before the rest of an investigation's calls are skipped.
+    breaker_failures: int = Field(default=2, ge=1, le=8)
+
+    @model_validator(mode="after")
+    def _coherent(self) -> InvestigationSettings:
+        if self.evidence_backend == "event_store" and not self.event_store_files:
+            raise ValueError("investigation.evidence_backend=event_store needs investigation.event_store_files")
+        over = [n for n in InvestigationBudget.model_fields if getattr(self.budget, n) > getattr(self.tenant_max, n)]
+        if over:
+            raise ValueError(f"investigation.budget must not exceed investigation.tenant_max ({', '.join(over)})")
+        return self
+
+
 class IntegrationsSettings(BaseModel):
     """Outbound notifications and ticketing (``lg_sotf.integrations``); delivered by the scheduler."""
 
@@ -496,6 +549,7 @@ class Settings(BaseSettings):
     response: ResponseSettings = ResponseSettings()
     mcp: MCPSettings = MCPSettings()
     integrations: IntegrationsSettings = IntegrationsSettings()
+    investigation: InvestigationSettings = InvestigationSettings()
 
     # Free-form tuning sections consumed by agents and routing.
     agents: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
@@ -537,6 +591,13 @@ class Settings(BaseSettings):
             self.database.url = SecretStr(os.environ["DATABASE_URL"])
         if "url" not in self.redis.model_fields_set and os.environ.get("REDIS_URL"):
             self.redis.url = SecretStr(os.environ["REDIS_URL"])
+        store = self.investigation.evidence_backend == "event_store"
+        named = "environment" in self.model_fields_set and self.environment in EVENT_STORE_ENVIRONMENTS
+        if store and not named:
+            raise ValueError(
+                "investigation.evidence_backend=event_store answers from synthetic telemetry: it is accepted only "
+                f"when environment is set explicitly to one of {', '.join(EVENT_STORE_ENVIRONMENTS)}"
+            )
         if self.llm.api_key is None:
             env_key = {
                 "anthropic": "ANTHROPIC_API_KEY",

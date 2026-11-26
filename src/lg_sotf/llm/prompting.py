@@ -408,6 +408,13 @@ def render_untrusted(
         preview_len //= 2
 
 
+def context_truncated(context: Mapping[str, Any], settings: Settings) -> bool:
+    """Whether :func:`build_prompt` would cut ``context`` to fit its ``tool_data`` block (it marks what it
+    cuts and says so in the block's header; a caller that keeps a record of what the model saw asks here)."""
+    limit = max(settings.llm.max_input_chars // CONTEXT_SHARE, 256)
+    return render_untrusted(context, settings, limit=limit)[2]
+
+
 def caching_enabled(settings: Settings) -> bool:
     """Whether prompts carry Anthropic ``cache_control`` breakpoints."""
     return bool(settings.llm.prompt_caching and settings.llm.provider == "anthropic")

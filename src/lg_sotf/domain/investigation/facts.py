@@ -141,3 +141,5 @@ class InvestigationFacts:
     ledger: Sequence[LedgerEntry] = ()
     #: How many entries that run's ledger holds in all.
     ledger_total: int = 0
+    #: The investigation run those entries belong to; ``None`` without a ledger, or when it is not known.
+    ledger_run_id: Optional[str] = None

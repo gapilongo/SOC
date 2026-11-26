@@ -57,7 +57,7 @@ from datetime import UTC, datetime
 from typing import Any, Awaitable, Callable, Dict, List, Literal, Mapping, Optional, Sequence, Tuple
 
 from lg_sotf.agents.registry import AgentSet
-from lg_sotf.core.workflow import RunOutcome, WorkflowEngine
+from lg_sotf.core.workflow import RunOutcome, WorkflowEngine, evidence_backends
 from lg_sotf.db.repos import Repositories
 from lg_sotf.db.tenancy import thread_id_for
 from lg_sotf.domain.routing import refused_by
@@ -68,6 +68,7 @@ from lg_sotf.eval.dataset import DISPOSITIONS, Dataset, EvalItem, InjectionSpec
 from lg_sotf.eval.oracle import AnalystOracle, oracle_info
 from lg_sotf.eval.results import REVIEW_UNREVIEWED, ItemResult, llm_provenance
 from lg_sotf.eval.tool_fixtures import fixture_enrichment
+from lg_sotf.eval.wazuh_events import telemetry_backends
 from lg_sotf.ingestion.batch import IngestResult
 from lg_sotf.ingestion.service import API_SOURCE_ID, IngestionService, email_source_id
 from lg_sotf.llm.cassette import CassetteSet, recording_model_factory, replay_model_factory
@@ -579,10 +580,14 @@ async def open_engine(
     enrichment = None
     if dataset is not None and dataset.has_tool_fixtures:
         enrichment = fixture_enrichment(settings, dataset, secret_box=secret_box)
+    # The evidence tools answer from a dataset's telemetry only when the settings say so (never by default).
+    evidence = evidence_backends(settings, secret_box, telemetry_backends(settings))
     if cassettes is not None or enrichment is not None:
         factories = {"record": recording_model_factory(get_chat_model), "replay": replay_model_factory}
         factory = factories.get(cassettes.mode) if cassettes is not None else None
-        agents = AgentSet.build(settings, secret_box=secret_box, model_factory=factory, enrichment=enrichment)
+        agents = AgentSet.build(
+            settings, secret_box=secret_box, model_factory=factory, enrichment=enrichment, evidence=evidence
+        )
     try:
         return await WorkflowEngine.create(
             settings=settings,
@@ -592,6 +597,7 @@ async def open_engine(
             agents=agents,
             checkpoint_pool_size=max(2, min(concurrency + 1, settings.database.pool_max)),
             secret_box=secret_box,
+            evidence=evidence,
         )
     except (DatabaseError, asyncpg.PostgresError, OSError) as exc:
         raise EvalSetupError(f"cannot start the workflow engine: {type(exc).__name__}: {exc}") from exc

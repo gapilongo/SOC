@@ -38,6 +38,15 @@ someone else's address. The benign signal (an internal, fully
 authenticated sender) lowers the rule score further so a benign model
 verdict can be corroborated.
 
+Evidence (AI-E3.3). Before the model, the investigation executor
+(``lg_sotf.agents.investigation.executor``) looks up facts for an alert whose
+source has evidence tools and whose tenant switched them on. When it returned
+facts, the model is shown the run's fact ledger as untrusted tool data and
+returns the claims its verdict rests on with the ids they cite; code checks the
+ids and the result is stored
+(:func:`lg_sotf.agents.investigation.claims.investigation_record`). Nothing here
+reads those findings: the rule assessment and the routing are unchanged.
+
 Refusals. When any model call for the alert was refused (triage,
 correlation or this agent), the verdict is ``inconclusive`` and the digest
 carries ``llm_refusal``, so routing sends the case to an analyst rather than
@@ -47,6 +56,7 @@ closing it; the threat score is kept (it orders the analyst queue).
 from __future__ import annotations
 
 import re
+import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Dict, List, Mapping, Optional, Sequence, Tuple, Union, cast
@@ -54,15 +64,19 @@ from typing import TYPE_CHECKING, Any, Dict, List, Mapping, Optional, Sequence, 
 from pydantic import BaseModel, Field
 
 from lg_sotf.agents.analysis.react import (
+    CITE_TASK,
     MAX_ACTION_CHARS,
     MAX_ACTIONS,
     SYSTEM_PROMPT,
     AnalysisRunContext,
     Candidate,
+    Claims,
     InvestigationStep,
     ReActReasoner,
 )
 from lg_sotf.agents.base import AccountedRun, AgentContext, BaseAgent, LLMResult
+from lg_sotf.agents.investigation.claims import investigation_digest, investigation_record
+from lg_sotf.agents.investigation.executor import NO_MODEL, InvestigationRun, SkillInvestigator
 from lg_sotf.agents.triage.base import INJECTION_SIGNAL, agent_refusal, injection_suspected, source_environment
 from lg_sotf.domain.indicators import Indicator, extract_indicators
 from lg_sotf.domain.phishing import (
@@ -73,8 +87,8 @@ from lg_sotf.domain.phishing import (
     evidence_from_triage,
 )
 from lg_sotf.domain.routing import RoutingThresholds
-from lg_sotf.llm.prompting import PROVENANCE_NOTE
-from lg_sotf.llm.registry import register_prompt
+from lg_sotf.llm.prompting import PROVENANCE_NOTE, context_truncated
+from lg_sotf.llm.registry import PromptTemplate, register_prompt
 from lg_sotf.llm.schema import clipped_list, clipped_str, lenient_literal
 from lg_sotf.llm.trace import observe
 from lg_sotf.models.alert import model_view
@@ -88,9 +102,16 @@ from lg_sotf.tools.enrichment import (
     public_url,
 )
 from lg_sotf.tools.enrichment.tools import HISTORY_TOOL, enrichment_tools
+from lg_sotf.tools.wazuh.tools import Backends, register_wazuh_tools
 
 if TYPE_CHECKING:
-    from lg_sotf.core.state import AnalysisDigest, AnalysisSummary, LlmRefusal, ToolObservation
+    from lg_sotf.core.state import (
+        AnalysisDigest,
+        AnalysisSummary,
+        InvestigationRecord,
+        LlmRefusal,
+        ToolObservation,
+    )
 
 SEVERITY_BOOST = {"critical": 25, "high": 20, "medium": 10, "low": 0, "info": -10}
 # Classic backdoor/C2 listener ports (8080 is ordinary proxy/alt-HTTP traffic, not evidence).
@@ -150,6 +171,20 @@ class AnalysisVerdict(BaseModel):
 VERDICT_PROMPT = register_prompt("analysis.verdict", system=SYSTEM_PROMPT, task=VERDICT_TASK, schema=AnalysisVerdict)
 
 
+class CitedVerdict(AnalysisVerdict):
+    """The deep-tier verdict of an alert that has evidence: the verdict, and the claims it rests on."""
+
+    claims: Claims
+
+
+# Used only when the investigation executor collected facts for the alert (AI-E3.3): the same instructions
+# plus the citation task. Without evidence the template above, its hash and the prompt are unchanged.
+CITED_VERDICT_PROMPT = register_prompt(
+    "analysis.verdict_cited", system=SYSTEM_PROMPT, task=f"{VERDICT_TASK} {CITE_TASK}", schema=CitedVerdict
+)
+_CITED_VERDICT = cast("PromptTemplate[AnalysisVerdict]", CITED_VERDICT_PROMPT)
+
+
 @dataclass
 class AnalysisResult:
     threat_score: int
@@ -172,6 +207,9 @@ class AnalysisResult:
     history: List[Dict[str, Any]] = field(default_factory=list)
     reasoning: List[str] = field(default_factory=list)
     notes: List[str] = field(default_factory=list)
+    investigation: Optional[Dict[str, Any]] = None
+    """What the investigation executor did for this alert and the model's checked claims
+    (``lg_sotf.agents.investigation.claims.investigation_record``); ``None`` when no investigation applies."""
 
     @property
     def simulated_evidence(self) -> bool:
@@ -199,17 +237,22 @@ class AnalysisResult:
         }
         if self.llm_refusal is not None:
             out["llm_refusal"] = cast("LlmRefusal", self.llm_refusal)
+        if self.investigation is not None:
+            out["investigation"] = cast("InvestigationRecord", investigation_digest(self.investigation))
         return out
 
     def summary(self) -> AnalysisSummary:
         """For ``alerts.summary.analysis``: the digest plus the evidence behind it."""
-        return {
+        out: AnalysisSummary = {
             **self.digest(),
             "threat_indicators": self.threat_indicators,
             "tools": cast("List[ToolObservation]", self.observations),
             "history": self.history,
             "reasoning": self.reasoning,
         }
+        if self.investigation is not None:
+            out["investigation"] = cast("InvestigationRecord", self.investigation)
+        return out
 
 
 def _raw(alert: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -326,7 +369,7 @@ def rule_evidence(indicators: Sequence[str]) -> List[str]:
 
 def is_corroborated(alert: Mapping[str, Any], triage: Mapping[str, Any], indicators: Sequence[str]) -> bool:
     """Whether rule evidence (never severity, field presence or the model) supports an automatic response."""
-    if INJECTION_SIGNAL in (triage.get("rule_tp") or []) or injection_suspected(alert):
+    if INJECTION_SIGNAL in (triage.get("rule_tp") or []) or INJECTION_SIGNAL in indicators or injection_suspected(alert):
         return False
     return sum(EVIDENCE_WEIGHTS[i] for i in rule_evidence(indicators)) >= CORROBORATION_WEIGHT
 
@@ -552,13 +595,22 @@ class AnalysisAgent(BaseAgent):
         config: Optional[Mapping[str, Any]] = None,
         *,
         enrichment: Optional[EnrichmentService] = None,
+        evidence: Optional[Backends] = None,
         **kwargs: Any,
     ) -> None:
+        """``evidence`` resolves where the Wazuh evidence tools read for a run (the tenant's indexer, or a
+        dataset's telemetry). With it the tools are registered and the investigation executor runs before the
+        deep model for the alerts it applies to; without it there is no harness and nothing changes."""
         super().__init__(config, **kwargs)
         self.enrichment = enrichment or EnrichmentService.from_settings(self.settings)
         # Leave the rest of the node budget for the final writes and a margin for one slow call.
         budget_share = float(self.get_config("time_budget_share", 0.6))
         self.tools = enrichment_tools(self.enrichment)
+        self.evidence = evidence
+        self.investigator: Optional[SkillInvestigator] = None
+        if evidence is not None:
+            register_wazuh_tools(self.tools, evidence)
+            self.investigator = SkillInvestigator(self.tools, self.settings)
         self.reasoner = ReActReasoner(
             self.tools,
             max_steps=int(self.get_config("max_iterations", 5)),
@@ -642,11 +694,19 @@ class AnalysisAgent(BaseAgent):
             candidates=candidates,
             analyst_notes=analyst_notes,
         )
-        run = AnalysisRunContext(agent_ctx=ctx, alert=alert, candidates=candidates, alert_block=alert_block)
+        # Evidence first, by code (AI-E3.3): None when no investigation applies. It never raises.
+        investigation, spent_s = await self._investigate(ctx, alert, llm_on=llm_on)
+        evidence = investigation.context if investigation is not None else None
+        run = AnalysisRunContext(
+            agent_ctx=ctx, alert=alert, candidates=candidates, alert_block=alert_block, evidence=evidence,
+            spent_s=spent_s,
+        )
         final, refusal = await self._reason(ctx, run)
 
+        # Steering text in a fact is the alert text's own signal (and is never shown to the model).
+        steered = [INJECTION_SIGNAL] if investigation is not None and investigation.steering else []
         indicators = rule_threat_indicators(
-            alert, correlation, evidence_indicators(history, run.observations) + email_evidence
+            alert, correlation, evidence_indicators(history, run.observations) + email_evidence + steered
         )
         corroborated = is_corroborated(alert, triage, indicators)
         rule_score = rule_threat_score(
@@ -669,10 +729,28 @@ class AnalysisAgent(BaseAgent):
             "history": history_stored,
             "reasoning": run.thoughts,
             "notes": run.notes,
+            "investigation": investigation_record(investigation, final, evidence_truncated=run.evidence_truncated),
         }
         return _assemble_result(
             final, refusal, upstream_refusal(triage, correlation), rule_score, common, agent=self.name
         )
+
+    async def _investigate(
+        self, ctx: AgentContext, alert: Mapping[str, Any], *, llm_on: bool
+    ) -> Tuple[Optional[InvestigationRun], float]:
+        """The evidence lookups before the model (AI-E3.3) and the seconds they took, which count against the
+        analysis's own time budget. ``None`` without a harness or when no investigation applies.
+
+        When no model will read the facts (the LLM is off, or the tenant's token budget is spent) they stay on
+        the ledger for the analyst and the record says ``no_model``: it never claims a model was shown them.
+        """
+        if self.investigator is None:
+            return None, 0.0
+        began = time.monotonic()
+        found = await self.investigator.investigate(ctx, alert)
+        if found is not None and found.context is not None and not llm_on:
+            found.context, found.reason = None, NO_MODEL
+        return found, time.monotonic() - began
 
     async def _reason(
         self, ctx: AgentContext, run: AnalysisRunContext
@@ -685,11 +763,14 @@ class AnalysisAgent(BaseAgent):
         if run.candidates:
             await self.reasoner.reason(self, run)
             return run.final, run.refusal
+        context = None if run.evidence is None else {"evidence": run.evidence}
+        run.evidence_truncated = context is not None and context_truncated(context, ctx.settings)
         llm: LLMResult[AnalysisVerdict] = await self.call_llm(
             ctx,
             tier="deep",
-            prompt=VERDICT_PROMPT,
+            prompt=VERDICT_PROMPT if run.evidence is None else _CITED_VERDICT,
             untrusted=run.alert_block,
+            context=context,
             enabled=self.enable_llm,
         )
         run.notes.extend(llm.notes)
@@ -705,3 +786,6 @@ class AnalysisAgent(BaseAgent):
 
     async def cleanup(self) -> None:
         await self.enrichment.aclose()
+        close = getattr(self.evidence, "aclose", None)
+        if close is not None:  # the resolver of the tenants' indexers keeps their clients open
+            await close()

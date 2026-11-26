@@ -1,0 +1,72 @@
+# The default investigation skill (ADR 0014, Amendment 1 point 3): what is looked up for a Wazuh alert
+# that no family skill matches. Reviewed like code. The format is lg_sotf.models.skill.SkillSpec; a field
+# this release does not implement refuses the file.
+schema: lg-sotf/investigation-skill/v1
+id: wazuh.default
+title: Wazuh alert, default lookups
+version: 1.0.0
+status: active
+owner: detection
+summary: >-
+  Facts from the customer's own Wazuh data for an alert without a family skill: what the host's alerts
+  show in the hour up to the alert, how widely the alert's file, service binary or process image is seen
+  across the customer's agents over 30 days, and, when the alert names an account or a source address,
+  every logon of it over the day before. The skill proves nothing benign by itself: it gives the
+  analysis facts to cite.
+applies_to:
+  source_types: [wazuh]
+view: wazuh.alert
+evidence:
+  # Always first: the neighbourhood check reads it (ADR 0014 section 1.1).
+  - id: host
+    tool: wazuh.host_activity:1
+    when: always
+    required: true
+    args:
+      host: view.host
+      at: alert.occurred_at
+      before_min: 60
+      after_min: 0
+      # The alert's own event (its rule, at its time) is left out: an alert is never its own evidence.
+      exclude_rule_id: {optional: view.rule_id}
+  - id: prevalence
+    tool: wazuh.prevalence:1
+    when: always
+    args:
+      kind: view.object_kind
+      value: view.object_value
+      days: 30
+      at: alert.occurred_at
+  - id: logons_user
+    tool: wazuh.logon_fanout:1
+    when: always
+    args:
+      pivot: {const: target_user}
+      value: view.user
+      at: alert.occurred_at
+      before_min: 1440
+      family: view.logon_family
+  - id: logons_source
+    tool: wazuh.logon_fanout:1
+    when: always
+    args:
+      pivot: {const: source_ip}
+      value: view.source_ip
+      at: alert.occurred_at
+      before_min: 1440
+      family: view.logon_family
+hypotheses:
+  # A true indicator blocks a model-led close (lg_sotf.domain.closure, ADR 0014 Amendment 1 point 1); an
+  # unknown one does not. The host's activity leaves the alert's own event out, so an indicator is never
+  # true from the alert's own level or technique.
+  malicious:
+    - id: never_close_class_on_host
+      says: The host raised an alert of a class only a person may close in the hour up to this alert.
+      indicator:
+        fact: host
+        any_technique_in: [T1003, T1110, T1552, T1555, T1556, T1558, T1531, T1070, T1562, T1485, T1486, T1489, T1490]
+    - id: high_level_alert_on_host
+      says: The host raised an alert of rule level 12 or higher in the hour up to this alert.
+      indicator:
+        fact: host
+        max_level_ge: 12

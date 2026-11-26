@@ -893,6 +893,190 @@
                     },
                     "type": "array"
                   },
+                  "investigation": {
+                    "description": "What the investigation executor did for an alert (AI-E3.3). Absent when no investigation applies.",
+                    "properties": {
+                      "blocking": {
+                        "additionalProperties": true,
+                        "type": "object"
+                      },
+                      "budget": {
+                        "additionalProperties": {
+                          "additionalProperties": {
+                            "type": "number"
+                          },
+                          "type": "object"
+                        },
+                        "type": "object"
+                      },
+                      "citation_findings": {
+                        "type": "integer"
+                      },
+                      "claim_count": {
+                        "type": "integer"
+                      },
+                      "claims": {
+                        "items": {
+                          "description": "A claim of the deep model with the ledger ids it cites, as code checked them against the run's ledger.",
+                          "properties": {
+                            "cites": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            },
+                            "findings": {
+                              "items": {
+                                "description": "What is wrong with one citation of a claim (``lg_sotf.domain.ledger.check_citations``).",
+                                "properties": {
+                                  "code": {
+                                    "type": "string"
+                                  },
+                                  "fact_id": {
+                                    "type": "string"
+                                  }
+                                },
+                                "type": "object"
+                              },
+                              "type": "array"
+                            },
+                            "supports": {
+                              "type": "string"
+                            },
+                            "text": {
+                              "type": "string"
+                            }
+                          },
+                          "type": "object"
+                        },
+                        "type": "array"
+                      },
+                      "claims_checked": {
+                        "type": "boolean"
+                      },
+                      "empty": {
+                        "type": "integer"
+                      },
+                      "evidence_backed": {
+                        "type": "boolean"
+                      },
+                      "evidence_truncated": {
+                        "type": "boolean"
+                      },
+                      "facts": {
+                        "type": "integer"
+                      },
+                      "failed": {
+                        "type": "integer"
+                      },
+                      "indicators": {
+                        "additionalProperties": {
+                          "type": "string"
+                        },
+                        "type": "object"
+                      },
+                      "lookups": {
+                        "type": "integer"
+                      },
+                      "reason": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "run_id": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "skill": {
+                        "type": "string"
+                      },
+                      "skill_version": {
+                        "type": "string"
+                      },
+                      "skipped": {
+                        "type": "integer"
+                      },
+                      "status": {
+                        "type": "string"
+                      },
+                      "steering": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "steps": {
+                        "items": {
+                          "description": "One query of an investigation's plan: ``outcome`` is ``success``, ``empty``, ``failed`` or ``skipped``.",
+                          "properties": {
+                            "complete": {
+                              "type": "boolean"
+                            },
+                            "evidence_id": {
+                              "type": "string"
+                            },
+                            "fact_ids": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            },
+                            "outcome": {
+                              "type": "string"
+                            },
+                            "reason": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "reused": {
+                              "type": "boolean"
+                            },
+                            "tool": {
+                              "type": "string"
+                            }
+                          },
+                          "type": "object"
+                        },
+                        "type": "array"
+                      },
+                      "stop_reason": {
+                        "type": "string"
+                      },
+                      "verdict_findings": {
+                        "items": {
+                          "description": "What is wrong with one citation of a claim (``lg_sotf.domain.ledger.check_citations``).",
+                          "properties": {
+                            "code": {
+                              "type": "string"
+                            },
+                            "fact_id": {
+                              "type": "string"
+                            }
+                          },
+                          "type": "object"
+                        },
+                        "type": "array"
+                      }
+                    },
+                    "type": "object"
+                  },
                   "llm_calls": {
                     "type": "integer"
                   },
@@ -1895,6 +2079,190 @@
                       "type": "object"
                     },
                     "type": "array"
+                  },
+                  "investigation": {
+                    "description": "What the investigation executor did for an alert (AI-E3.3). Absent when no investigation applies.",
+                    "properties": {
+                      "blocking": {
+                        "additionalProperties": true,
+                        "type": "object"
+                      },
+                      "budget": {
+                        "additionalProperties": {
+                          "additionalProperties": {
+                            "type": "number"
+                          },
+                          "type": "object"
+                        },
+                        "type": "object"
+                      },
+                      "citation_findings": {
+                        "type": "integer"
+                      },
+                      "claim_count": {
+                        "type": "integer"
+                      },
+                      "claims": {
+                        "items": {
+                          "description": "A claim of the deep model with the ledger ids it cites, as code checked them against the run's ledger.",
+                          "properties": {
+                            "cites": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            },
+                            "findings": {
+                              "items": {
+                                "description": "What is wrong with one citation of a claim (``lg_sotf.domain.ledger.check_citations``).",
+                                "properties": {
+                                  "code": {
+                                    "type": "string"
+                                  },
+                                  "fact_id": {
+                                    "type": "string"
+                                  }
+                                },
+                                "type": "object"
+                              },
+                              "type": "array"
+                            },
+                            "supports": {
+                              "type": "string"
+                            },
+                            "text": {
+                              "type": "string"
+                            }
+                          },
+                          "type": "object"
+                        },
+                        "type": "array"
+                      },
+                      "claims_checked": {
+                        "type": "boolean"
+                      },
+                      "empty": {
+                        "type": "integer"
+                      },
+                      "evidence_backed": {
+                        "type": "boolean"
+                      },
+                      "evidence_truncated": {
+                        "type": "boolean"
+                      },
+                      "facts": {
+                        "type": "integer"
+                      },
+                      "failed": {
+                        "type": "integer"
+                      },
+                      "indicators": {
+                        "additionalProperties": {
+                          "type": "string"
+                        },
+                        "type": "object"
+                      },
+                      "lookups": {
+                        "type": "integer"
+                      },
+                      "reason": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "run_id": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "skill": {
+                        "type": "string"
+                      },
+                      "skill_version": {
+                        "type": "string"
+                      },
+                      "skipped": {
+                        "type": "integer"
+                      },
+                      "status": {
+                        "type": "string"
+                      },
+                      "steering": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "steps": {
+                        "items": {
+                          "description": "One query of an investigation's plan: ``outcome`` is ``success``, ``empty``, ``failed`` or ``skipped``.",
+                          "properties": {
+                            "complete": {
+                              "type": "boolean"
+                            },
+                            "evidence_id": {
+                              "type": "string"
+                            },
+                            "fact_ids": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            },
+                            "outcome": {
+                              "type": "string"
+                            },
+                            "reason": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "reused": {
+                              "type": "boolean"
+                            },
+                            "tool": {
+                              "type": "string"
+                            }
+                          },
+                          "type": "object"
+                        },
+                        "type": "array"
+                      },
+                      "stop_reason": {
+                        "type": "string"
+                      },
+                      "verdict_findings": {
+                        "items": {
+                          "description": "What is wrong with one citation of a claim (``lg_sotf.domain.ledger.check_citations``).",
+                          "properties": {
+                            "code": {
+                              "type": "string"
+                            },
+                            "fact_id": {
+                              "type": "string"
+                            }
+                          },
+                          "type": "object"
+                        },
+                        "type": "array"
+                      }
+                    },
+                    "type": "object"
                   },
                   "llm_calls": {
                     "type": "integer"
@@ -5707,6 +6075,39 @@
         "title": "CertificateInfo",
         "type": "object"
       },
+      "ClaimFinding": {
+        "description": "What code found wrong with one citation of a claim, against the fact ledger of the claim's own run.",
+        "properties": {
+          "cited": {
+            "description": "The id the model cited: data, at most 128 characters. Empty when the claim cites nothing.",
+            "title": "Cited",
+            "type": "string"
+          },
+          "code": {
+            "enum": [
+              "unknown_fact",
+              "altered_fact",
+              "not_benign_evidence",
+              "incomplete_fact",
+              "no_citation"
+            ],
+            "title": "Code",
+            "type": "string"
+          },
+          "sentence": {
+            "description": "The same in plain words (fixed text).",
+            "title": "Sentence",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "sentence",
+          "cited"
+        ],
+        "title": "ClaimFinding",
+        "type": "object"
+      },
       "ClaimIn": {
         "additionalProperties": false,
         "properties": {
@@ -7083,6 +7484,77 @@
         "title": "EscalationOut",
         "type": "object"
       },
+      "EvidenceBudget": {
+        "properties": {
+          "kind": {
+            "description": "steps: lookups. wall_s: seconds. tokens: model tokens. usd: US dollars.",
+            "enum": [
+              "steps",
+              "wall_s",
+              "tokens",
+              "usd"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "number"
+          },
+          "used": {
+            "title": "Used",
+            "type": "number"
+          }
+        },
+        "required": [
+          "kind",
+          "used",
+          "limit"
+        ],
+        "title": "EvidenceBudget",
+        "type": "object"
+      },
+      "EvidenceIndicator": {
+        "description": "A malicious indicator the playbook declares, over the run's observations.",
+        "properties": {
+          "holds_close": {
+            "default": false,
+            "description": "The indicator is true, so the AI may not close the alert on its own. An unknown one never holds.",
+            "title": "Holds Close",
+            "type": "boolean"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "observation_ids": {
+            "description": "The observations a true indicator read.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Observation Ids",
+            "type": "array"
+          },
+          "state": {
+            "description": "unknown: the observations cannot show it either way.",
+            "enum": [
+              "true",
+              "false",
+              "unknown"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "state",
+          "holds_close",
+          "observation_ids"
+        ],
+        "title": "EvidenceIndicator",
+        "type": "object"
+      },
       "EvidenceIntegrityOut": {
         "properties": {
           "bundle_sha256": {
@@ -7115,6 +7587,73 @@
           "bundle_sha256"
         ],
         "title": "EvidenceIntegrityOut",
+        "type": "object"
+      },
+      "EvidenceLookup": {
+        "description": "One lookup of the playbook: what became of it and the observations it recorded.",
+        "properties": {
+          "complete": {
+            "default": false,
+            "description": "Every observation of the lookup is complete.",
+            "title": "Complete",
+            "type": "boolean"
+          },
+          "evidence_id": {
+            "description": "The playbook's name for the lookup; its observations are <evidence_id>:<n>.",
+            "title": "Evidence Id",
+            "type": "string"
+          },
+          "observation_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Observation Ids",
+            "type": "array"
+          },
+          "outcome": {
+            "description": "success, empty or failed: recorded as observations. skipped: no call was made (see reason).",
+            "enum": [
+              "success",
+              "empty",
+              "failed",
+              "skipped"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why it failed or was skipped: a fixed code.",
+            "title": "Reason"
+          },
+          "reused": {
+            "default": false,
+            "description": "A resumed or retried run found the call on its ledger and did not send it again.",
+            "title": "Reused",
+            "type": "boolean"
+          },
+          "tool": {
+            "title": "Tool",
+            "type": "string"
+          }
+        },
+        "required": [
+          "evidence_id",
+          "tool",
+          "outcome",
+          "reason",
+          "observation_ids",
+          "complete",
+          "reused"
+        ],
+        "title": "EvidenceLookup",
         "type": "object"
       },
       "EvidencePackOut": {
@@ -7252,6 +7791,153 @@
           "integrity"
         ],
         "title": "EvidencePackOut",
+        "type": "object"
+      },
+      "EvidenceRun": {
+        "description": "The evidence lookups made for the alert before the deeper analysis, or why none ran.",
+        "properties": {
+          "benign_without_claims": {
+            "default": false,
+            "description": "The deep model was shown the observations, judged the alert benign and gave no claim (recorded only).",
+            "title": "Benign Without Claims",
+            "type": "boolean"
+          },
+          "budgets": {
+            "description": "What the lookups used of each limit.",
+            "items": {
+              "$ref": "#/components/schemas/EvidenceBudget"
+            },
+            "title": "Budgets",
+            "type": "array"
+          },
+          "evidence_backed": {
+            "default": false,
+            "description": "The benign verdict rests on recorded evidence: every benign claim cites at least one complete observation that found something, and has no finding. False otherwise: a close by the AI is then on the model's word.",
+            "title": "Evidence Backed",
+            "type": "boolean"
+          },
+          "evidence_truncated": {
+            "default": false,
+            "description": "The observations were cut to fit the model's prompt: it saw some of them in part.",
+            "title": "Evidence Truncated",
+            "type": "boolean"
+          },
+          "holds_close": {
+            "description": "What of the evidence keeps the AI from closing the alert on its own: evidence_steering (see steering_observation_ids), evidence_indicator (see indicators) or evidence_citation (see the claims' findings). Empty when the evidence holds nothing.",
+            "items": {
+              "$ref": "#/components/schemas/InvestigationReason"
+            },
+            "title": "Holds Close",
+            "type": "array"
+          },
+          "indicators": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceIndicator"
+            },
+            "title": "Indicators",
+            "type": "array"
+          },
+          "lookups": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceLookup"
+            },
+            "title": "Lookups",
+            "type": "array"
+          },
+          "playbook_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The playbook (skill) that chose the lookups.",
+            "title": "Playbook Id"
+          },
+          "playbook_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Playbook Version"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InvestigationReason"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "degraded or not_run: why, as a code and a fixed sentence. Null when the lookups ran."
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The investigation run whose fact ledger holds the observations.",
+            "title": "Run Id"
+          },
+          "status": {
+            "description": "ran: the lookups finished and the deep model was shown their observations. degraded: lookups started but the analysis ran without them (see reason). not_run: no lookup was made.",
+            "enum": [
+              "ran",
+              "degraded",
+              "not_run"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "steering_observation_ids": {
+            "description": "Observations in which the injection scan found text that tries to steer the model. The model was shown a fixed marker in its place; the observation keeps what the tool returned.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Steering Observation Ids",
+            "type": "array"
+          },
+          "stop_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "finished, a spent budget (budget_steps, budget_wall, ...), circuit_open or error.",
+            "title": "Stop Reason"
+          }
+        },
+        "required": [
+          "status",
+          "reason",
+          "playbook_id",
+          "playbook_version",
+          "run_id",
+          "stop_reason",
+          "lookups",
+          "evidence_truncated",
+          "budgets",
+          "indicators",
+          "steering_observation_ids",
+          "benign_without_claims",
+          "evidence_backed",
+          "holds_close"
+        ],
+        "title": "EvidenceRun",
         "type": "object"
       },
       "FeedbackIn": {
@@ -8338,6 +9024,21 @@
             "title": "Claims",
             "type": "array"
           },
+          "evidence_run": {
+            "$ref": "#/components/schemas/EvidenceRun",
+            "default": {
+              "benign_without_claims": false,
+              "budgets": [],
+              "evidence_backed": false,
+              "evidence_truncated": false,
+              "holds_close": [],
+              "indicators": [],
+              "lookups": [],
+              "status": "not_run",
+              "steering_observation_ids": []
+            },
+            "description": "The evidence lookups of the alert's newest analysis: what ran, what it used, or why none ran."
+          },
           "generated_at": {
             "format": "date-time",
             "title": "Generated At",
@@ -8434,6 +9135,7 @@
           "observations",
           "observations_total",
           "observations_truncated",
+          "evidence_run",
           "not_established",
           "steps",
           "track_record",
@@ -8446,7 +9148,7 @@
       "InvestigationClaim": {
         "properties": {
           "check": {
-            "description": "Today: supported when a lookup backs the claim, otherwise unsupported; rejected comes with the checker.",
+            "description": "supported: a lookup backs the claim, or every observation the model cited exists and can carry it. unsupported: it names no observation, or a citation has a finding. rejected comes with the checker.",
             "enum": [
               "supported",
               "unsupported",
@@ -8476,12 +9178,20 @@
             "title": "Direction",
             "type": "string"
           },
+          "findings": {
+            "description": "A cited claim's citation findings (code checked them). unknown_fact and altered_fact on a benign verdict hold a model-led close; the others are recorded only (see evidence_run.evidence_backed).",
+            "items": {
+              "$ref": "#/components/schemas/ClaimFinding"
+            },
+            "title": "Findings",
+            "type": "array"
+          },
           "id": {
             "title": "Id",
             "type": "string"
           },
           "observation_ids": {
-            "description": "The observations the claim rests on.",
+            "description": "The observations the claim rests on. For a claim the deep model cited: the ids it named that the run's fact ledger holds; an id the ledger did not record is only in findings.",
             "items": {
               "type": "string"
             },
@@ -8509,7 +9219,8 @@
           "direction",
           "observation_ids",
           "check",
-          "check_reason"
+          "check_reason",
+          "findings"
         ],
         "title": "InvestigationClaim",
         "type": "object"

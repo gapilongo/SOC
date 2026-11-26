@@ -537,7 +537,8 @@ async def test_every_call_is_one_trace_step_with_its_own_outcome_and_hashes() ->
     assert [(r.input_hash, r.output_hash) for r in results] == [(s.input_hash, s.output_hash) for s in steps]
     assert len({r.input_hash for r in results}) == len({r.output_hash for r in results}) == 3
     # The hashes are of the request as validated and of the recorded facts: nothing a model wrote.
-    request = {"host": "SRV-APP-02", "at": at.isoformat().replace("+00:00", "Z"), "before_min": 30, "after_min": 15}
+    request = {"host": "SRV-APP-02", "at": at.isoformat().replace("+00:00", "Z"), "before_min": 30, "after_min": 15,
+               "exclude_rule_id": None}
     assert results[0].input_hash == tool_input_hash(HOST_ACTIVITY, request)
     recorded = tape.recorded[results[0].input_hash]
     assert results[0].output_hash == content_hash(recorded) and recorded["facts"][0]["kind"] == "host_activity"

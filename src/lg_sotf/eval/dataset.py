@@ -83,10 +83,19 @@ MAX_MIME_CHARS = 1_000_000
 DomainName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=253)]
 
 
+class EvalToolSwitch(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    enabled: bool
+
+
 class EvalTools(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     internal_domains: List[DomainName] = Field(default_factory=list, max_length=256)
+    #: ``{"enabled": true}`` turns the investigation harness on for the evaluation tenants (AI-E3.3); the
+    #: evidence tools then read what ``investigation.evidence_backend`` names.
+    wazuh_indexer: Optional[EvalToolSwitch] = None
 
 
 class EvalTenantSettings(BaseModel):

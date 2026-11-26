@@ -304,3 +304,25 @@ def test_config_file_named_in_dotenv_is_loaded(tmp_path: Path, monkeypatch: pyte
     s = Settings()
     assert s.routing == {"marker": 1}
     assert s.llm.provider == "fake"
+
+
+def test_the_synthetic_evidence_backend_is_an_allow_list_of_named_environments(monkeypatch: pytest.MonkeyPatch) -> None:
+    """AI-E3.3: the event store answers from a dataset's synthetic telemetry. It loads only where the install
+    says, explicitly, that it is a development or test one; an install that does not say is refused."""
+    monkeypatch.delenv("LG_SOTF_ENVIRONMENT", raising=False)
+    store = {"evidence_backend": "event_store", "event_store_files": ["corpus_v1.jsonl.gz"]}
+    for named in ("development", "test"):
+        assert Settings(_env_file=None, environment=named, investigation=store).investigation.evidence_backend == "event_store"
+    monkeypatch.setenv("LG_SOTF_ENVIRONMENT", "development")  # said in the environment counts as said
+    assert Settings(_env_file=None, investigation=store).environment == "development"
+    monkeypatch.delenv("LG_SOTF_ENVIRONMENT")
+    with pytest.raises(ValueError, match="set explicitly"):
+        Settings(_env_file=None, investigation=store)  # unset: development by default, and not said
+    for other in ("staging", "production"):
+        with pytest.raises(ValueError, match="set explicitly"):
+            Settings(_env_file=None, environment=other, investigation=store)
+    assert Settings(_env_file=None).investigation.evidence_backend == "indexer"  # the default needs nothing said
+    with pytest.raises(ValueError, match="needs investigation.event_store_files"):
+        Settings(_env_file=None, environment="test", investigation={"evidence_backend": "event_store"})
+    with pytest.raises(ValueError):
+        Settings(_env_file=None, environment="test", investigation={"evidence_backend": "indexer", "fallback": "event_store"})

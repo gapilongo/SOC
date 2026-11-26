@@ -7,7 +7,9 @@ a lookup around it, so this test reads the source:
   that wrap them (``tools/enrichment/tools.py``) and by the service itself;
 * one registry is built, in one place (``enrichment_tools``), and one caller builds it (the analysis agent);
 * a Wazuh indexer is searched only by the Wazuh evidence tools (``tools/wazuh/tools.py``), and its client
-  is built only by the resolver that reads the calling run's own source (``ingestion/wazuh_indexer.py``).
+  is built only by the resolver that reads the calling run's own source (``ingestion/wazuh_indexer.py``);
+* the evidence tools are registered on that one registry by the analysis agent, which alone builds the
+  investigation executor that calls them (``agents/investigation/executor.py``, through ``ToolRegistry.call``).
 
 A new tool family adds its own line here, in the pull request that registers it.
 """
@@ -31,6 +33,11 @@ REGISTRY_BUILDERS = {
     "enrichment_tools": {"agents/analysis/base.py"},
     "wazuh_tools": {"tools/wazuh/tools.py"},
     "IndexerClient": {"ingestion/wazuh_indexer.py"},
+    # AI-E3.3: the Wazuh evidence tools join the one registry, in the agent that owns it; the resolver of the
+    # tenants' indexers is built where the workflow's services are, and the executor by that agent alone.
+    "register_wazuh_tools": {"agents/analysis/base.py"},
+    "WazuhIndexers": {"core/workflow.py"},
+    "SkillInvestigator": {"agents/analysis/base.py"},
 }
 SEARCHERS = {"tools/wazuh/tools.py"}
 

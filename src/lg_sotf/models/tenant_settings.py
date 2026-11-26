@@ -50,6 +50,9 @@ class TenantSettingsDoc(TypedDict, total=False):
     triage: Dict[str, Any]
     #: Model-led closure autonomy tier (``{"tier": "off" | "auto_full_audit"}``; lg_sotf.domain.closure).
     ai_closure: Dict[str, Any]
+    #: Budget overrides of the investigation harness (``{"budget": {steps, wall_s, tokens, usd}}``), cut to the
+    #: install's maximum when they are read (lg_sotf.domain.investigation_budget).
+    investigation: Dict[str, Any]
     #: Set when the tenant's data was erased (compliance.tenant_data); never editable.
     erased_at: str
 
@@ -74,6 +77,7 @@ EDITABLE_KEYS: FrozenSet[str] = frozenset(
         "phishing",
         "triage",
         "ai_closure",
+        "investigation",
     }
 )
 

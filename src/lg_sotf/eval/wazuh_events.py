@@ -11,17 +11,25 @@ lag), and its answers are never partial.
 
 ``tests/live/wazuh/test_evidence_tools.py`` loads the same documents into a Wazuh 4.14 indexer and checks
 that both backends give the same facts.
+
+:class:`TelemetryBackends` resolves that backend for a workflow run, when the install's settings name the
+event store as the evidence backend (:func:`telemetry_backends`).
 """
 
 from __future__ import annotations
 
+import re
 from collections import Counter
 from datetime import UTC, datetime, timedelta
 from functools import partial
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
-from lg_sotf.eval.tool_fixtures import EventQuery, EventView, event_time, field_values
+from lg_sotf.db.errors import NotFound
+from lg_sotf.eval.tool_fixtures import EventQuery, EventStore, EventView, event_time, field_values, load_documents
+from lg_sotf.settings import EVENT_STORE_ENVIRONMENTS, Settings
+from lg_sotf.tools.registry import ToolContext
 from lg_sotf.tools.wazuh import dsl
+from lg_sotf.tools.wazuh.indexer import IndexerUnavailable
 
 Doc = Mapping[str, Any]
 
@@ -116,6 +124,81 @@ def _project(doc: Doc, fields: Sequence[str]) -> Dict[str, Any]:
             target = target.setdefault(part, {})
         target[parts[-1]] = node
     return out
+
+
+_ID_SUFFIX = re.compile(r"-[0-9]{1,20}$")
+MAX_SHIFTED_STORES = 8
+
+
+class TelemetryBackends:
+    """``await backends(ctx)``: a dataset's telemetry as the evidence backend of a run (evaluation and development).
+
+    Chosen by configuration only (``investigation.evidence_backend: event_store``), never as a fallback, and
+    never in staging or production: the documents are synthetic. The run's alert is read under the run's own
+    tenant; the store answers as of the alert's own time, so nothing that happened after it is ever seen
+    (the investigation does not wait for windows to close).
+
+    The alert must be one of the dataset's documents: its source alert id is the document's ``id``, as it
+    is, or followed by ``-<digits>`` (how the development sender marks a re-sent copy). An alert that was
+    re-sent with its time moved gets the whole store moved by the same amount, so its context keeps its
+    distance from it. An alert the dataset does not hold has no telemetry: the call fails with
+    ``no_telemetry``, it never reads as "nothing found".
+
+    The store is one dataset for the whole install. It holds no tenant's data; a tenant reads it only once
+    it switched the evidence tools on.
+    """
+
+    def __init__(self, documents: Sequence[Doc]) -> None:
+        self._documents = list(documents)
+        self._times = {str(doc.get("id")): event_time(doc) for doc in self._documents if doc.get("id")}
+        self._stores: Dict[timedelta, EventStore] = {timedelta(0): EventStore(self._documents)}
+
+    @classmethod
+    def load(cls, files: Sequence[str]) -> TelemetryBackends:
+        return cls(load_documents(*files))
+
+    def __len__(self) -> int:
+        return len(self._documents)
+
+    def _store(self, delta: timedelta) -> EventStore:
+        store = self._stores.get(delta)
+        if store is None:
+            while len(self._stores) >= MAX_SHIFTED_STORES:
+                self._stores.pop(next(key for key in self._stores if key))
+            store = self._stores[delta] = EventStore(_moved(doc, delta) for doc in self._documents)
+        return store
+
+    async def __call__(self, ctx: ToolContext) -> EventStoreBackend:
+        if ctx.repos is None:
+            raise IndexerUnavailable("not_configured")
+        try:
+            alert = await ctx.repos.alerts.get(ctx.tenant_id, ctx.alert_id)
+        except NotFound:
+            raise IndexerUnavailable("no_telemetry") from None
+        known = str(alert.source_alert_id)
+        original = self._times.get(known) or self._times.get(_ID_SUFFIX.sub("", known))
+        if original is None:
+            raise IndexerUnavailable("no_telemetry")
+        return EventStoreBackend(self._store(alert.occurred_at - original).as_of(alert.occurred_at))
+
+
+def _moved(doc: Doc, delta: timedelta) -> Dict[str, Any]:
+    """``doc`` with its time moved by ``delta`` (the fields a query filters on and reads back)."""
+    at = (event_time(doc) + delta).astimezone(UTC)
+    stamp = at.strftime("%Y-%m-%dT%H:%M:%S.") + f"{at.microsecond // 1000:03d}"
+    return {**doc, "timestamp": stamp + "+0000", "@timestamp": stamp + "Z"}
+
+
+def telemetry_backends(settings: Settings) -> Optional[TelemetryBackends]:
+    """The telemetry store ``settings`` ask for, or ``None`` when the evidence tools read the tenants' indexers.
+
+    Built by a process's composition root (``lg-sotf worker``, ``lg-sotf eval``) and handed to the engine.
+    """
+    if settings.investigation.evidence_backend != "event_store":
+        return None
+    if "environment" not in settings.model_fields_set or settings.environment not in EVENT_STORE_ENVIRONMENTS:
+        raise ValueError("investigation.evidence_backend=event_store is for evaluation and development only")
+    return TelemetryBackends.load(settings.investigation.event_store_files)
 
 
 class EventStoreBackend:

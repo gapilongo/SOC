@@ -61,7 +61,7 @@ describe('labels', () => {
     expect(routingSentence({ code: 'model_refused' })).toMatch(/declined/);
     expect(routingSentence({ code: 'brand_new_code' })).toBe('Escalated: Brand new code.');
     expect(routingSentence(null)).toBeNull();
-    for (const code of ['false_positive_review', 'inconclusive', 'llm_normalized', 'analyst_request', 'response_review', 'group_review']) {
+    for (const code of ['false_positive_review', 'inconclusive', 'llm_normalized', 'analyst_request', 'response_review', 'group_review', 'evidence_indicator', 'evidence_citation', 'evidence_steering']) {
       expect(routingSentence({ code })).toMatch(/^Escalated/);
     }
     expect(bandLabel({ code: 'grey_zone', band: { min: 20.4, max: 59.6 } })).toBe('band 20–60');

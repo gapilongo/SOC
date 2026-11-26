@@ -44,6 +44,13 @@ models close a low or medium alert on their own under the conditions of
 :mod:`lg_sotf.domain.closure`. Like every key here it is changed only by a
 tenant admin outside an MSSP grant, and the audit event records the tier set.
 
+``tools.wazuh_indexer.enabled: true`` switches the investigation harness on
+for the tenant's Wazuh alerts (evidence lookups before the deeper analysis).
+``investigation.budget`` (``steps``, ``wall_s``, ``tokens``, ``usd``) overrides
+what one investigation may spend; a value above the install's
+``investigation.tenant_max`` is cut to it when an investigation runs
+(:mod:`lg_sotf.domain.investigation_budget`).
+
 ``retention`` (``alerts_days``, ``indicators_days``) merges key by key and
 must stay within the install's ``retention.tenant_min_days`` ..
 ``retention.tenant_max_days``; responses carry those bounds as
@@ -75,7 +82,7 @@ from lg_sotf.api.schemas import (
 from lg_sotf.audit.logger import AuditLogger
 from lg_sotf.core.verdict_cache import VerdictCache
 from lg_sotf.db.repos import LLMUsageDelta, Tenant
-from lg_sotf.domain import closure
+from lg_sotf.domain import closure, investigation_budget
 from lg_sotf.domain.benign_evidence import validate_triage_settings
 from lg_sotf.domain.connectors import ConnectorConfigError
 from lg_sotf.domain.phishing import validate_phishing_settings
@@ -121,6 +128,7 @@ REPLACED_SECTIONS: Dict[str, Callable[[Any], Dict[str, Any]]] = {
     "phishing": validate_phishing_settings,
     "triage": validate_triage_settings,
     closure.SETTING: closure.validate_ai_closure_settings,
+    investigation_budget.SETTING: investigation_budget.validate_investigation_settings,
 }
 CIPHERTEXT_SUFFIX = "_ciphertext"
 MAX_TOOL_PROVIDERS = 32

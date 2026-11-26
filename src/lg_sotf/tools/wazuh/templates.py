@@ -71,10 +71,13 @@ class _Params(BaseModel):
 
     @field_validator("at", check_fields=False)
     @classmethod
-    def _aware(cls, at: datetime) -> datetime:
-        if at.tzinfo is None:
+    def _aware(cls, at: Optional[datetime]) -> Optional[datetime]:
+        if at is not None and at.tzinfo is None:
             raise ValueError("a time needs its offset")
         return at
+
+
+RuleId = Annotated[str, Field(min_length=1, max_length=32, pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")]
 
 
 class HostActivityParams(_Params):
@@ -82,6 +85,9 @@ class HostActivityParams(_Params):
     at: datetime
     before_min: int = Field(ge=0, le=MAX_HOST_MINUTES)
     after_min: int = Field(ge=0, le=MAX_HOST_MINUTES)
+    exclude_rule_id: Optional[RuleId] = None
+    """The rule of the alert being investigated. The host's events of that rule at exactly ``at`` are the
+    alert's own event (and its exact duplicates): they are left out, so an alert is never its own evidence."""
 
 
 class LogonFanoutParams(_Params):
@@ -129,6 +135,9 @@ class PrevalenceParams(_Params):
     kind: PrevalenceKind
     value: str = Field(min_length=1, max_length=1_024)
     days: int = Field(ge=1, le=MAX_PREVALENCE_DAYS)
+    at: Optional[datetime] = None
+    """The moment the window ends (the alert's time): what was seen up to the alert, not after it. Without
+    it the window ends where the index is settled."""
 
     @model_validator(mode="after")
     def _hash_is_a_hash(self) -> PrevalenceParams:
@@ -224,10 +233,29 @@ def host_activity(params: HostActivityParams) -> Dict[str, Any]:
     )
 
 
+def spellings(pivot: str, value: str) -> List[str]:
+    """``value`` as an index may hold it. An address is compared whole, as text: the spelling the detector
+    wrote first, then its canonical form when that differs (``2001:0DB8::1`` and ``2001:db8::1``)."""
+    if pivot != "source_ip":
+        return [value]
+    return list(dict.fromkeys([value, str(ipaddress.ip_address(value))]))
+
+
+def own_event(params: HostActivityParams) -> Optional[Dict[str, Any]]:
+    """The alert's own event on the host (its rule, at exactly its time), with what :func:`host_activity`
+    counts: what a caller takes out of the host's activity. ``None`` when no rule was given."""
+    if params.exclude_rule_id is None:
+        return None
+    body = host_activity(params)
+    own = [term(dsl.AGENT, params.host), term(dsl.RULE_ID, params.exclude_rule_id), between(params.at, params.at)]
+    return {**body, "query": all_of(*own)}
+
+
 def _logon_filters(params: LogonFanoutParams, outcomes: List[str], field: str, start: datetime) -> List[Clause]:
     logons = LOGONS[params.family]
     values = [value for outcome in outcomes for value in logons.outcomes[outcome]]
-    pivot = named(field, params.value) if field in dsl.NAMES else term(field, params.value)
+    written = spellings(params.pivot, params.value)
+    pivot = named(field, params.value) if field in dsl.NAMES else terms(field, written) if len(written) > 1 else term(field, params.value)
     return [*logons.fixed, terms(logons.outcome_field, values), pivot, between(start, params.at + minutes(params.after_min))]
 
 
