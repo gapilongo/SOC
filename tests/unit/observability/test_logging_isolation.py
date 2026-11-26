@@ -17,6 +17,8 @@ from typing import Callable
 import structlog
 from structlog.testing import capture_logs
 
+from lg_sotf.agents import base as agents_base
+from lg_sotf.llm import structured as llm_structured
 from lg_sotf.observability.logging import configure_logging, get_logger, is_configured
 from lg_sotf.settings import Settings
 
@@ -50,6 +52,23 @@ def test_capture_logs_sees_a_logger_that_an_earlier_test_used_under_configure_lo
     with capture_logs() as logs:
         LOG.info("isolation.second", answer=42)
     assert logs == [{"event": "isolation.second", "answer": 42, "log_level": "info"}]
+
+
+def test_the_product_loggers_the_parallel_run_lost_are_captured_after_a_test_configured_logging(
+    make_settings: Callable[..., Settings],
+) -> None:
+    """The parallel job failed on three tests, in tests/unit/agents/test_trace.py and
+    tests/unit/llm/test_prompt_registry.py, that capture events of these two module loggers. They got an
+    empty list whenever a test that configures logging, then one that resets structlog, had run before
+    them in the same worker."""
+    configure_logging(make_settings(), stream=io.StringIO())
+    agents_base.log.warning("isolation.agents")
+    llm_structured.logger.info("isolation.llm")
+    structlog.reset_defaults()
+    with capture_logs() as logs:
+        agents_base.log.warning("agent.trace_steps_dropped", dropped=3)
+        llm_structured.logger.info("llm.call", model="fake-scripted")
+    assert [(e["event"], e["log_level"]) for e in logs] == [("agent.trace_steps_dropped", "warning"), ("llm.call", "info")]
 
 
 def test_a_logger_is_never_cached_while_the_suite_runs(make_settings: Callable[..., Settings]) -> None:
