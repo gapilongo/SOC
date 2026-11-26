@@ -20,3 +20,9 @@ CVE-2026-85091 exp:2026-12-07
 # image compiles only constant patterns. Alpine musl 1.2.6-r3 is not in nginx-unprivileged yet.
 # Reviewed 2026-11-07 (maintainers).
 CVE-2026-107891 exp:2026-12-07
+# no fix in the base image yet: libzstd1 information disclosure, fixed in Debian 1.5.7+dfsg-1+deb13u1.
+# The newest python:3.11-slim (digest 61e01f72..., checked 2026-11-26) still ships 1.5.7+dfsg-1. The
+# backend does not link zstd itself (CPython 3.11 has no zstd module); it is pulled in by dpkg and apt.
+# Remove this entry when the base digest is bumped to an image that carries the fix.
+# Reviewed 2026-11-26 (maintainers).
+CVE-2026-124851 exp:2026-12-26
