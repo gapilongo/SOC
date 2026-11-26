@@ -2199,7 +2199,7 @@ export interface components {
                 llm_usage?: {
                     [key: string]: unknown;
                 };
-                /** @description The related alerts on the same host or user, as stored when the alert was decided. ``threats`` and ``in_progress`` hold back a close on the models' word: ids of the threats that are high or critical and judged by a model, wait for a response approval or were confirmed by a person, and of the high or critical alerts in progress on the same host. ``model_only``: ids of the other threats a model judged; the alert closes and is linked to their case. ``unchecked``: the check did not complete (``read_failed``, ``too_many_candidates``), so nothing closed on the models' word; the lists are then absent. */
+                /** @description The related alerts on the same host or user, as stored when the alert was decided. ``threats`` and ``in_progress`` hold back a close on the models' word: ids of the threats that are high or critical and judged by a model, or were confirmed by a person, and of the high or critical alerts in progress on the same host. ``model_only``: ids of the other threats a model judged or planned a response for (also one that waits for its approval); the alert closes and is linked to their case. ``unchecked``: the check did not complete (``read_failed``, ``too_many_candidates``), so nothing closed on the models' word; the lists are then absent. */
                 related_open?: {
                     in_progress?: string[];
                     model_only?: string[];
@@ -2461,7 +2461,7 @@ export interface components {
                 llm_usage?: {
                     [key: string]: unknown;
                 };
-                /** @description The related alerts on the same host or user, as stored when the alert was decided. ``threats`` and ``in_progress`` hold back a close on the models' word: ids of the threats that are high or critical and judged by a model, wait for a response approval or were confirmed by a person, and of the high or critical alerts in progress on the same host. ``model_only``: ids of the other threats a model judged; the alert closes and is linked to their case. ``unchecked``: the check did not complete (``read_failed``, ``too_many_candidates``), so nothing closed on the models' word; the lists are then absent. */
+                /** @description The related alerts on the same host or user, as stored when the alert was decided. ``threats`` and ``in_progress`` hold back a close on the models' word: ids of the threats that are high or critical and judged by a model, or were confirmed by a person, and of the high or critical alerts in progress on the same host. ``model_only``: ids of the other threats a model judged or planned a response for (also one that waits for its approval); the alert closes and is linked to their case. ``unchecked``: the check did not complete (``read_failed``, ``too_many_candidates``), so nothing closed on the models' word; the lists are then absent. */
                 related_open?: {
                     in_progress?: string[];
                     model_only?: string[];

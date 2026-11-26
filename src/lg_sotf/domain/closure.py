@@ -38,8 +38,8 @@ unreadable value blocks the close.
   (:func:`lg_sotf.core.retro_reopen.related_open`). The close is held back
   and the alert goes to an analyst (code ``related_open_threat``) when one
   of them is hold grade (:func:`lg_sotf.domain.related.hold_grade`): high
-  or critical and judged a threat by a model, waiting for a response
-  approval, or confirmed by a person. Such an alert holds for as long as it
+  or critical and judged a threat by a model, or confirmed by a person (a
+  response that only waits for an approval is not). Such an alert holds for as long as it
   is open, up to seven days from its ingestion, and for 24 hours after it
   closed with a person's confirmation. It is also held back while a high or
   critical alert on the same host is being processed (changed in the last

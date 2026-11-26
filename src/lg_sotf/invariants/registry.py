@@ -122,9 +122,9 @@ INVARIANTS: Tuple[Invariant, ...] = (
             "alerts relate when they share a host or a user by relation key (short host name, bare account name; "
             "never an IP address alone, never an account every host has). Hold grade is one predicate, forward and "
             "backward: the alert is high or critical and a model judged it a threat (deep verdict malicious, or "
-            "fast tier likely_threat or confirmed_threat, never a merely suspicious one), or it waits for a "
-            "response approval, or a person confirmed it (an analyst true positive, a blind-audit malicious "
-            "label). When the decision is made the workflow reads what the database holds about the tenant's "
+            "fast tier likely_threat or confirmed_threat, never a merely suspicious one), or a person confirmed "
+            "it (an analyst true positive, a blind-audit malicious label); a response that only waits for an "
+            "approval is still the model's word and is not hold grade. When the decision is made the workflow reads what the database holds about the tenant's "
             "other alerts, never a model's text: a related alert of hold grade that is open (up to seven days from "
             "its ingestion) or that closed in the last 24 hours with a person's confirmation, or a high or "
             "critical one on the same host that is being processed, holds the close back and the alert goes to an "
@@ -133,7 +133,8 @@ INVARIANTS: Tuple[Invariant, ...] = (
             "the alert closes and is linked to that threat's case at once. When an alert becomes a threat after "
             "the close, the safety net looks at every model-closed alert of the previous 24 hours that relates to "
             "it. Below hold grade a model's judgement is not a confirmation: such a threat (a low or medium "
-            "escalation a model judged a threat; a response the workflow only simulates in dry-run mode) links "
+            "escalation a model judged a threat; a response the workflow only proposes, or only simulates in "
+            "dry-run mode) links "
             "those alerts to its open case as related alerts, audited, and they stay closed and marked for audit; "
             "no decision on the case settles them, so a benign one never makes them analyst-confirmed benign, and "
             "the compliance evidence shows no human decision for them. A threat of hold grade, or a "
@@ -204,7 +205,7 @@ INVARIANTS: Tuple[Invariant, ...] = (
             "tests/integration/engine/test_retro_reopen.py::"
             "test_an_escalation_the_models_only_found_suspicious_reopens_nothing",
             "tests/integration/engine/test_retro_reopen.py::"
-            "test_a_response_plan_that_waits_for_an_approval_reopens_related_model_closes",
+            "test_a_response_plan_the_workflow_only_proposes_links_and_reopens_nothing",
             "tests/integration/engine/test_retro_reopen.py::"
             "test_a_response_the_workflow_carries_out_alone_reopens_related_model_closes",
             "tests/integration/engine/test_retro_reopen.py::"

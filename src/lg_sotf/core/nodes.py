@@ -486,14 +486,13 @@ class WorkflowNodes:
                                    confirmed=False)
 
     @staticmethod
-    def _hold_grade(state: Mapping[str, Any], *, awaiting_approval: bool = False) -> bool:
+    def _hold_grade(state: Mapping[str, Any]) -> bool:
         """Whether this alert is a strong enough signal to reopen the related alerts the models closed: the same
         predicate that holds a model-led close back (:func:`lg_sotf.domain.related.hold_grade`)."""
         return hold_grade(
             severity=state.get("severity"),
             threat_assessment=(state.get("triage") or {}).get("threat_assessment"),
             verdict=(state.get("analysis") or {}).get("verdict"),
-            awaiting_approval=awaiting_approval,
             confirmed=(state.get("analyst") or {}).get("decision") == "true_positive",
         )
 
@@ -560,11 +559,6 @@ class WorkflowNodes:
             "done": len(plan.done),
         }
         await self.deps.repos.alerts.update(tenant_id, alert_id, summary={"response": response})
-        if plan.awaiting and not self._hold_grade(state):
-            # A response that waits for an approval is hold grade at any severity (AI-E3.16): the related alerts
-            # the models closed reopen now, as the forward check holds a close while this approval is pending.
-            stored = await self.deps.repos.alerts.get(tenant_id, alert_id)
-            await self._safety_net(stored, path="workflow", escalation_id=state.get("escalation_id"), confirmed=True)
         return {
             "plan": plan.as_dict(),
             "awaiting_actions": list(plan.awaiting),

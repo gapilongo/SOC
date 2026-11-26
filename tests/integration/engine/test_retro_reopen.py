@@ -180,19 +180,19 @@ async def policy_response(
     return await engine.run(TENANT_A, threat), threat, closed_alert
 
 
-async def test_a_response_plan_that_waits_for_an_approval_reopens_related_model_closes(
+async def test_a_response_plan_the_workflow_only_proposes_links_and_reopens_nothing(
     engine_factory: Any, engine_settings: Settings, repos: Repositories
 ) -> None:
-    """AI-E3.16 (review of #442): a response that waits for an approval is hold grade at any severity, forward and
-    backward. The plan links the related model close on the models' word; the pending approval reopens it (there
-    is no case to fold it into, so it is queued for its own review)."""
+    """AI-E3.15, kept by AI-E3.16: the workflow proposes a response on the models' word and waits for a person to
+    approve it. A response nobody has approved is still only the model's word, so it is not hold grade: the
+    related model close is linked (there is no case to show it in) and stays closed."""
     outcome, threat, closed_alert = await policy_response(engine_factory, engine_settings, repos, {"low": "approval"})
 
     stored = await repos.alerts.get(TENANT_A, threat)
     assert outcome.status == "waiting_approval" and stored.summary["response"]["awaiting"] > 0
     assert stored.summary.get("analyst_decision") is None and stored.summary["linked_alert_ids"] == [closed_alert]
-    assert await reopened(repos, closed_alert, "requeued")
-    assert await audited(repos, LINK_ACTION) == [closed_alert] and await audited(repos, REOPEN_ACTION) == [closed_alert]
+    assert await linked(repos, closed_alert, threat, None)
+    assert await audited(repos, LINK_ACTION) == [closed_alert] and await audited(repos, REOPEN_ACTION) == []
 
 
 async def test_a_response_the_workflow_carries_out_alone_reopens_related_model_closes(

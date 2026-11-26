@@ -359,9 +359,13 @@ Rules:
     stronger signal acts. The stronger signal is one predicate,
     `hold_grade`, used forward and backward: the alert is high or
     critical and a model judged it `malicious`, `likely_threat` or
-    `confirmed_threat`; or it waits for a response approval; or a person
-    confirmed it (an analyst true positive, a blind-audit malicious
-    label).
+    `confirmed_threat`; or a person confirmed it (an analyst true
+    positive, a blind-audit malicious label). A response that waits for
+    an approval is not hold grade, at any severity: a response a model
+    proposed and nobody has approved is still only the model's word, so
+    such an alert links, forward and backward (on the dev mix, three
+    medium alerts that only waited for an approval cost 20 of 53 correct
+    closes).
   * Forward, the threat is there before the close. At the tier `decide`
     reads what the database holds about the tenant's other alerts
     (`related_open` in `core/retro_reopen.py`): a bounded candidate set by
@@ -377,7 +381,8 @@ Rules:
     a high or critical alert on the same host is in `processing` and
     changed in the last 15 minutes (`related_in_progress`). A `failed`
     alert never holds. A low or medium threat only a model stands behind
-    (last 24 hours) holds nothing: the alert closes and is **linked** to
+    (last 24 hours; also one whose response waits for an approval) holds
+    nothing: the alert closes and is **linked** to
     that threat's case at once (`alert.linked`, metric path `forward`).
     The answer comes from the database, never from a model's text or the
     correlation digest, and is kept in the alert summary (`related_open`).
@@ -394,7 +399,8 @@ Rules:
     an error), and what it does depends on the same grade:
     * below hold grade (a low or medium escalation a model judged a
       threat, not a merely suspicious one; a response the workflow only
-      simulates in the tenant's dry-run mode): the alert is
+      proposes, or only simulates in the tenant's dry-run mode): the
+      alert is
       **linked**. It is attached to the threat's open escalation as a
       related alert, so the analyst sees it in the case, gets a `linked`
       entry in its summary and is audited `alert.linked`. It stays closed
@@ -403,7 +409,7 @@ Rules:
       draft show no human decision for it. Linked alerts do not use up the
       case's room for waiting alerts;
     * hold grade or a confirmation (a high or critical alert a model
-      judged a threat; a response that waits for an approval; an analyst
+      judged a threat; an analyst
       true positive, an analyst's own approval of a response action, a
       blind-audit malicious label, or a response action that really ran
       (`succeeded`, never `dry_run`) when the workflow carried it out

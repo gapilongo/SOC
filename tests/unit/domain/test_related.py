@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 from datetime import UTC, datetime, timedelta
 from typing import Any, Dict, List, Optional
 
@@ -66,24 +67,23 @@ def test_relation_keys_are_hosts_and_users_and_never_ips() -> None:
 
 
 @pytest.mark.parametrize(
-    ("severity", "assessment", "verdict", "awaiting", "confirmed", "grade"),
+    ("severity", "assessment", "verdict", "confirmed", "grade"),
     [
-        ("high", "likely_threat", None, False, False, True),
-        ("critical", "benign", "malicious", False, False, True),
-        ("high", "suspicious", "inconclusive", False, False, False),  # a doubt is not a threat (#352)
-        ("medium", "confirmed_threat", "malicious", False, False, False),  # only a model, below high: it links
-        ("low", "likely_threat", None, False, False, False),
-        ("low", "benign", "benign", True, False, True),  # a response waits for an approval, at any severity
-        ("info", "benign", "benign", False, True, True),  # a person confirmed it
-        ("high", None, None, False, False, False),
-        (None, "likely_threat", "malicious", False, False, False),
+        ("high", "likely_threat", None, False, True),
+        ("critical", "benign", "malicious", False, True),
+        ("high", "suspicious", "inconclusive", False, False),  # a doubt is not a threat (#352)
+        ("medium", "confirmed_threat", "malicious", False, False),  # only a model, below high: it links
+        ("low", "likely_threat", None, False, False),
+        ("info", "benign", "benign", True, True),  # a person confirmed it
+        ("high", None, None, False, False),
+        (None, "likely_threat", "malicious", False, False),
     ],
 )
-def test_hold_grade_is_one_predicate(
-    severity: Any, assessment: Any, verdict: Any, awaiting: bool, confirmed: bool, grade: bool
-) -> None:
-    assert hold_grade(severity=severity, threat_assessment=assessment, verdict=verdict, awaiting_approval=awaiting,
-                      confirmed=confirmed) is grade
+def test_hold_grade_is_one_predicate(severity: Any, assessment: Any, verdict: Any, confirmed: bool, grade: bool) -> None:
+    """High or critical and judged a threat by a model, or confirmed by a person. Nothing else: the predicate has
+    no input for a response that waits for an approval, which is still only the model's word."""
+    assert hold_grade(severity=severity, threat_assessment=assessment, verdict=verdict, confirmed=confirmed) is grade
+    assert set(inspect.signature(hold_grade).parameters) == {"severity", "threat_assessment", "verdict", "confirmed"}
     assert model_judged_threat("suspicious", "inconclusive") is False
     assert model_judged_threat("likely_threat", None) and model_judged_threat(None, "malicious")
 
@@ -105,7 +105,15 @@ def facts(**changes: Any) -> RelatedFacts:
         ({"entities": {"users": ["CORP\\JSmith"]}}, "hold"),
         ({"ingested_at": NOW - timedelta(days=6, hours=23)}, "hold"),  # open: it holds for as long as it is open ...
         ({"ingested_at": NOW - timedelta(days=7, minutes=1)}, None),  # ... up to seven days from its ingestion
-        ({"status": "waiting_approval", "severity": "low", "verdict": "benign"}, "hold"),
+        # A response that waits for an approval is the model's word: it links, at any severity, unless the alert
+        # is hold grade for another reason.
+        ({"status": "waiting_approval", "severity": "low", "verdict": "benign"}, "model_only"),
+        ({"status": "waiting_approval", "severity": "medium", "verdict": "inconclusive", "planned": True}, "model_only"),
+        ({"status": "waiting_approval", "verdict": "inconclusive", "planned": True}, "model_only"),  # high, not judged
+        ({"status": "waiting_approval", "severity": "low", "verdict": "benign",
+          "ingested_at": NOW - timedelta(hours=25)}, None),
+        ({"status": "waiting_approval"}, "hold"),  # high and judged malicious
+        ({"status": "waiting_approval", "severity": "low", "verdict": "benign", "confirmed": True}, "hold"),
         ({"status": "processing", "severity": "medium", "verdict": "benign", "confirmed": True}, "hold"),
         ({"status": "queued"}, "hold"),  # requeued with a verdict a model already gave
         ({"status": "failed"}, None),  # a failed alert never holds

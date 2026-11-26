@@ -27,8 +27,8 @@ Safety rules enforced here (contract section 8):
   (:mod:`lg_sotf.core.retro_reopen`) links such closes to a related threat a
   model judged and reopens them when a person confirms one. A serious
   threat that is already open on the same host or user when the decision
-  is made (high or critical and judged by a model, waiting for a response
-  approval, or confirmed by a person), or a high or critical alert still
+  is made (high or critical and judged by a model, or confirmed by a
+  person), or a high or critical alert still
   in progress on the same host, sends the alert to an analyst instead
   (AI-E3.16: codes ``related_open_threat`` and ``related_in_progress``,
   read from the database by the ``decide`` node; ``related_unchecked``

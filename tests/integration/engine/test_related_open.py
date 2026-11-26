@@ -7,8 +7,8 @@ database also holds another alert on the same host or user
 (``lg_sotf.domain.related``).
 
 * **Held.** The close is withheld when the other alert is hold grade (high or
-  critical and judged a threat by a model, waiting for a response approval,
-  or confirmed by a person) and open, for up to seven days; also while a high
+  critical and judged a threat by a model, or confirmed by a person; never
+  for a response that only waits for an approval) and open, for up to seven days; also while a high
   or critical alert on the same host is being processed. The held alert goes
   through the ordinary escalation path.
 * **Linked forward.** A low or medium threat only a model stands behind holds
@@ -80,9 +80,8 @@ pytestmark = pytest.mark.integration
         ("waiting_human", {"verdict": "malicious"}, {"users": ["jsmith@corp.example.com"]}),
         # It holds for as long as it is open, up to seven days from its ingestion.
         ("waiting_human", {"verdict": "malicious", "ingested_at": datetime.now(UTC) - timedelta(days=6)}, {"hosts": [HOST]}),
-        # Waiting for a response approval, at any severity and whatever the models said.
-        ("waiting_approval", {"severity": "low"}, {"hosts": [HOST]}),
-        ("waiting_approval", {"verdict": "inconclusive", "severity": "medium"}, {"users": [USER]}),
+        # Waiting for a response approval and hold grade for its own reason: high and judged a threat by a model.
+        ("waiting_approval", {"verdict": "malicious", "planned": True}, {"hosts": [HOST]}),
         # Confirmed by a person: an analyst's true positive on its case, although the models called it benign;
         # also for 24 hours after that decision closed it.
         ("processing", {"true_positive": True, "severity": "medium", "verdict": "benign"}, {"hosts": [HOST]}),
@@ -205,6 +204,12 @@ async def test_a_blind_audit_malicious_label_holds_the_close_while_its_case_is_o
         # A response plan that ended with an analyst, not with an approval request, and no model verdict of a threat.
         ("waiting_human", {"planned": True, "assessment": "suspicious", "verdict": "inconclusive", "case": True},
          {"hosts": [HOST]}),
+        # A response that waits for an approval is still only the model's word, at any severity: the dev run's
+        # "Multiple web server 400 error codes", "New user added to the system" and "Integrity checksum changed".
+        ("waiting_approval", {"severity": "low", "planned": True}, {"hosts": [HOST]}),
+        ("waiting_approval", {"verdict": "inconclusive", "severity": "medium", "planned": True}, {"users": [USER]}),
+        ("waiting_approval", {"verdict": "malicious", "severity": "medium", "planned": True}, {"hosts": [HOST]}),
+        ("waiting_approval", {"verdict": "inconclusive", "planned": True}, {"hosts": [HOST]}),  # high, not judged a threat
     ],
 )
 async def test_a_threat_only_a_model_stands_behind_links_the_close_to_its_case(

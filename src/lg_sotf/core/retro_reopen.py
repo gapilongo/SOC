@@ -10,7 +10,8 @@ name; never an IP address alone, never an account every host has). A threat
 only a model stands behind links; a stronger signal acts. The stronger signal
 is one predicate, :func:`lg_sotf.domain.related.hold_grade`, in both
 directions: the alert is high or critical and a model judged it a threat, or
-it waits for a response approval, or a person confirmed it.
+a person confirmed it. A response that only waits for an approval is still
+the model's word: it links.
 
 Backward: the threat comes after the close
 ------------------------------------------
@@ -23,8 +24,9 @@ the previous :data:`REOPEN_WINDOW` and that relate to it.
 (:func:`link_related_model_closes`): a low or medium alert that is escalated
 after a model judged it a threat (the deep tier's ``malicious``, the fast
 tier's ``likely_threat`` or ``confirmed_threat``; never ``suspicious``,
-#352), or that the workflow closes malicious after a response it only
-simulated in the tenant's dry-run mode.
+#352), or that gets a response plan the workflow only proposes (it waits
+for a person's approval), or that the workflow closes malicious after a
+response it only simulated in the tenant's dry-run mode.
 
 A model's judgement on such an alert is not a confirmation (AI-E3.15: on
 dev, one benign alert a model misjudged undid thirteen correct closes). Each
@@ -47,7 +49,6 @@ the calls of one run (response plan, escalation, close) reach older ones.
 * it is escalated or gets a response plan while it is high or critical and
   a model judged it a threat (AI-E3.16: the forward check would have held
   these closes, had the threat been looked at first);
-* a response for it waits for an approval, at any severity;
 * an analyst decides ``true_positive`` on it (the API, then the response
   plan and the malicious close of the run that decision resumes);
 * an analyst approves a response action for it;
@@ -102,7 +103,8 @@ related one its role (:func:`lg_sotf.domain.related.classify`):
 * **in progress**: a high or critical alert on the same host that is being
   processed and changed in the last 15 minutes. Also withheld.
 * **model only**: any other open alert of the last 24 hours that a model
-  judged a threat or planned a response for. It holds nothing: the alert
+  judged a threat or planned a response for, also while that response
+  waits for an approval. It holds nothing: the alert
   closes on the models' word and is linked to that alert's case at once,
   through :func:`link_related_model_closes` (path ``forward``).
 

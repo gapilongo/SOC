@@ -8,9 +8,10 @@
   IP address alone relates nothing, and neither do the accounts every host
   has (`root`, `SYSTEM`, `LOCAL SERVICE`, `NETWORK SERVICE`). A threat is
   serious when it is high or critical and a model judged it malicious, a
-  likely threat or a confirmed threat; when a response for it waits for an
-  approval; or when a person confirmed it (an analyst true positive, a
-  blind-audit malicious label).
+  likely threat or a confirmed threat, or when a person confirmed it (an
+  analyst true positive, a blind-audit malicious label). A response that
+  only waits for an approval does not make an alert serious: nobody has
+  approved it yet.
   - **Before the close.** When an alert is decided, the platform reads the
     stored state of your related alerts. The close is held back and the
     alert goes to an analyst (reason code `related_open_threat`) while a
@@ -18,7 +19,8 @@
     and for 24 hours after an analyst's true positive closed it. It is also
     held back while a high or critical alert on the same host is being
     processed (`related_in_progress`). A low or medium alert that only a
-    model judged a threat holds nothing: the alert closes as before and is
+    model judged a threat, or one whose proposed response waits for an
+    approval, holds nothing: the alert closes as before and is
     linked to that alert's case at once (`lgsotf_retro_linked_total`, path
     `forward`). When the related alerts cannot be read, or a tenant has more
     than 2,000 open threats to compare, nothing closes on the models' word
@@ -29,8 +31,8 @@
     serious, not only when a person confirms it: a close decided while a
     serious step of the same attack was still queued does not stand. A low
     or medium threat that only a model judged still links them and leaves
-    them closed. A response that waits for an approval now reopens them; it
-    used to link them.
+    them closed, and so does a response that waits for an approval, as
+    before.
   - The safety net relates alerts the same way: by host and user, however
     spelled. It no longer links or reopens on a shared IP address alone.
   Before this change a model closed the command-and-control step of the demo

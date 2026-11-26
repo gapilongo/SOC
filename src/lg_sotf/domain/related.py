@@ -20,9 +20,13 @@ a stronger signal acts. The stronger signal is one of:
 * the alert is high or critical and a model judged it a threat (the deep
   tier's ``malicious``, the fast tier's ``likely_threat`` or
   ``confirmed_threat``; never ``suspicious``);
-* it waits for a response approval, at any severity;
 * a person confirmed it: an analyst's ``true_positive``, a blind-audit
   ``malicious`` label.
+
+A response that waits for an approval is not one of them: a response a model
+proposed and nobody has approved is still only the model's word (on dev,
+three medium alerts that only waited for an approval cost 20 of 53 correct
+closes). Such an alert is a threat only a model stands behind, and links.
 
 Forward, a hold-grade related alert withholds a model-led close; backward,
 an alert that reaches hold grade reopens the related alerts the models
@@ -116,14 +120,11 @@ def model_judged_threat(threat_assessment: Any, verdict: Any) -> bool:
     return verdict == "malicious" or threat_assessment in MODEL_THREATS
 
 
-def hold_grade(
-    *, severity: Any, threat_assessment: Any, verdict: Any, awaiting_approval: bool, confirmed: bool
-) -> bool:
+def hold_grade(*, severity: Any, threat_assessment: Any, verdict: Any, confirmed: bool) -> bool:
     """Whether an alert is a strong enough signal to hold a related model-led close (forward) and to reopen the
-    related alerts the models closed (backward); see the module docs."""
-    return awaiting_approval or confirmed or (
-        severity in HIGH_SEVERITIES and model_judged_threat(threat_assessment, verdict)
-    )
+    related alerts the models closed (backward); see the module docs. A pending response approval plays no
+    part."""
+    return confirmed or (severity in HIGH_SEVERITIES and model_judged_threat(threat_assessment, verdict))
 
 
 @dataclass(frozen=True)
@@ -152,8 +153,8 @@ def classify(other: RelatedFacts, keys: FrozenSet[str], now: datetime) -> Option
     confirmation (the reader only hands in closed alerts that were confirmed recently or whose case is open).
     ``in_progress``: high or critical, on a shared host, in ``processing`` and changed within
     :data:`IN_PROGRESS_WINDOW`. ``model_only``: open, ingested within :data:`LINK_WINDOW`, and a model judged it a
-    threat or planned a response for it. ``None``: unrelated, ``failed`` (nothing holds on a failed run), or
-    none of these.
+    threat or planned a response for it (also one that waits for the response's approval). ``None``: unrelated,
+    ``failed`` (nothing holds on a failed run), or none of these.
     """
     shared = keys & relation_keys(other.entities)
     if not shared or other.status == "failed":
@@ -163,7 +164,7 @@ def classify(other: RelatedFacts, keys: FrozenSet[str], now: datetime) -> Option
     age = now - other.ingested_at
     grade = hold_grade(
         severity=other.severity, threat_assessment=other.threat_assessment, verdict=other.verdict,
-        awaiting_approval=other.status == "waiting_approval", confirmed=other.confirmed,
+        confirmed=other.confirmed,
     )
     if grade and age <= HOLD_WINDOW:
         return "hold"
@@ -172,7 +173,7 @@ def classify(other: RelatedFacts, keys: FrozenSet[str], now: datetime) -> Option
     if other.status == "processing" and serious and same_host and now - other.changed_at < IN_PROGRESS_WINDOW:
         return "in_progress"
     judged = model_judged_threat(other.threat_assessment, other.verdict)
-    if (judged or other.planned) and age <= LINK_WINDOW:
+    if (judged or other.planned or other.status == "waiting_approval") and age <= LINK_WINDOW:
         return "model_only"
     return None
 
