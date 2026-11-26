@@ -181,7 +181,9 @@ jobs:
     # manual run, and stays a release gate under this name (RELEASE_GATES in release-train.yml).
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # The serial suite takes 20 to 30 minutes on a hosted runner and grows with every story;
+    # at 30 the runner cancelled it mid-run (2026-11-26). The parallel trial below is the way down.
+    timeout-minutes: 50
     services:
       postgres:
         image: postgres:16@sha256:1a6ab3f5345eb6dbe04a1349529caabdb0ab09293a09590fad07b2246bfa4b54
