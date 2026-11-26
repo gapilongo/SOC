@@ -34,5 +34,8 @@
   before them in the same process. Logging configured by one test (the CLI
   entry points configure it) left module loggers bound to that test's
   configuration, and a later capture saw no event; this failed the parallel
-  run on `test_every_llm_call_records_prompt_hash_and_model_id`. The suite
-  now isolates logging around every test.
+  run on `test_every_llm_call_records_prompt_hash_and_model_id` and on two
+  trace tests. The suite now isolates logging around every test.
+- The test of the escalation grouping lock counted advisory locks in the
+  whole PostgreSQL cluster, so it failed when another parallel worker held
+  the same lock in its own database. It now counts its own database's locks.

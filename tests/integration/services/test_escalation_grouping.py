@@ -303,7 +303,10 @@ async def test_indicator_lookups_run_outside_the_grouping_lock(
         async with repos.db.system_tx(readonly=True) as conn:
             held.append(
                 await conn.fetchval(
-                    "SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' AND classid = $1 AND granted",
+                    # This database's locks only: pg_locks lists the whole cluster, and under pytest-xdist
+                    # another worker's database holds the same lock class while it groups its own escalations.
+                    "SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' AND classid = $1 AND granted "
+                    "AND database = (SELECT oid FROM pg_database WHERE datname = current_database())",
                     locks.ESCALATION_GROUP,
                 )
             )
