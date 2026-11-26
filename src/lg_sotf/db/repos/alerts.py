@@ -25,7 +25,7 @@ from lg_sotf.db.repos._base import (
     to_models,
     utcnow,
 )
-from lg_sotf.models.vocabulary import ALERT_STATUSES, DISPOSITIONS, SEVERITIES
+from lg_sotf.models.vocabulary import ALERT_STATUSES, DISPOSITIONS, HIGH_SEVERITIES, SEVERITIES
 from lg_sotf.security.shadow import egress, sink
 
 if TYPE_CHECKING:
@@ -84,6 +84,54 @@ _EVENT_SUMMARIES_SQL = """
     FROM alerts WHERE tenant_id = $1 AND id = ANY($2::text[]) AND source_id IS DISTINCT FROM $3
 """
 
+
+# The candidates of the related-alert check of a model-led close (AlertsRepo.related_candidates): what the
+# database holds about each one. The entities are compared in Python (lg_sotf.domain.related), never in SQL.
+_RELATED_FACTS = """
+    a.id, a.status, a.severity, a.ingested_at, a.updated_at AS changed_at,
+    COALESCE(a.normalized->'entities', '{}'::jsonb) AS entities,
+    a.summary->'triage'->>'threat_assessment' AS threat_assessment,
+    a.summary->'analysis'->>'verdict' AS verdict,
+    a.summary ? 'response' AS planned
+"""
+_CONFIRMED = """
+    (EXISTS (SELECT 1 FROM escalations e
+             WHERE e.tenant_id = a.tenant_id AND e.alert_id = a.id AND e.decision = 'true_positive')
+     OR EXISTS (SELECT 1 FROM blind_audit_items b
+                WHERE b.tenant_id = a.tenant_id AND b.alert_id = a.id AND b.label = 'malicious'))
+"""
+# Open alerts that are a threat as stored, or serious work in progress. $1 tenant, $2 the alert being decided,
+# $3 the open statuses (never ``failed``), $4 ingested since, $5 the fast-tier threat assessments, $6 the high
+# severities, $7 limit. Served by ix_alerts_status.
+_OPEN_CANDIDATES_SQL = f"""
+SELECT {_RELATED_FACTS}, {_CONFIRMED} AS confirmed
+FROM alerts a
+WHERE a.tenant_id = $1 AND a.id <> $2 AND a.status = ANY($3::text[]) AND a.ingested_at >= $4
+  AND (a.status = 'waiting_approval' OR a.summary ? 'response'
+       OR (a.status = 'processing' AND a.severity = ANY($6::text[]))
+       OR COALESCE(a.summary->'analysis'->>'verdict' = 'malicious', false)
+       OR COALESCE(a.summary->'triage'->>'threat_assessment' = ANY($5::text[]), false)
+       OR {_CONFIRMED})
+ORDER BY a.ingested_at DESC, a.id
+LIMIT $7
+"""  # noqa: S608 (constants only)
+# Closed alerts a person confirmed: an analyst's true positive closed since $3 (served by ix_alerts_closed_at), or a
+# blind-audit malicious label since $4 whose escalation is still open (the alert stays closed until it is decided).
+_CONFIRMED_CLOSED_SQL = f"""
+(SELECT {_RELATED_FACTS}, true AS confirmed
+ FROM alerts a
+ WHERE a.tenant_id = $1 AND a.id <> $2 AND a.status = 'closed' AND a.closed_at >= $3
+   AND a.disposition = 'malicious' AND a.summary->>'analyst_decision' = 'true_positive'
+ ORDER BY a.closed_at DESC, a.id LIMIT $5)
+UNION ALL
+(SELECT {_RELATED_FACTS}, true AS confirmed
+ FROM blind_audit_items l
+ JOIN alerts a ON a.tenant_id = l.tenant_id AND a.id = l.alert_id
+ WHERE l.tenant_id = $1 AND l.label = 'malicious' AND l.labelled_at >= $4 AND a.id <> $2 AND a.status = 'closed'
+   AND EXISTS (SELECT 1 FROM escalations e
+               WHERE e.tenant_id = a.tenant_id AND e.alert_id = a.id AND e.status IN ('open', 'claimed'))
+ ORDER BY l.labelled_at DESC, a.id LIMIT $5)
+"""  # noqa: S608 (constants only)
 
 def can_transition(current: str, target: str) -> bool:
     return target in ALERT_TRANSITIONS.get(current, frozenset())
@@ -183,6 +231,29 @@ class StrandedAlertRef(Record):
     tenant_id: str
     alert_id: str
     severity: str
+
+
+class RelatedCandidate(Record):
+    """What the database holds about another alert of the tenant that may matter to a model-led close
+    (:meth:`AlertsRepo.related_candidates`; the fields of ``lg_sotf.domain.related.RelatedFacts``)."""
+
+    id: str
+    status: str
+    severity: str
+    ingested_at: datetime
+    changed_at: datetime
+    entities: Dict[str, Any]
+    threat_assessment: Optional[str]
+    verdict: Optional[str]
+    planned: bool
+    confirmed: bool
+
+
+class ClosedCandidate(Record):
+    """An alert the models closed alone, with its entities (:meth:`AlertsRepo.model_closed_candidates`)."""
+
+    id: str
+    entities: Dict[str, Any]
 
 
 class DashboardCounts(Record):
@@ -533,50 +604,73 @@ class AlertsRepo(Repository):
             resolved=row["resolved"],
         )
 
-    async def model_closed_sharing_entities(
+    async def model_closed_candidates(
         self,
         tenant_id: str,
         *,
-        hosts: Sequence[str],
-        users: Sequence[str],
-        ips: Sequence[str],
         since: datetime,
         exclude_alert_id: str,
         not_linked_to: bool = False,
-        limit: int = 200,
+        limit: int = 20_000,
         conn: Optional[Connection] = None,
-    ) -> List[str]:
-        """Ids of alerts the models closed alone (close reason ``ai_closed:*``) since ``since`` that share a host,
-        user or IP with the given ones, newest first (the safety net of decision policy v3). ``not_linked_to``
-        leaves out those already linked to ``exclude_alert_id`` (the threat), so repeated calls reach older ones."""
+    ) -> List[ClosedCandidate]:
+        """The alerts the models closed alone (close reason ``ai_closed:*``) since ``since``, newest first, with
+        their entities: the safety net of decision policy v3 compares them with a threat's by relation key
+        (``lg_sotf.domain.related``). ``not_linked_to`` leaves out those already linked to ``exclude_alert_id``
+        (the threat), so repeated calls reach older ones."""
         require_aware(since, "since")
-        check_limit(limit, 1_000)
-        if not (hosts or users or ips):
-            return []
+        check_limit(limit, 50_000)
         async with self._tenant(tenant_id, conn) as c:
             rows = await c.fetch(
                 """
-                SELECT id FROM alerts
+                SELECT id, COALESCE(normalized->'entities', '{}'::jsonb) AS entities FROM alerts
                 WHERE tenant_id = $1 AND status = 'closed' AND id <> $2 AND closed_at >= $3
                   AND starts_with(summary->>'close_reason', 'ai_closed:')
-                  AND (COALESCE(normalized->'entities'->'hosts', '[]'::jsonb) ?| $4::text[]
-                       OR COALESCE(normalized->'entities'->'users', '[]'::jsonb) ?| $5::text[]
-                       OR COALESCE(normalized->'entities'->'ips', '[]'::jsonb) ?| $6::text[])
-                  AND NOT ($8 AND COALESCE(summary->'linked', '[]'::jsonb)
+                  AND NOT ($5 AND COALESCE(summary->'linked', '[]'::jsonb)
                                   @> jsonb_build_array(jsonb_build_object('threat_alert_id', $2::text)))
                 ORDER BY closed_at DESC, id
-                LIMIT $7
+                LIMIT $4
                 """,
                 tenant_id,
                 exclude_alert_id,
                 since,
-                list(hosts),
-                list(users),
-                list(ips),
                 limit,
                 not_linked_to,
             )
-        return [str(r["id"]) for r in rows]
+        return to_models(ClosedCandidate, rows)
+
+    async def related_candidates(
+        self,
+        tenant_id: str,
+        *,
+        exclude_alert_id: str,
+        open_since: datetime,
+        closed_since: datetime,
+        threat_assessments: Sequence[str],
+        limit: int,
+        conn: Optional[Connection] = None,
+    ) -> List[RelatedCandidate]:
+        """The alerts of the tenant that may hold a model-led close back or get it linked, whatever their
+        entities (the caller compares those by relation key, ``lg_sotf.domain.related``), newest first:
+
+        * not closed and not failed, ingested since ``open_since``, and a threat as stored (waiting for a response
+          approval, a response plan, a model's verdict ``malicious`` or a fast-tier assessment in
+          ``threat_assessments``, a person's confirmation) or high or critical and in ``processing``;
+        * closed, and confirmed by a person: an analyst's true positive closed since ``closed_since``, or a
+          blind-audit malicious label since ``open_since`` whose escalation is still open.
+
+        At most ``limit`` of each: a caller that gets ``limit`` open ones or more has not seen them all."""
+        require_aware(open_since, "open_since")
+        require_aware(closed_since, "closed_since")
+        check_limit(limit, 10_000)
+        open_statuses = [status for status in ALERT_STATUSES if status not in ("closed", "failed")]
+        async with self._tenant(tenant_id, conn) as c:
+            still_open = await c.fetch(
+                _OPEN_CANDIDATES_SQL, tenant_id, exclude_alert_id, open_statuses, open_since,
+                list(threat_assessments), sorted(HIGH_SEVERITIES), limit,
+            )
+            confirmed = await c.fetch(_CONFIRMED_CLOSED_SQL, tenant_id, exclude_alert_id, closed_since, open_since, limit)
+        return to_models(RelatedCandidate, [*still_open, *confirmed])
 
     async def folded_for_threat(
         self, tenant_id: str, threat_alert_id: str, *, exclude_escalation_id: str, conn: Optional[Connection] = None

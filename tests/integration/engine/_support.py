@@ -61,16 +61,22 @@ async def suspicious_alert(repos: Repositories, tenant_id: str = TENANT_A, **kwa
 
 
 async def threat_alert(repos: Repositories, tenant_id: str = TENANT_A, **kwargs: Any) -> str:
-    """An alert the fast tier judges ``likely_threat`` and the policy escalates to an analyst (an open case)."""
-    return await make_alert(
-        repos,
-        tenant_id,
-        title="Kerberoasting exploit",
-        severity="high",
-        normalized={"entities": SUSPICIOUS_ENTITIES},
-        raw={"vendor": "edr"},
-        **kwargs,
-    )
+    """An alert the fast tier judges ``likely_threat`` and the policy escalates to an analyst (an open case). High
+    by default, so it is hold grade (``lg_sotf.domain.related``): the related alerts the models closed reopen into
+    its case. ``severity="medium"`` gives a threat only a model stands behind: they are linked and stay closed."""
+    fields: Dict[str, Any] = {
+        "title": "Kerberoasting exploit", "severity": "high", "normalized": {"entities": SUSPICIOUS_ENTITIES},
+        "raw": {"vendor": "edr"}, **kwargs,
+    }
+    return await make_alert(repos, tenant_id, **fields)
+
+
+async def model_only_threat(repos: Repositories, tenant_id: str = TENANT_A, **kwargs: Any) -> str:
+    """A medium alert the fast tier judges ``likely_threat`` and the policy escalates: a threat only a model stands
+    behind, below hold grade, so the related model closes are linked to its case and stay closed. (Without the
+    EICAR hash of :data:`SUSPICIOUS_ENTITIES`, which at medium severity makes the fake model only suspicious.)"""
+    entities = {kind: values for kind, values in SUSPICIOUS_ENTITIES.items() if kind != "hashes"}
+    return await threat_alert(repos, tenant_id, severity="medium", normalized={"entities": entities}, **kwargs)
 
 
 async def analyst(repos: Repositories, tenant_id: str = TENANT_A) -> str:

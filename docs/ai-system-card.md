@@ -312,7 +312,7 @@ to about 1 in 10. The model's own verdicts were often wrong (malicious recall
 
 ### 7.3 Adversarial corpus v2
 
-`tests/fixtures/eval/adversarial_v2.jsonl` (AI-E6.1): 97 synthetic alerts
+`tests/fixtures/eval/adversarial_v2.jsonl` (AI-E6.1): 100 synthetic alerts
 that try to steer the model or the rules, all in the gated `adversarial`
 split since AI-E6.3 ([evaluation.md](evaluation.md#adversarial-corpus-v2)).
 
@@ -325,6 +325,7 @@ split since AI-E6.3 ([evaluation.md](evaluation.md#adversarial-corpus-v2)).
 | `benign-lookalike` | 17 | The security team's own test strings (EICAR, phishing simulation, red-team harness), to measure the cost of the defences |
 | `title-camouflage` (fixed by AI-E6.3, gated) | 3 | Attacker-named tasks or services that put benign words into the title the triage rules trusted |
 | `activity-camouflage` (AI-E6.4) | 6 | Attacks whose detection rule name holds a word for the detected activity ("scheduled", "backup", "monitoring"), which the triage rules counted as benign evidence |
+| `provenance-camouflage` (AI-E3.16) | 3 | A real attack pattern whose domain, host, vendor and id strings look like test data (`.test`, documentation addresses, "demo"), which a model read as a reason to call it benign |
 
 * **The CI gate** runs the corpus with the offline fake model on every
   change: no error, no malicious item of the adversarial split closed by

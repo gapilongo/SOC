@@ -20,7 +20,7 @@ import pytest
 import redis.asyncio as aioredis
 from asyncpg.exceptions import InvalidCachedStatementError, ReadOnlySQLTransactionError
 
-from lg_sotf.core.retro_reopen import enqueue_requeued, judged_threat
+from lg_sotf.core.retro_reopen import enqueue_requeued
 from lg_sotf.core.shadow import ShadowRunner
 from lg_sotf.core.verdict_cache import VerdictCache
 from lg_sotf.core.workflow import WorkflowEngine
@@ -30,6 +30,7 @@ from lg_sotf.db.repos import Repositories
 from lg_sotf.db.repos.outbox import NewOutboxEntry, enqueue_on
 from lg_sotf.domain import closure
 from lg_sotf.domain.events import publish_event
+from lg_sotf.domain.related import model_judged_threat
 from lg_sotf.domain.verdict_key import verdict_key_of
 from lg_sotf.integrations.ticketing import JiraClient, TicketDraft
 from lg_sotf.models.trace import NewTraceStep
@@ -367,8 +368,8 @@ async def test_a_shadow_run_of_a_threat_reopens_nothing_and_enqueues_nothing(
 ) -> None:
     """Decision policy v3 (FIX-3) in a shadow run: the safety net is recorded, never run.
 
-    Live, the alert below (a model judges it a threat: a response plan, then an escalation) links the related
-    alert the models closed alone to it (AI-E3.15; the control at the end). The shadow run of it
+    Live, the alert below (critical, and a model judges it a threat: a response plan, then an escalation) reopens
+    the related alert the models closed alone (hold grade, AI-E3.16; the control at the end). The shadow run of it
     links and reopens nothing, enqueues nothing, counts no link, reopen or failure, and only ``shadow_effects`` grows. The two
     writes of the policy a shadow graph does not reach, the run message of a requeued alert and the settling of a
     folded one, are refused when called in a shadow run.
@@ -395,7 +396,9 @@ async def test_a_shadow_run_of_a_threat_reopens_nothing_and_enqueues_nothing(
 
     # A model judged it a threat, on both workflow paths of the safety net: the response plan and the escalation.
     assert outcome.state["decision"]["route"] == "plan_response"
-    assert judged_threat(outcome.state.get("triage") or {}, outcome.state.get("analysis") or {})
+    assert model_judged_threat(
+        (outcome.state.get("triage") or {}).get("threat_assessment"), (outcome.state.get("analysis") or {}).get("verdict")
+    )
     assert outcome.interrupt == {"type": "analyst_decision", "escalation_id": "shadow"}
     reopens = [(e.operation, e.outcome, e.detail) for e in outcome.effects if e.boundary == "retro_reopen"]
     assert reopens == [("reopen_counted", "sunk", {"path": "workflow"}), ("reopen_counted", "sunk", {"path": "escalation"})]
@@ -417,10 +420,11 @@ async def test_a_shadow_run_of_a_threat_reopens_nothing_and_enqueues_nothing(
     assert await redis_state(redis_client) == redis_before
     assert await snapshot(db, folded) == {**folded_before, "counts": after["counts"]}
 
-    # Control: live, the same alert links the related alert at its response plan (the run then waits for the
-    # plan's approval, without a case), and that is counted.
+    # Control: live, the same alert is hold grade (critical, judged a threat by a model) and reopens the related
+    # alert at its response plan: queued for its own review, since the run then waits for the plan's approval
+    # without a case. That is counted.
     await engine.run(TENANT_A, threat)
-    linked = await repos.alerts.get(TENANT_A, related)
-    assert linked.status == "closed" and linked.summary.get("reopened") is None
-    assert [(m["threat_alert_id"], m["escalation_id"]) for m in linked.summary["linked"]] == [(threat, None)]
-    assert reopen_counters() == [*counters[:4], counters[4] + 1, counters[5]]
+    reopened = await repos.alerts.get(TENANT_A, related)
+    assert reopened.status == "queued" and reopened.summary.get("linked") is None
+    assert (reopened.summary["reopened"]["mode"], reopened.summary["reopened"]["threat_alert_id"]) == ("requeued", threat)
+    assert reopen_counters() == [*counters[:2], counters[2] + 1, *counters[3:]]

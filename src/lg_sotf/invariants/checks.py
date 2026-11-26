@@ -34,7 +34,7 @@ from lg_sotf.db.posture import (
     tables_with_visible_rows,
     tenant_table_security,
 )
-from lg_sotf.domain.closure import AUTONOMY_TIERS, MODEL_CLOSE_TIER
+from lg_sotf.domain.closure import AUTONOMY_TIERS, MODEL_CLOSE_TIER, RELATED_OPEN
 from lg_sotf.domain.routing import RoutingThresholds, decide, route_after_triage
 from lg_sotf.models.vocabulary import HIGH_SEVERITIES
 from lg_sotf.observability.logging import is_configured
@@ -125,7 +125,8 @@ def _benign_state(severity: str, *, evidence: bool = True, tactic: Optional[str]
                 "rule_evidence": [], "rule_corroborated": False}
     alert = {"mitre": {"tactics": [tactic or "Initial Access"], "techniques": [] if tactic else ["T1078"]}}
     return {"severity": severity, "confidence": 0, "alert": alert, "triage": triage,
-            "correlation": {"related_count": 0, "related_dispositions": {}}, "analysis": analysis}
+            "correlation": {"related_count": 0, "related_dispositions": {}}, "analysis": analysis,
+            RELATED_OPEN: {"threats": [], "in_progress": []}}
 
 
 def check_routing_policy(settings: Settings) -> CheckResult:
@@ -146,6 +147,12 @@ def check_routing_policy(settings: Settings) -> CheckResult:
     credential = _benign_state("low", evidence=False, tactic="Credential Access")
     if decide(credential, thresholds, MODEL_CLOSE_TIER).route == "close":
         closed.append("credential access alert closed on the models' verdict")
+    # A related open threat, a serious related alert in progress, and related alerts nobody checked.
+    for related in ({"threats": ["probe"], "in_progress": []}, {"threats": [], "in_progress": ["probe"]}, None):
+        held = {**_benign_state("low", evidence=False), RELATED_OPEN: related}
+        if decide(held, thresholds, MODEL_CLOSE_TIER).route == "close":
+            closed.append("alert closed on the models' verdict past a related open threat")
+            break
     corroborated = _benign_state("low")
     corroborated["analysis"].update(rule_corroborated=True, rule_evidence=["threat_intel_malicious"])
     if decide(corroborated, thresholds, "off").route == "close":
@@ -154,7 +161,8 @@ def check_routing_policy(settings: Settings) -> CheckResult:
         "routing_policy",
         not closed,
         "; ".join(closed) or "a benign model verdict closes no critical alert, no high alert and nothing else with "
-        "model-led closure off, no never-close class, and no alert with evidence of a threat",
+        "model-led closure off, no never-close class, no alert with evidence of a threat, and none past a related "
+        "open threat",
     )
 
 

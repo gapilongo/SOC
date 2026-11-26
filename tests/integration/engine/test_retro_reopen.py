@@ -19,7 +19,6 @@ from typing import Any, Dict, List, Optional
 import pytest
 
 from lg_sotf.audit.logger import Actor
-from lg_sotf.core import retro_reopen
 from lg_sotf.core.graph import initial_state
 from lg_sotf.core.retro_reopen import (
     LINK_ACTION,
@@ -32,11 +31,12 @@ from lg_sotf.core.workflow import WorkflowEngine
 from lg_sotf.db.errors import NotFound
 from lg_sotf.db.repos import Repositories
 from lg_sotf.domain import closure
+from lg_sotf.domain.related import model_judged_threat
 from lg_sotf.domain.verdict_key import verdict_key_of
 from lg_sotf.observability.metrics import RETRO_LINKED, RETRO_REOPEN_FAILURES, RETRO_REOPENED
 from lg_sotf.settings import Settings
 from tests.integration.db._support import TENANT_A, TENANT_B, make_alert
-from tests.integration.engine._support import analyst, decide, suspicious_alert, threat_alert
+from tests.integration.engine._support import analyst, decide, model_only_threat, suspicious_alert
 
 pytestmark = pytest.mark.integration
 
@@ -92,7 +92,7 @@ async def test_an_escalation_the_models_only_found_suspicious_reopens_nothing(
     summary = (await repos.alerts.get(TENANT_A, doubt)).summary
     assert summary["triage"]["threat_assessment"] == "suspicious"
     assert (summary.get("analysis") or {}).get("verdict") != "malicious"
-    assert not retro_reopen.judged_threat(summary["triage"], summary.get("analysis") or {})
+    assert not model_judged_threat(summary["triage"]["threat_assessment"], (summary.get("analysis") or {}).get("verdict"))
     closed = await repos.alerts.get(TENANT_A, same_host)
     assert (closed.status, closed.summary.get("reopened"), closed.summary.get("linked")) == ("closed", None, None)
 
@@ -100,28 +100,30 @@ async def test_an_escalation_the_models_only_found_suspicious_reopens_nothing(
 async def test_an_escalation_a_model_judged_a_threat_links_related_model_closes_and_reopens_nothing(
     engine: WorkflowEngine, repos: Repositories
 ) -> None:
-    """AI-E3.15: a model's judgement is not a confirmation. The related model closes are shown in the threat's
-    case and stay closed; the analyst's ``true_positive`` on that case reopens them."""
-    same_host = await model_closed(repos, {"hosts": ["ws-042"]})
-    same_user = await model_closed(repos, {"users": ["jdoe"]})
+    """AI-E3.15: a model's judgement on a medium alert is not a confirmation (below hold grade, AI-E3.16). The
+    related model closes are shown in the threat's case and stay closed; the analyst's ``true_positive`` on that
+    case reopens them. Related: the same host or user by relation key, however it is spelled; an address alone
+    relates nothing."""
+    same_host = await model_closed(repos, {"hosts": ["WS-042.corp.example.com"]})
+    same_user = await model_closed(repos, {"users": ["CORP\\jdoe"]})
     same_ip = await model_closed(repos, {"ips": ["185.220.101.44"]})
-    related = sorted([same_host, same_user, same_ip])
+    related = sorted([same_host, same_user])
     unrelated = await model_closed(repos, {"hosts": ["db-01"]})
     stale = await model_closed(repos, {"hosts": ["ws-042"]}, closed_at=datetime.now(UTC) - timedelta(hours=25))
     other_tenant = await model_closed(repos, {"hosts": ["ws-042"]}, tenant_id=TENANT_B)
 
-    threat = await threat_alert(repos)
+    threat = await model_only_threat(repos)
     before = RETRO_LINKED.labels(path="escalation")._value.get()
     outcome = await engine.run(TENANT_A, threat)
     assert outcome.status == "waiting_human"
     stored = await repos.alerts.get(TENANT_A, threat)
-    assert retro_reopen.judged_threat(stored.summary["triage"], stored.summary.get("analysis") or {})
+    assert model_judged_threat(stored.summary["triage"]["threat_assessment"], (stored.summary.get("analysis") or {}).get("verdict"))
 
     case = outcome.interrupt["escalation_id"]
     for alert_id in related:
         assert await linked(repos, alert_id, threat, case), alert_id
         assert await repos.escalations.get_active_for_alert(TENANT_A, alert_id) is None  # no case of its own
-    for alert_id, tenant in ((unrelated, TENANT_A), (stale, TENANT_A), (other_tenant, TENANT_B)):
+    for alert_id, tenant in ((unrelated, TENANT_A), (same_ip, TENANT_A), (stale, TENANT_A), (other_tenant, TENANT_B)):
         alert = await repos.alerts.get(tenant, alert_id)
         assert (alert.status, alert.disposition, alert.summary.get("linked")) == ("closed", "benign", None), alert_id
     assert sorted((await repos.escalations.get(TENANT_A, case)).related_alert_ids) == related  # the analyst sees them
@@ -132,7 +134,7 @@ async def test_an_escalation_a_model_judged_a_threat_links_related_model_closes_
         "related_threat", threat, case)
     events = (await repos.alert_events.list_for_alert(TENANT_A, same_host)).items
     assert [e.event_type for e in events if e.event_type in (LINK_ACTION, REOPEN_ACTION)] == [LINK_ACTION]
-    assert RETRO_LINKED.labels(path="escalation")._value.get() == before + 3
+    assert RETRO_LINKED.labels(path="escalation")._value.get() == before + 2
 
     # Idempotent: linking again for the same threat and case changes and audits nothing.
     assert await link_related_model_closes(repos, TENANT_A, stored, actor=ACTOR, escalation_id=case) == []
@@ -158,7 +160,7 @@ async def policy_response(
     engine_factory: Any, engine_settings: Settings, repos: Repositories, autonomy: Dict[str, str], *,
     live: Optional[pytest.MonkeyPatch] = None,
 ) -> tuple[Any, str, str]:
-    """A response the policy plans on the models' word (no analyst, no case) for an alert sharing an address with
+    """A response the policy plans on the models' word (no analyst, no case) for an alert sharing a host with
     a model close; ``autonomy`` decides whether its low-risk action runs alone or waits for a person. The test
     tenant is in dry-run mode; with ``live`` the workflow is told what a connector reports when the action really
     ran (``succeeded``)."""
@@ -172,16 +174,17 @@ async def policy_response(
 
         live.setattr(engine.node_deps.responses, "execute", really_ran)
     await repos.tenants.update_settings(TENANT_A, {"autonomy": autonomy})
-    closed_alert = await model_closed(repos, {"ips": ["185.220.101.44"]})
+    closed_alert = await model_closed(repos, {"hosts": ["gw-01"], "ips": ["185.220.101.44"]})
     threat = await make_alert(repos, TENANT_A, title="Unusual outbound traffic volume", severity="medium",
-                              normalized={"entities": {"ips": ["185.220.101.44"]}})
+                              normalized={"entities": {"hosts": ["gw-01.corp.example.com"], "ips": ["185.220.101.44"]}})
     return await engine.run(TENANT_A, threat), threat, closed_alert
 
 
 async def test_a_response_plan_the_workflow_only_proposes_links_and_reopens_nothing(
     engine_factory: Any, engine_settings: Settings, repos: Repositories
 ) -> None:
-    """AI-E3.15: the workflow proposes a response on the models' word and waits for a person to approve it. The
+    """AI-E3.15, kept by AI-E3.16: the workflow proposes a response on the models' word and waits for a person to
+    approve it. A response nobody has approved is still only the model's word, so it is not hold grade: the
     related model close is linked (there is no case to show it in) and stays closed."""
     outcome, threat, closed_alert = await policy_response(engine_factory, engine_settings, repos, {"low": "approval"})
 
@@ -320,7 +323,7 @@ async def test_a_benign_decision_on_the_case_leaves_a_linked_alert_closed_by_the
     """AI-E3.15: the analyst judged the threat alert, not the linked one. The linked alert stays closed by the
     models and marked for audit; it is not analyst-confirmed benign and teaches the verdict cache nothing."""
     linked_alert = await model_closed(repos, {"hosts": ["ws-042"], "processes": ["dpkg"]})  # its own verdict key
-    threat = await threat_alert(repos)
+    threat = await model_only_threat(repos)  # below hold grade: it links
     outcome = await engine.run(TENANT_A, threat)
     case = outcome.interrupt["escalation_id"]
     assert await linked(repos, linked_alert, threat, case)
@@ -362,7 +365,7 @@ async def test_a_reopen_or_link_failure_is_counted_not_swallowed(
     async def broken(*args: Any, **kwargs: Any) -> Any:
         raise RuntimeError("database went away")
 
-    monkeypatch.setattr(repos.alerts, "model_closed_sharing_entities", broken)
+    monkeypatch.setattr(repos.alerts, "model_closed_candidates", broken)
     before = RETRO_REOPEN_FAILURES.labels(path="workflow")._value.get()
     assert await reopen_counted(repos, TENANT_A, threat, actor=ACTOR, path="workflow", confirmed=confirmed) == []
     assert RETRO_REOPEN_FAILURES.labels(path="workflow")._value.get() == before + 1
