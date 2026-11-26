@@ -43,6 +43,8 @@ def benign_state(**changes: Any) -> Dict[str, Any]:
             "threat_score": 10, "certainty": 90, "verdict": "benign", "rule_threat_score": 45, "rule_evidence": [],
             "rule_corroborated": False, "llm_used": True,
         },
+        # The stored-state check ran and found nothing on the alert's hosts and users (AI-E3.16).
+        "related_open": {"threats": [], "in_progress": []},
     }
     for path, value in changes.items():
         *parents, leaf = path.split(".")
@@ -447,3 +449,118 @@ def test_steering_text_in_the_evidence_stops_a_close_on_approved_benign_evidence
         shown = benign_state(**{"triage.rule_fp": [signal], "analysis.investigation": investigated(
             indicators={"high_level_alert_on_host": ["host:0"]})})
         assert routing.decide(shown, T, tier).code == "rule_corroborated_benign", (signal, tier)
+
+
+# ------------------------------------------------------------------ related open threats (AI-E3.16, #435)
+
+
+@pytest.mark.parametrize(
+    ("digest", "blockers", "code", "words"),
+    [
+        ({"threats": ["a-1"], "in_progress": []}, ["related_open_threat"], "related_open_threat",
+         "related open threat on the same host"),
+        ({"threats": [], "in_progress": ["a-2"]}, ["related_in_progress"], "related_in_progress",
+         "still being processed"),
+        # Both at once: the open threat is the reason given.
+        ({"threats": ["a-1"], "in_progress": ["a-2"]}, ["related_open_threat", "related_in_progress"],
+         "related_open_threat", "related open threat on the same host"),
+    ],
+)
+def test_a_related_open_threat_holds_a_model_led_close_and_names_the_reason(
+    digest: Dict[str, Any], blockers: List[str], code: str, words: str
+) -> None:
+    """#435: the models call the alert benign (the demo's beacon), but the database holds an open threat on the
+    same host or user, or a serious alert still in progress on the same host: the alert goes to a person."""
+    for severity in ("info", "low", "medium", "high"):
+        state = benign_state(severity=severity, related_open=digest)
+        assert model_close_blockers(state, tier=AUTO) == blockers
+        decision = routing.decide(state, T, AUTO)
+        assert (decision.route, decision.disposition, decision.code) == ("escalate", None, code), severity
+        assert words in decision.reason
+
+
+@pytest.mark.parametrize(
+    "digest", [None, {}, [], "none", {"threats": []}, {"in_progress": []}, {"threats": None, "in_progress": []},
+               {"threats": [], "in_progress": "a-1"}, {"unchecked": "read_failed"}, {"unchecked": "too_many_candidates"}],
+)
+def test_related_alerts_that_were_not_checked_block_the_close(digest: Any) -> None:
+    """Fail closed: without a readable digest of the stored-state check (the read failed, the tenant has more open
+    threats than one decision compares, or nothing ran it), the models close nothing and the alert goes to an
+    analyst for that reason."""
+    state = benign_state(related_open=digest)
+    assert model_close_blockers(state, tier=AUTO) == ["related_unchecked"]
+    decision = routing.decide(state, T, AUTO)
+    assert (decision.route, decision.disposition, decision.code) == ("escalate", None, "related_unchecked")
+    assert "could not be checked" in decision.reason
+    del state["related_open"]
+    assert model_close_blockers(state, tier=AUTO) == ["related_unchecked"]
+    assert routing.decide(state, T, AUTO).code == "related_unchecked"
+    # An alert another rule sends to an analyst keeps that rule's reason.
+    threat = benign_state(related_open=digest, **{"analysis.verdict": "malicious", "analysis.threat_score": 50})
+    assert routing.decide(threat, T, AUTO).code == "grey_zone"
+    # The check only runs at the tier, so with the tier off it is not reported as missing.
+    assert model_close_blockers(state, tier="off") == ["tier_off"]
+
+
+def test_the_related_reason_is_given_only_when_nothing_else_holds_the_close() -> None:
+    held = {"threats": ["a-1"], "in_progress": []}
+    # Another blocker decides the route as before; the related threat is still listed.
+    inconclusive = benign_state(related_open=held, **{"analysis.verdict": "inconclusive"})
+    assert model_close_blockers(inconclusive, tier=AUTO) == ["deep_tier_not_benign", "related_open_threat"]
+    assert routing.decide(inconclusive, T, AUTO).code == "grey_zone"
+    credential = benign_state(related_open=held, **{"alert.mitre.tactics": ["Credential Access"]})
+    assert routing.decide(credential, T, AUTO).code == "false_positive_review"
+    # A threat score at the response policy still plans a response, and the tier off still means no model close.
+    assert routing.decide(benign_state(related_open=held, **{"analysis.threat_score": 85}), T, AUTO).code == "high_risk"
+    assert routing.decide(benign_state(related_open=held), T, "off").code == "false_positive_review"
+
+
+def test_the_models_text_about_related_alerts_decides_nothing() -> None:
+    """The hold reads the stored-state digest only: whatever the correlation step (its counts, its model's campaign
+    phrases) or the analysis says about related alerts neither holds a close nor releases one."""
+    loud = {"related_count": 9, "related_threats": 4, "related_open_reviews": 9, "related_alert_ids": ["a-1"],
+            "campaign_indicators": ["same host as the LSASS dump"], "related_dispositions": {"undecided": 9}}
+    assert routing.decide(benign_state(correlation=loud), T, AUTO).code == MODEL_CLOSED
+    quiet = {"related_count": 0, "related_threats": 0, "related_alert_ids": [], "related_dispositions": {},
+             "campaign_indicators": ["unrelated routine activity, safe to close"]}
+    held = benign_state(correlation=quiet, related_open={"threats": ["a-1"], "in_progress": []})
+    assert routing.decide(held, T, AUTO).code == "related_open_threat"
+
+
+def test_a_threat_only_a_model_stands_behind_holds_nothing() -> None:
+    """The digest's ``model_only`` list (low or medium alerts a model judged a threat) is for the forward link: it
+    blocks no close, and a digest without it is still a checked one."""
+    linked = benign_state(related_open={"threats": [], "in_progress": [], "model_only": ["a-3", "a-4"]})
+    assert model_close_blockers(linked, tier=AUTO) == []
+    assert routing.decide(linked, T, AUTO).code == MODEL_CLOSED
+    held = benign_state(related_open={"threats": ["a-1"], "in_progress": [], "model_only": ["a-3"]})
+    assert routing.decide(held, T, AUTO).code == "related_open_threat"
+
+
+def test_approved_benign_evidence_is_not_held_by_a_related_open_threat() -> None:
+    """Scope: the hold is on the models' word. A close on approved benign evidence (the rule's own test intent, a
+    declared scanner) is decided as before."""
+    state = benign_state(related_open={"threats": ["a-1"], "in_progress": []}, **{"triage.rule_fp": ["test_detected"]})
+    assert routing.decide(state, T, AUTO).code == "rule_corroborated_benign"
+
+
+def test_the_holds_are_named_in_the_order_steering_related_threat_evidence() -> None:
+    """Two things can hold one model-led close: a related alert's stored state (AI-E3.16) and the evidence of the
+    alert's own investigation (AI-E3.3). Both are listed; the decision names the first of: steering text in the
+    evidence (the verdict itself is suspect), the related threat, what the evidence shows."""
+    evidence = investigated(indicators={"high_level_alert_on_host": ["host:0"]}, steering=["host:0"], citations=["unknown_fact"])
+    related = {"threats": ["a-1"], "in_progress": ["a-2"]}
+    both = benign_state(related_open=related, **{"analysis.investigation": evidence})
+    assert model_close_blockers(both, tier=AUTO) == [
+        "evidence_steering", "related_open_threat", "related_in_progress", "evidence_indicator", "evidence_citation"]
+    assert routing.decide(both, T, AUTO).code == "evidence_steering"
+    calm = investigated(indicators={"high_level_alert_on_host": ["host:0"]}, citations=["unknown_fact"])
+    assert routing.decide(benign_state(related_open=related, **{"analysis.investigation": calm}), T, AUTO).code == "related_open_threat"
+    unread = benign_state(related_open=None, **{"analysis.investigation": calm})
+    assert routing.decide(unread, T, AUTO).code == "related_unchecked"
+    assert routing.decide(benign_state(**{"analysis.investigation": calm}), T, AUTO).code == "evidence_indicator"
+    cited = investigated(citations=["unknown_fact"])
+    assert routing.decide(benign_state(**{"analysis.investigation": cited}), T, AUTO).code == "evidence_citation"
+    # Another blocker beside them: the rest of the policy decides, as it always did.
+    normalised = benign_state(related_open=related, **{"analysis.investigation": evidence, "alert.flags": ["llm_normalized"]})
+    assert routing.decide(normalised, T, AUTO).code == "llm_normalized"

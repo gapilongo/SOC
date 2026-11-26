@@ -435,11 +435,19 @@ class _FakeApi(BaseHTTPRequestHandler):
         elif self.path.startswith("/api/v1/alerts"):
             assert self.headers["Authorization"] == "Bearer access-1"
             s["polls"] += 1
-            status = "queued" if s["polls"] < 2 else "closed"
-            items = [
-                {"id": i, "status": status, "severity": "high", "title": f"alert {i}", "disposition": "benign"}
-                for i in s["ids"]
-            ]
+            items = []
+            for i, posted in zip(s["ids"], s["posted"], strict=True):
+                # Triage ends with the attack chain waiting for a person and the rest closed by the AI, unless
+                # the test says how a step of the chain ended (``outcomes``: step -> (status, close reason)).
+                step = posted["source_alert_id"].rsplit("-qs", 1)[0]
+                waiting = ("waiting_human", None) if step in s["chain"] else ("closed", "policy:close")
+                status, reason = s.get("outcomes", {}).get(step, waiting)
+                items.append({
+                    "id": i, "source_alert_id": posted["source_alert_id"], "severity": posted["severity"],
+                    "title": posted["title"], "status": "queued" if s["polls"] < 2 else status,
+                    "disposition": "benign" if status == "closed" else None,
+                    "summary": {"close_reason": reason} if reason else {},
+                })
             self._send(200, {"items": items, "next_cursor": None})
         else:
             self._send(404, {})
@@ -457,17 +465,91 @@ class _FakeApi(BaseHTTPRequestHandler):
             assert self.headers["X-API-Key"] == s["key"]
             s["posted"] = body["alerts"]
             s["ids"] = [f"a{n}" for n in range(len(body["alerts"]))]
-            items = [{"alert_id": i, "status": "inserted"} for i in s["ids"]]
+            items = [{"index": n, "alert_id": i, "status": "inserted"} for n, i in enumerate(s["ids"])]
             self._send(202, {"items": items, "inserted": len(items), "rejected": 0})
         else:
             self._send(404, {})
+
+
+def _seed_against_stub(tmp_path: Path, outcomes: Dict[str, Any]) -> Tuple[int, Dict[str, Any]]:
+    """Run seed_demo.py against the stub API; the exit code and the timing file."""
+    seed = load_seed()
+    password = "pw-" + "z" * 16
+    _FakeApi.state = {"polls": 0, "key": "lgs_" + "k" * 24, "chain": seed.ATTACK_CHAIN, "outcomes": outcomes}
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _FakeApi)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        tmp_path.mkdir(parents=True, exist_ok=True)
+        creds = tmp_path / "creds"
+        creds.write_text(f"TENANT=demo\nEMAIL=admin@demo.example.com\nPASSWORD={password}\n")
+        timing = tmp_path / "timing.json"
+        rc = seed.main(
+            [
+                "--base-url", f"http://127.0.0.1:{server.server_port}", "--credentials", str(creds),
+                "--api-key-file", str(tmp_path / "key"), "--timing-out", str(timing), "--timeout", "30",
+            ]
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+    return rc, json.loads(timing.read_text())
+
+
+def test_the_demo_attack_chain_is_the_four_alerts_on_the_finance_workstation() -> None:
+    seed = load_seed()
+    by_id = {a["source_alert_id"]: a for a in demo_alerts()}
+    assert [by_id[step]["category"] for step in seed.ATTACK_CHAIN] == [
+        "execution", "credential_access", "command_and_control", "lateral_movement"
+    ]
+    for step in seed.ATTACK_CHAIN:
+        assert "WS-FIN-0142.corp.example.com" in by_id[step]["entities"]["hosts"], step
+        assert seed.chain_step(step) == seed.chain_step(f"{step}-qs20261114093000") == step
+    others = [sid for sid in by_id if sid not in seed.ATTACK_CHAIN]
+    assert len(others) == len(by_id) - 4 and all(seed.chain_step(sid) is None for sid in others)
+    assert seed.chain_step(None) is None and seed.chain_step("demo-edr-0011") is None
+
+
+def test_closed_without_a_person_reads_the_close_reason() -> None:
+    seed = load_seed()
+    for reason in ("ai_closed:audit_required", "policy:close", "triage:false_positive", "suppression_rule",
+                   "verdict_cache", None):
+        closed = {"status": "closed", "summary": {"close_reason": reason} if reason else {}}
+        assert seed.closed_without_a_person(closed), reason
+    assert seed.closed_without_a_person({"status": "closed"})
+    for decision in ("true_positive", "false_positive", "benign_positive"):
+        assert not seed.closed_without_a_person({"status": "closed", "summary": {"close_reason": f"analyst:{decision}"}})
+    # A completed automatic response treated the alert as the attack it is: not a silent close.
+    assert not seed.closed_without_a_person({"status": "closed", "summary": {"close_reason": "policy:response"}})
+    for status in ("waiting_human", "waiting_approval", "processing", "failed"):
+        assert not seed.closed_without_a_person({"status": status, "summary": {}})
+
+
+def test_seed_fails_when_a_step_of_the_attack_chain_is_closed_without_a_person(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """#435: the quickstart's check. The AI closing the beacon (or any step of the chain) fails the demo run;
+    the chain waiting for a person, or an analyst closing a step, does not."""
+    rc, timing = _seed_against_stub(tmp_path / "ai", {"demo-net-001": ("closed", "ai_closed:audit_required")})
+    captured = capsys.readouterr()
+    assert rc == 1
+    assert (timing["attack_chain_alerts"], timing["attack_chain_closed_without_a_person"]) == (4, 1)
+    assert timing["triaged"] == timing["alerts"]  # every alert was triaged: the close alone fails the run
+    assert "FAIL  attack-chain alert closed without a person (ai_closed:audit_required)" in captured.err
+    assert "Periodic HTTPS beacon" in captured.err and "no alert of the demo attack chain" not in captured.out
+
+    rc, timing = _seed_against_stub(tmp_path / "analyst", {"demo-net-001": ("closed", "analyst:true_positive")})
+    captured = capsys.readouterr()
+    assert (rc, timing["attack_chain_closed_without_a_person"]) == (0, 0)
+    assert "no alert of the demo attack chain (4 alerts on WS-FIN-0142) was closed without a person" in captured.out
 
 
 def test_seed_flow_against_a_stub_api(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     seed = load_seed()
     password = "pw-" + "z" * 16
     key = "lgs_" + "k" * 24
-    _FakeApi.state = {"polls": 0, "key": key}
+    _FakeApi.state = {"polls": 0, "key": key, "chain": seed.ATTACK_CHAIN}
     server = ThreadingHTTPServer(("127.0.0.1", 0), _FakeApi)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -497,3 +579,5 @@ def test_seed_flow_against_a_stub_api(tmp_path: Path, capsys: pytest.CaptureFixt
     assert result["alerts"] == result["triaged"] == len(demo_alerts()) and result["failed"] == 0
     assert result["first_verdict_after_ingest_s"] is not None and result["first_verdict_after_start_s"] > 0
     assert "time to first verdict" in out
+    assert (result["attack_chain_alerts"], result["attack_chain_closed_without_a_person"]) == (4, 0)
+    assert "no alert of the demo attack chain (4 alerts on WS-FIN-0142) was closed without a person" in out

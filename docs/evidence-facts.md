@@ -450,6 +450,11 @@ found something and has no finding. Otherwise it is false, and a close by the
 AI is a close on the model's word. Nothing decides on that label in this
 release.
 
+A related alert can hold the same close (a serious open threat on the same
+host or user, `related_open_threat` and its two sister codes). Both are
+listed among the reasons; the decision names the first of: steering text in
+the evidence, the related threat, what the evidence shows.
+
 These apply only to a model-led close (and steering text to every automatic
 close). With no investigation the decision policy is unchanged. An
 investigation whose record does not say what it holds is read as holding the

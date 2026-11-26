@@ -100,6 +100,9 @@ REASON_WEIGHTS: Dict[str, int] = {
     "response_review": 1,
     "group_review": 1,
     "false_positive_review": 0,
+    # The models judged it benign, but a serious related alert is open or in progress (lg_sotf.domain.closure).
+    "related_open_threat": 1,
+    "related_in_progress": 1,
     # The evidence of the alert's investigation held a model-led close (lg_sotf.domain.closure.evidence_holds).
     "evidence_steering": 2,
     "evidence_indicator": 2,

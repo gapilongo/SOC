@@ -349,13 +349,61 @@ Rules:
     recent true positive, was normalised by a model, or was reopened. The
     `decide` node reads the tier from the tenant's settings at every
     decision.
-  * The safety net (`core/retro_reopen.py`) replaces the forward gates.
-    It looks at every model-closed alert of the tenant that shares a host,
-    user or IP with a threat and closed in the previous 24 hours, and what
-    it does depends on who stands behind the threat (AI-E3.15):
-    * a model only (an escalation a model judged a threat, not a merely
-      suspicious one; a response the workflow only proposes, or only
-      simulates in the tenant's dry-run mode): the alert is
+  * Related threats (AI-E3.16, `domain/related.py`). Two alerts **relate**
+    when they share a host or a user by relation key: a host is its
+    lower-case short name (`WS-FIN-0142.corp.example.com.` and
+    `ws-fin-0142` are one host; an IP literal is kept whole), a user is the
+    lower-case bare account name (`CORP\jsmith`, `jsmith@corp.example.com`
+    and `JSmith` are one user). What does **not** relate two alerts: a
+    shared IP address alone (a proxy, a resolver, a NAT address), and the
+    accounts every host has (`root`, `SYSTEM`, `LOCAL SERVICE`,
+    `NETWORK SERVICE`): a service account relates two alerts only through
+    a host they share. A threat only a model stands behind links; a
+    stronger signal acts. The stronger signal is one predicate,
+    `hold_grade`, used forward and backward: the alert is high or
+    critical and a model judged it `malicious`, `likely_threat` or
+    `confirmed_threat`; or a person confirmed it (an analyst true
+    positive, a blind-audit malicious label). A response that waits for
+    an approval is not hold grade, at any severity: a response a model
+    proposed and nobody has approved is still only the model's word, so
+    such an alert links, forward and backward (on the dev mix, three
+    medium alerts that only waited for an approval cost 20 of 53 correct
+    closes).
+  * Forward, the threat is there before the close. At the tier `decide`
+    reads what the database holds about the tenant's other alerts
+    (`related_open` in `core/retro_reopen.py`): a bounded candidate set by
+    tenant, state and time (open threats and serious alerts in progress of
+    the last 7 days, person-confirmed closes of the last 24 hours, at most
+    2,000, newest first), compared with the alert by relation key in
+    Python. The model-led close is **held** and the alert goes to an
+    analyst through the ordinary escalation path (grouping, own-review
+    rule, `grouping.max_attached` and blind audit unchanged) when a
+    related alert is hold grade and open, for as long as it is open up to
+    7 days from its ingestion, or closed in the last 24 hours with a
+    person's confirmation (decision code `related_open_threat`); or when
+    a high or critical alert on the same host is in `processing` and
+    changed in the last 15 minutes (`related_in_progress`). A `failed`
+    alert never holds. A low or medium threat only a model stands behind
+    (last 24 hours; also one whose response waits for an approval) holds
+    nothing: the alert closes and is **linked** to
+    that threat's case at once (`alert.linked`, metric path `forward`).
+    The answer comes from the database, never from a model's text or the
+    correlation digest, and is kept in the alert summary (`related_open`).
+    Fail closed without failing the run: when the read fails, or the
+    tenant has more than 2,000 such candidates, the digest says
+    `unchecked`, the failure is counted
+    (`lgsotf_retro_reopen_failures_total`, path `related_open`) and the
+    alert goes to an analyst with the code `related_unchecked`.
+  * Backward, the threat comes after the close: the safety net
+    (`core/retro_reopen.py`). It looks at the alerts the models closed in
+    the previous 24 hours that relate to the threat (read as a candidate
+    set of at most 20,000, newest first; past that the older ones are not
+    compared, which is counted under the path `candidates` and logged as
+    an error), and what it does depends on the same grade:
+    * below hold grade (a low or medium escalation a model judged a
+      threat, not a merely suspicious one; a response the workflow only
+      proposes, or only simulates in the tenant's dry-run mode): the
+      alert is
       **linked**. It is attached to the threat's open escalation as a
       related alert, so the analyst sees it in the case, gets a `linked`
       entry in its summary and is audited `alert.linked`. It stays closed
@@ -363,18 +411,20 @@ Rules:
       decision on the case settles it, and the evidence pack and the NIS2
       draft show no human decision for it. Linked alerts do not use up the
       case's room for waiting alerts;
-    * a confirmation (an analyst true positive, an analyst's own approval
-      of a response action, a blind-audit malicious label, or a response
-      action that really ran (`succeeded`, never `dry_run`) when the
-      workflow carried it out alone under the tenant's autonomy policy:
-      once the platform has acted on a threat, the related alerts do not
-      stay closed): the alert is
+    * hold grade or a confirmation (a high or critical alert a model
+      judged a threat; an analyst
+      true positive, an analyst's own approval of a response action, a
+      blind-audit malicious label, or a response action that really ran
+      (`succeeded`, never `dry_run`) when the workflow carried it out
+      alone under the tenant's autonomy policy): the alert is
       **reopened**, and
       so is every alert linked to the threat or into its case earlier,
       however long ago it closed. It is folded into the threat's open
       escalation (attached, `waiting_human`, no new run or case; the
       decision on the case settles it), or, without an open case, queued
-      for its own review run; audited `alert.reopened`.
+      for its own review run; audited `alert.reopened`. So an alert the
+      models closed while a serious step of the same attack was still
+      queued comes back as soon as that step is looked at.
 * Side-effecting nodes (`escalate`, `plan_response`, `execute_actions`) are
   idempotent because nodes may re-run on resume.
 * The graph is versioned (`core/graph.py`: `GRAPH_VERSION`,

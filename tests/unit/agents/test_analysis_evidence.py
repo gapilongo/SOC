@@ -37,7 +37,7 @@ from lg_sotf.domain import closure
 from lg_sotf.domain.benign_evidence import INJECTION_SIGNAL
 from lg_sotf.domain.ledger import LedgerEntry
 from lg_sotf.llm.fake import Refuse, read_signals
-from lg_sotf.llm.prompting import CONTEXT_TAG, DATA_TAG
+from lg_sotf.llm.prompting import CONTEXT_TAG, DATA_TAG, PROVENANCE_NOTE
 from lg_sotf.settings import Settings
 from lg_sotf.tools.enrichment import EnrichmentService
 from tests.unit.agents._evidence import (
@@ -139,7 +139,9 @@ def test_the_cited_templates_add_only_the_citation_task_and_the_claims() -> None
     """Minimal prompt change: the two templates of today keep their text, schema and hash; the cited ones are
     the same instructions, the citation task after them, and one more field."""
     assert VERDICT_PROMPT.name == "analysis.verdict" and STEP_PROMPT.name == "analysis.react_step"
-    assert (VERDICT_PROMPT.hash, STEP_PROMPT.hash) == ("ba3e52da6cf9550c", "0e6ab566da29704e")  # as on main
+    assert (VERDICT_PROMPT.hash, STEP_PROMPT.hash) == ("55be9077a443c0d6", "2e00700d33f8cdab")  # as on main
+    # The provenance sentence of the plain templates (AI-E3.16) is in the cited ones too: they are built on them.
+    assert PROVENANCE_NOTE in CITED_VERDICT_PROMPT.task and PROVENANCE_NOTE in CITED_STEP_PROMPT.task
     assert CITED_VERDICT_PROMPT.system == VERDICT_PROMPT.system and CITED_STEP_PROMPT.system == STEP_PROMPT.system
     assert CITED_VERDICT_PROMPT.task == f"{VERDICT_PROMPT.task} {CITE_TASK}"
     assert CITED_STEP_PROMPT.task == f"{STEP_PROMPT.task} {CITE_TASK}"
@@ -298,7 +300,7 @@ def held(result: Any) -> Dict[str, Any]:
         # An alert of no never-close class, so that what is listed is what the evidence holds.
         "severity": "low", "alert": {"title": "Successful logon", "mitre": {"tactics": [], "techniques": ["T1078"]}},
         "triage": {"rule_fp": [], "rule_tp": [], "llm_used": True, "threat_assessment": "benign"},
-        "correlation": {}, "analysis": result.digest(),
+        "correlation": {}, "analysis": result.digest(), closure.RELATED_OPEN: {"threats": [], "in_progress": []},
     }
     return {"blockers": closure.model_close_blockers(state, tier=closure.MODEL_CLOSE_TIER), "holds": closure.evidence_holds(result.digest())}
 

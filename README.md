@@ -112,10 +112,12 @@ Full list, and every earlier release, in the [changelog](CHANGELOG.md).
   audit, where an analyst labels it without seeing the AI's verdict
   ([docs](docs/reporting.md#blind-audit-missed-threats-among-auto-closed-alerts)).
 * **A safety net behind every AI close**: when an alert later turns out to
-  be a threat, the alerts the AI closed in the previous 24 hours that share
-  a host, user or address with it are linked to that case. They reopen when
-  a person confirms the threat or a response action really ran, so a model's
-  suspicion alone cannot undo closed work
+  be a threat, the alerts the AI closed in the previous 24 hours on the same
+  host or user are linked to that case. They reopen when the threat is
+  serious (high or critical, and a model judged it a threat), when a
+  person confirms it or when a response action really ran, so a model's
+  suspicion about a minor alert cannot undo closed work. While a serious
+  threat is open on a host or user, the AI does not close alerts there
   ([architecture](docs/architecture.md)).
 * **Console v2**: a new shell (menu grouped by the work, the tenant in the
   address, search and a command palette on `Ctrl+K`), an Overview that says
