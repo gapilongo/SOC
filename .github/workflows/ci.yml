@@ -35,6 +35,32 @@ env:
   TRIVY_VERSION: v0.76.1
 
 jobs:
+  changes:
+    name: Changed areas (which jobs this change needs)
+    # scripts/ci/changed_areas.py. On a pull request, a change of prose only (docs/, changelog.d/,
+    # top-level Markdown) skips the backend suites, the image builds and the browser suite; a change of
+    # the web UI only (src/lg_front/) skips the backend suites; anything else, or any doubt about the
+    # diff, runs everything. A push to main, the weekly schedule and a manual run always run everything:
+    # the release train reads every gate on the commit it tags. A skipped job reports "skipped", which
+    # GitHub's required checks and the merge script read as passed. If this job fails, the jobs that
+    # need it do not run and the run is red.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      backend: ${{ steps.areas.outputs.backend }}
+      stack: ${{ steps.areas.outputs.stack }}
+      cve_gate: ${{ steps.areas.outputs.cve_gate }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2 # a pull request's merge commit and its two parents: the base and the head
+      - name: Classify the changed paths
+        id: areas
+        env:
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python3 scripts/ci/changed_areas.py
+
   lint:
     name: Lint and type-check
     runs-on: ubuntu-latest
@@ -297,6 +323,9 @@ jobs:
     # tests/integration/conftest.py) and Redis database (5 + N). Blocking, on every event: on a pull
     # request it is the backend gate (issue #382), about half the time of the serial job, which then
     # does not run. Locally: `make test-parallel`, `make test-serial`.
+    # Skipped on a pull request that changes only prose or only the web UI (the changes job).
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     services:
@@ -378,6 +407,8 @@ jobs:
     # Roadmap INT3.1: the real Wazuh connector against a Wazuh 4.14 indexer seeded with the template
     # Wazuh publishes (docker/docker-compose.wazuh-test.yml, tests/live/wazuh). Non-blocking while the
     # 2.5 GB image pull and the lab's start time settle; locally: `make test-wazuh-up test-wazuh`.
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     continue-on-error: true
@@ -474,6 +505,9 @@ jobs:
 
   docker:
     name: Container image
+    # Skipped on a pull request that changes only prose (the changes job).
+    needs: changes
+    if: needs.changes.outputs.stack == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -562,6 +596,8 @@ jobs:
 
   upgrade:
     name: Upgrade rehearsal (N-1 runs waiting for an analyst, migrate, decide on N)
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     # scripts/ci/upgrade_rehearsal.sh: the previous release (latest v* tag) migrates a fresh database and
@@ -569,6 +605,8 @@ jobs:
     # close every one of them through its API. Any run that fails, dead-letters or stays open fails the build.
     # The same again from the latest LTS release (lts-X.Y), when it is not the previous release
     # (docs/releases.md). The release train tags nothing whose run of this job failed.
+    # Skipped on a pull request that changes only prose or only the web UI (the changes job); on main it
+    # always runs.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -616,7 +654,7 @@ jobs:
     name: SBOMs and VEX (schema validation)
     # The release assets (docs/security.md, section 9), built the way release-images.yml builds them
     # and validated against the CycloneDX and OpenVEX schemas, so a format break shows up here and not
-    # on release day.
+    # on release day. Skipped with the two jobs it needs, on a pull request that changes only prose.
     needs: [docker, frontend]
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -644,6 +682,9 @@ jobs:
 
   frontend:
     name: Frontend build
+    # Skipped on a pull request that changes only prose (the changes job).
+    needs: changes
+    if: needs.changes.outputs.stack == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -720,6 +761,9 @@ jobs:
 
   e2e-ui:
     name: Web UI end-to-end (Playwright, compose stack)
+    # Skipped on a pull request that changes only prose (the changes job).
+    needs: changes
+    if: needs.changes.outputs.stack == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:

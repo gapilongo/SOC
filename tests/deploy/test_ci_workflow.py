@@ -313,7 +313,8 @@ def test_the_parallel_run_gates_pull_requests_and_the_serial_run_gates_main_and_
     runs = [s.get("run", "") for s in parallel["steps"]]
     assert "pytest -n 4 --dist loadfile --junitxml=junit-parallel.xml" in runs
     assert not _is_advisory(parallel) and not any("continue-on-error" in s or "if" in s for s in parallel["steps"][:-1])
-    assert "if" not in parallel, "the parallel run is a gate on every event"
+    # A gate on every event; only the changed paths of a pull request can skip it (test_changed_areas.py).
+    assert parallel["needs"] == "changes" and parallel["if"] == "needs.changes.outputs.backend == 'true'"
     assert parallel["env"] == serial["env"] and parallel["services"] == serial["services"]
     # The serial job: everywhere but on a pull request, blocking, one process, with coverage.
     assert serial["if"] == "github.event_name != 'pull_request'"

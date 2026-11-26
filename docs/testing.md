@@ -61,6 +61,31 @@ after the merge, not before it: a pull request that lowers coverage below a
 floor turns main red, and the release train does not tag that commit.
 `wazuh-contract` starts the Wazuh lab and runs `tests/live/wazuh`;
 it is non-blocking while its image pull and start time settle.
+
+### What a pull request runs
+
+A pull request skips the jobs its change cannot affect. The `changes` job
+runs `scripts/ci/changed_areas.py` on the paths the pull request changes
+against its base, and the heavy jobs read its outputs:
+
+| The pull request changes | Skipped | Still runs |
+|---|---|---|
+| prose only: `changelog.d/`, prose and pictures under `docs/` (`.md`, images, video), Markdown at the repository root and under `.github/` | the backend suites (`test-parallel`, `upgrade`, `wazuh-contract`), the image builds and smoke test (`docker`, `frontend`, `sbom`), the browser suite (`e2e-ui`) | `lint`, `fast` (the unit and deploy tiers, which hold the tests that pin the documentation), `api-compat`, `schemas`, `eval-gate`, `security`, `helm` |
+| the web UI only: `src/lg_front/` (with or without prose) | the backend suites | everything else, with the frontend build, both images and the browser suite |
+| anything else: backend code, tests, a workflow, a lock file, a Dockerfile, a script, the chart, a path no rule names | nothing | everything |
+
+`docs/openapi.json` and `docs/tools/export_feedback.sql` are not prose: the
+API contract checks, the frontend's generated types and an integration test
+read them, so they run everything. Any doubt about the diff runs everything
+too. Try a list of paths locally:
+`python3 scripts/ci/changed_areas.py README.md docs/cicd.md`.
+
+A skipped job reports "skipped". GitHub's required checks and the merge
+script read that as passed. Only a pull request skips anything: a push to
+main, the weekly schedule and a manual run always run every job, because the
+release train reads every gate on the commit it tags.
+`tests/deploy/test_changed_areas.py` pins which jobs run for which paths; a
+new job or a new condition in `ci.yml` fails there until it is placed.
 `.github/workflows/nightly.yml` runs the suite in a random order
 (hash-locked `pytest-randomly` from `scripts/ci/requirements-nightly.txt`).
 
