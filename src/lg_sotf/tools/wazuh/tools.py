@@ -1,6 +1,7 @@
 """The Wazuh evidence tools (INT3.4): four query templates as registered tools.
 
-* ``wazuh.host_activity``: what a host's alerts show around a moment;
+* ``wazuh.host_activity``: what a host's alerts show around a moment (of a host with more events than a
+  fact lists, a sample chosen in parts: :func:`lg_sotf.tools.wazuh.templates.host_sample`);
 * ``wazuh.logon_fanout``: every logon of one source address, source host, user or target host (a caller
   cannot narrow it to an outcome or a logon type, so a fact never leaves out what was not asked for);
 * ``wazuh.process_lineage``: a process's parents and what it started, down to what its children started
@@ -8,7 +9,7 @@
 * ``wazuh.prevalence``: on how many of the tenant's agents a file hash, a process image, a service's image
   path or a service name was seen.
 
-Each call answers with an :class:`Evidence`: the typed facts it observed (schema 1.1; none when nothing
+Each call answers with an :class:`Evidence`: the typed facts it observed (schema 1.2; none when nothing
 matched), a tuple the registry counts itself. One call is one trace step with its own outcome and hashes;
 the fact ledger (``lg_sotf.agents.investigation.ledger``) gives the facts the ids an investigation cites and
 binds them to those hashes. The tools are never run as a family.
@@ -29,6 +30,7 @@ from a parameter, and the tools are switched off per tenant with ``tenants.setti
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import replace
 from datetime import datetime, timedelta
 from typing import Any, Awaitable, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
@@ -154,11 +156,31 @@ def _found(mapped: Optional[Mapped[Any]]) -> List[Mapped[Any]]:
     return [mapped] if mapped is not None else []
 
 
+async def _host_sample(reader: _Reader, params: HostActivityParams, never_close: List[str], rare: List[str]) -> mappers.HostSample:
+    """The searches that choose a busy host's listed events, sent together: the client runs two at a time, so
+    a slow indexer costs the call two timeouts for them, not four, and the call stays inside its time cap.
+
+    One that fails (the indexer does not answer, or not with a search response) does not fail the call: the
+    host search already read the counts the indicators need. The events are then listed by level, and the
+    fact says the sample was not taken.
+    """
+    bodies = templates.host_sample(params, never_close, rare)
+    answers = await asyncio.gather(*(reader.ask(body) for body in bodies.values()), return_exceptions=True)
+    for error in answers:
+        if isinstance(error, BaseException) and not isinstance(error, (IndexerUnavailable, Malformed)):
+            raise error
+    parts = {part: answer for part, answer in zip(bodies, answers, strict=True) if isinstance(answer, Answer)}
+    return mappers.HostSample(params.at, parts if len(parts) == len(bodies) else {}, failed=len(parts) < len(bodies))
+
+
 async def _host_activity(reader: _Reader, params: HostActivityParams) -> Evidence:
     start, end = params.at - minutes(params.before_min), params.at + minutes(params.after_min)
     answer = await reader.ask(templates.host_activity(params))
     mine = templates.own_event(params)  # the alert under investigation is never its own evidence
-    mapped = mappers.host_activity(answer, start, end, await reader.ask(mine) if mine is not None else None)
+    own = await reader.ask(mine) if mine is not None else None
+    busy = mappers.host_sample_techniques(answer, own)  # more events than a fact lists: a sample, chosen in parts
+    sample = await _host_sample(reader, params, *busy) if busy is not None else None
+    mapped = mappers.host_activity(answer, start, end, own, sample)
     return await _evidence(reader, HOST_ACTIVITY, "host_activity", ("host", params.host), _found(mapped), start, end)
 
 

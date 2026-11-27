@@ -104,7 +104,8 @@ def generated(seed: int = 34, count: int = 400) -> Iterator[Any]:
 def bodies(params: Any) -> List[Dict[str, Any]]:
     """Every search a call with ``params`` can send (the follow-up searches included)."""
     if isinstance(params, HostActivityParams):
-        return [templates.host_activity(params)]
+        ids = [f"T{1000 + n}.{n % 9:03d}" for n in range(dsl.MAX_BUCKETS)]  # as many technique ids as the indexer lists
+        return [templates.host_activity(params), *templates.host_sample(params, ids, ids).values()]
     if isinstance(params, LogonFanoutParams):
         apart = templates.lockouts(params)
         return [templates.logons(params), templates.first_success(params, params.at), *([apart] if apart else [])]

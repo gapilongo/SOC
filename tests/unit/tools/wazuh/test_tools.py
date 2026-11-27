@@ -472,10 +472,13 @@ async def test_a_capped_result_is_not_complete() -> None:
     assert (whole.outcome, whole.complete, whole.value[0].complete, len(whole.value[0].value.events)) == ("success", True, True, 50)
     cut = await Investigation(_store(dsl.MAX_HITS + 10), T0 + minutes(30)).call("host_activity", **window)
     fact = cut.value[0]
-    # 60 events: the 50 highest are listed, the count is exact, and neither the fact nor the result is complete.
+    # 60 events: 50 are listed, the count is exact, and neither the fact nor the result is complete.
     assert (cut.outcome, cut.rows, cut.complete, fact.complete) == ("success", 1, False, False)
     assert (fact.value.total, len(fact.value.events)) == (60, 50) and not fact_is_complete(fact)
-    assert [event.level for event in fact.value.events[:13]] == [7] * 12 + [6], "the highest levels are the ones kept"
+    # The list is a sample (issue 452): one event of the host's one technique, the ten closest in time to the
+    # alert (that one among them), then the highest levels.
+    assert [event.listed_for for event in fact.value.events] == ["rare_technique"] + ["nearest_in_time"] * 9 + ["rule_level"] * 40
+    assert [event.level for event in fact.value.events[10:21]] == [7] * 10 + [6], "the highest levels fill the rest"
     # 30 events, all listed, but 60 rule groups: the list of groups is cut at 50, so the fact is not complete.
     groups = await Investigation(_store(30, groups=2), T0 + minutes(30)).call("host_activity", **window)
     assert (len(groups.value[0].value.events), len(groups.value[0].value.by_group), groups.complete) == (30, 50, False)

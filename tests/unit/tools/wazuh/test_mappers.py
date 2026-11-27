@@ -241,7 +241,10 @@ def test_strings_from_the_indexer_are_bounded_and_secrets_are_masked() -> None:
     assert host is not None and host.value.events[0].command_template == subject.command_template
     assert host.value.events[0].image_name == "PsExec64.exe" and host.value.max_level is None
     assert host.value.techniques == ["T1059.001"] and [len(g.group) for g in host.value.by_group] == [7, 128]
-    assert [(r.path, r.reason) for r in host.redactions] == [("/value/events/0/command_template", "secret")]
+    # One listed event holds a bounded part of the names an attacker types (issue 452); the cut is noted.
+    assert len(host.value.events[0].user or "") == mappers.MAX_EVENT_NAME_CHARS - 1  # its backslash is two characters in JSON
+    assert [(r.path, r.reason) for r in host.redactions] == [
+        ("/value/events/0/command_template", "secret"), ("/value/events/0/user", "truncated")]
     # A process with no image has no name: it is left out, and the fact is not whole.
     nameless = mappers.process_lineage([child], None, [_event(3, processGuid="{x}")])
     assert nameless is not None and not nameless.whole and nameless.value.children == []

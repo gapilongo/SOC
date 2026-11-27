@@ -342,13 +342,29 @@ def check_citations(
     return problems
 
 
+def _sample_by_part(value: Any) -> Any:
+    """A fact's value with a sample of events (each says what it is ``listed_for``) grouped by that part.
+
+    A prompt that cannot hold a list cuts every member of it alike, so the volume of one part (an
+    attacker's noise) would cut the events of the others down to nothing. Grouped, each part is fitted on its
+    own, and a small part is shown whole (issue 452). A value without such a sample is returned as it is.
+    """
+    events = value.get("events") if isinstance(value, Mapping) else None
+    if not isinstance(events, list) or not events or not all(isinstance(e, Mapping) and e.get("listed_for") for e in events):
+        return value
+    parts: Dict[str, List[Dict[str, Any]]] = {}
+    for event in events:
+        parts.setdefault(str(event["listed_for"]), []).append({k: v for k, v in event.items() if k != "listed_for"})
+    return {**value, "events": parts}
+
+
 def planner_view(ledger: Sequence[LedgerEntry], *, max_chars: int = MAX_PLANNER_CHARS) -> List[Dict[str, Any]]:
     """What a prompt may show of a ledger: ids, outcomes and typed fact fields, never a tool's raw answer.
 
     In ledger order, at most ``max_chars`` of JSON in all: an entry that does not fit in what is left is
     left out (the caller says how many are missing). A typed field can still hold a string an attacker
     chose, so the caller renders this as untrusted data (``lg_sotf.llm.prompting``, the ``tool_data``
-    block), never as instructions.
+    block), never as instructions. A sample of events is shown by part (:func:`_sample_by_part`).
     """
     view: List[Dict[str, Any]] = []
     left = max_chars
@@ -359,7 +375,8 @@ def planner_view(ledger: Sequence[LedgerEntry], *, max_chars: int = MAX_PLANNER_
         if entry.fact is None:
             shown["reason"] = entry.reason
         else:
-            shown.update({k: entry.fact.get(k) for k in ("kind", "subject", "observed_at", "value")})
+            shown.update({k: entry.fact.get(k) for k in ("kind", "subject", "observed_at")})
+            shown["value"] = _sample_by_part(entry.fact.get("value"))
         size = len(json.dumps(shown, separators=(",", ":"), ensure_ascii=False))
         if size <= left:
             view.append(shown)
