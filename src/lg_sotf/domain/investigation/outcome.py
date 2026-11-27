@@ -66,9 +66,10 @@ def decide_code(
     alert: AlertFacts, escalation: Optional[EscalationFacts], events: Sequence[EventFacts]
 ) -> Optional[str]:
     """The code of the decision that routed the alert: its own escalation's, else the one stored at close, else
-    the last ``decide`` step's. ``reopened`` while an alert the safety net reopened is open again."""
+    the last ``decide`` step's. While a reopened alert is open again: ``reopened`` for the safety net's
+    reopening, ``reopened_by_analyst`` or ``flagged_by_analyst`` for a person's."""
     if alert.status != "closed" and alert.summary.get(closure.REOPENED):
-        return "reopened"
+        return words.REOPEN_CODES.get(str(mapping(alert.summary.get(closure.REOPENED)).get("reason")), "reopened")
     own = _own(alert, escalation)
     stored = (
         _code(mapping(mapping(own.summary).get("routing")).get("code")) if own is not None else None

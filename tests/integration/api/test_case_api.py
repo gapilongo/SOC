@@ -101,7 +101,7 @@ async def test_the_case_view_says_what_the_ai_closed_on_the_host_while_the_case_
     kinds = [(e["kind"], e["alert_id"]) for e in body["timeline"]]
     assert ("alert.linked", linked) in kinds and ("step.close", linked) in kinds and ("case.opened", None) in kinds
     assert not any(kind in ("step.triage", "step.decide") for kind, _ in kinds)
-    assert {"key", "summary", "alerts[].flagged"} <= {n["field"] for n in body["not_available"]}
+    assert {"key", "summary"} <= {n["field"] for n in body["not_available"]}
     assert len((await api.repos.audit.list(TENANT_A, limit=200)).items) == audits_before  # the route only reads
 
 

@@ -94,6 +94,7 @@ const ACCURACY: AccuracyReportOut = {
     correlation_helpful: { rate: null, samples: 0, status: 'insufficient_data', n: 0, ci_low: null, ci_high: null },
     avg_review_duration_s: null,
   },
+  flagged_ai_closes: 2,
   notes: [],
 };
 
@@ -171,6 +172,7 @@ describe('ReportsPage', () => {
     expect(screen.getAllByText('66.7%').length).toBeGreaterThan(0);
     expect(screen.getByText('anthropic/claude-x')).toBeInTheDocument();
     expect(screen.getByText(/false negatives/)).toBeInTheDocument();
+    expect(screen.getByText(/AI closes a person flagged as wrong in this window: 2\./)).toBeInTheDocument();
   });
 
   it('lets an analyst propose a suppression for a candidate detection', async () => {

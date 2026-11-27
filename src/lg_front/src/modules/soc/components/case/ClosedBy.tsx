@@ -13,7 +13,7 @@
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 
-import type { CaseAlertOut, CaseBlindAuditOut, CaseClosedByOut } from '../../api/types';
+import type { CaseAlertOut, CaseBlindAuditOut, CaseClosedByOut, CaseReopenedOut } from '../../api/types';
 import { Glyph, type GlyphName } from '../../../../components/ui/glyphs';
 import { cx } from '../../../../components/ui';
 import { formatDateTime, shortId } from '../../../../lib/format';
@@ -162,12 +162,16 @@ function ClosedLine({ alert, userId }: { alert: CaseAlertOut; userId: string | n
 export function ClosedBy({ alert, userId }: { alert: CaseAlertOut; userId?: string | null }) {
   const kind = closerKind(alert);
   const audit = alert.hidden_for_blind_audit ? null : auditWords(alert.blind_audit);
+  // Who reopened or flagged it, when a person did: "you", the e-mail, else a short id.
+  const own = reopenedByPerson(alert.reopened) ? alert.reopened : null;
+  const person = personName(alert.flagged?.by ?? own?.by ?? null, userId);
+  const at = alert.flagged?.at ?? own?.at ?? null;
   return (
     <span data-closed-by={kind} className="block">
       <CloserMark kind={kind} />
       {alert.state === 'closed' && !alert.hidden_for_blind_audit && <ClosedLine alert={alert} userId={userId} />}
       {alert.hidden_for_blind_audit && <small className={SMALL}>Closed{alert.closed_at && <> {formatDateTime(alert.closed_at)}</>}</small>}
-      {(alert.role === 'linked' || alert.role === 'reopened' || audit) && (
+      {(alert.role === 'linked' || alert.role === 'reopened' || alert.flagged || audit) && (
         <span className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
           {alert.role === 'linked' && (
             <span title="Linked to this case by the safety net, and left closed">
@@ -175,12 +179,29 @@ export function ClosedBy({ alert, userId }: { alert: CaseAlertOut; userId?: stri
             </span>
           )}
           {alert.role === 'reopened' && <SmallTag tone="warn">Reopened</SmallTag>}
+          {alert.flagged && <SmallTag tone="warn">Flagged</SmallTag>}
           {audit && <span className="text-xs text-muted">{audit}</span>}
         </span>
+      )}
+      {person && (
+        <small className={SMALL}>
+          {alert.flagged ? 'Flagged' : 'Reopened'} by {person}
+          {at && <> {formatDateTime(at)}</>}
+        </small>
       )}
     </span>
   );
 }
+
+/** A person reopened the alert themselves, or flagged its close (not the safety net). */
+export function reopenedByPerson(reopened: Pick<CaseReopenedOut, 'reason'> | null): boolean {
+  return reopened?.reason.code === 'analyst_reopen' || reopened?.reason.code === 'analyst_flag';
+}
+
+const MODE_WORDS: Record<string, string> = {
+  folded: 'It waits in this case: the decision on the case settles it.',
+  requeued: 'A new run reviews it on its own.',
+};
 
 /**
  * Why: the read model's sentence for the close (the rule of the decision
@@ -194,6 +215,16 @@ export function AlertWhy({ alert, caseId }: { alert: CaseAlertOut; caseId: strin
   }
   const by = alert.closed_by;
   if (alert.state !== 'closed' || !by) {
+    if (alert.reopened && reopenedByPerson(alert.reopened)) {
+      // A person's own reopening: the sentence, where the alert waits, and their reason, quoted as theirs.
+      const note = alert.reopened.note ?? alert.flagged?.note;
+      return (
+        <span data-why={alert.reopened.reason.code}>
+          {alert.reopened.reason.sentence} {alert.reopened.mode ? (MODE_WORDS[alert.reopened.mode] ?? '') : ''}
+          {note && <q className="mt-0.5 block whitespace-pre-wrap break-words text-secondary">{note}</q>}
+        </span>
+      );
+    }
     if (alert.reopened) return <span>{alert.reopened.reason.sentence}</span>;
     if (alert.why) return <span>{alert.why.sentence}</span>;
     return <span className="text-muted">{alert.state === 'closed' ? 'The reason of this close is not recorded.' : 'No decision yet: the investigation is still running.'}</span>;

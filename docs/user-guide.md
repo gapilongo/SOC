@@ -204,6 +204,20 @@ screen, and it lists as "not yet available" exactly what that read model
 names in `not_available`. The older decision page (`/escalations/<id>`)
 still opens from the Escalations list.
 
+**Reopen and Flag.** An alert the AI closed on the model's word has two
+controls in its row, for an analyst or an admin. **Reopen** puts it back in
+front of a person: while the case is open it joins the case as open and the
+decision on the case settles it; in a decided case a new run reviews it and
+ends with an analyst. Either way the AI no longer closes it on the model's
+word. **Flag** does the same and records that the AI was wrong to close it:
+the flag is counted in the blind-audit and accuracy reports, and because a
+person stands behind it, the other alerts the AI closed on the same host or
+user are reopened too. Both ask for a reason, and neither is sent without
+one; the reason is kept in the audit log with your name (`alert.reopened`,
+`alert.flagged`) and shown in the alert's row and timeline. Alerts closed by
+a person, a suppression rule, an earlier verdict or approved evidence have
+no such control: change the rule, or ask an admin to reprocess the alert.
+
 1. **Claim** it so colleagues know you are on it:
    `POST /escalations/{id}/claim` with the escalation's current `version`.
    A `409 conflict` means someone else changed it; re-read and retry.

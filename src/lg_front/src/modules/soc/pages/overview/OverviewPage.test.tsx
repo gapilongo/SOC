@@ -106,7 +106,7 @@ function estimate(overrides: Partial<BlindAuditEstimate> = {}): BlindAuditEstima
 }
 
 function auditReport(overrides: Partial<BlindAuditEstimate> = {}): BlindAuditReportOut {
-  return { from: '2026-10-16', to: '2026-11-14', generated_at: '2026-11-14T10:04:00Z', estimate: estimate(overrides), strata: [], runs: [], uncovered: [], labels_by_organisation: [], notes: [] };
+  return { from: '2026-10-16', to: '2026-11-14', generated_at: '2026-11-14T10:04:00Z', estimate: estimate(overrides), strata: [], runs: [], uncovered: [], labels_by_organisation: [], flagged_ai_closes: 0, notes: [] };
 }
 
 interface World {

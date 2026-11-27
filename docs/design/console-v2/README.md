@@ -268,7 +268,7 @@ proposals in the New column, the API's names are the ones to build on:
 |---|---|---|
 | "CASE-2291" | The escalation's id, shortened | A readable case reference |
 | The statement "Nine alerts on one host and one user in 20 hours" | The counts: "9 alerts: 3 with a person, 1 being investigated, 5 closed." | A case summary |
-| Reopen and Flag on a closed alert, with a required reason | Left out | `POST /alerts/{id}/reopen` and `POST /alerts/{id}/flag` with `reason` (today's `POST /alerts/{id}/reprocess` is for admins, takes no reason and lets the AI close the alert again) |
+| Reopen and Flag on a closed alert, with a required reason | **Built (PRD-2.9a, #440)** for an alert the AI closed on the model's word: `POST /alerts/{id}/reopen` and `POST /alerts/{id}/flag` with `reason`. A flag reopens the alert (the design kept it closed), is counted in the blind-audit and accuracy reports and confirms for the safety net | The same controls for an alert closed by a person, a suppression rule, an earlier verdict or approved evidence: a new run would close those the same way, so the closing policy has to hold every automatic close of a reopened alert first |
 | A reason on approve and reject, batch approval of identical actions | The dialog of the Approvals page, one action at a time, no reason | `reason` on `POST /actions/{id}/approve` and `/reject`; the approval inbox story |
 | "Evidence pack" of the case | "Review the evidence" opens the investigation view of the primary alert, which exports that alert's record | A pack over the case's alerts |
 | Ticket | Left out of the header | Tickets by case on the read model (`GET /tickets` lists them by escalation today) |

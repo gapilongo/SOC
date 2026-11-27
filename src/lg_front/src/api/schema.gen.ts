@@ -228,6 +228,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/alerts/{alert_id}/flag": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Flag an AI close as wrong, with a reason: recorded as a disagreement, and the alert is reopened
+         * @description Say the AI was wrong to close the alert. The disagreement is audited ``alert.flagged`` and counted by the
+         *     blind-audit and accuracy reports; the alert is reopened as by ``/reopen``; and, because a person stands
+         *     behind it, the safety net treats it as a confirmation: the other alerts the AI closed on the same host or
+         *     user are reopened too. Same refusals as ``/reopen``.
+         */
+        post: operations["flag_alert_api_v1_alerts__alert_id__flag_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/alerts/{alert_id}/incident-report": {
         parameters: {
             query?: never;
@@ -281,6 +304,31 @@ export interface paths {
         put?: never;
         /** Add an analyst note */
         post: operations["add_note_api_v1_alerts__alert_id__notes_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/alerts/{alert_id}/reopen": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reopen an alert the AI closed, with a reason: it waits for a person
+         * @description Put an alert the AI closed on the model's word back in front of a person. While its case is open it joins
+         *     that case as open and the decision on the case settles it; otherwise a new run reviews it. Either way the AI
+         *     never closes it on the model's word again. Audited ``alert.reopened`` with the person and the reason.
+         *
+         *     409 ``not_ai_closed`` for any other alert, ``hidden_for_blind_audit`` while it waits for its blind-audit
+         *     label, ``already_with_a_person``, ``not_in_case`` when ``case_id`` does not hold it.
+         */
+        post: operations["reopen_alert_api_v1_alerts__alert_id__reopen_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1864,6 +1912,11 @@ export interface components {
             by_model: components["schemas"]["ModelAccuracy"][];
             feedback: components["schemas"]["FeedbackSummary"];
             /**
+             * Flagged Ai Closes
+             * @default 0
+             */
+            flagged_ai_closes?: number;
+            /**
              * From
              * Format: date
              */
@@ -2234,6 +2287,9 @@ export interface components {
                 dry_run?: boolean;
                 escalation_attached?: boolean;
                 escalation_id?: string | null;
+                flagged?: {
+                    [key: string]: string | null;
+                };
                 linked?: {
                     [key: string]: string | null;
                 }[];
@@ -2549,6 +2605,9 @@ export interface components {
                 dry_run?: boolean;
                 escalation_attached?: boolean;
                 escalation_id?: string | null;
+                flagged?: {
+                    [key: string]: string | null;
+                };
                 linked?: {
                     [key: string]: string | null;
                 }[];
@@ -2978,6 +3037,12 @@ export interface components {
          */
         BlindAuditReport: {
             estimate: components["schemas"]["BlindAuditEstimate"];
+            /**
+             * Flagged Ai Closes
+             * @description AI closes a person flagged as wrong in the window.
+             * @default 0
+             */
+            flagged_ai_closes?: number;
             /**
              * From
              * Format: date
@@ -3472,6 +3537,12 @@ export interface components {
         CaseAlert: {
             blind_audit: components["schemas"]["CaseBlindAudit"];
             /**
+             * Can Reopen
+             * @description The AI closed it on the model's word and the close stands: an analyst may reopen it or flag the close (POST /alerts/{id}/reopen, POST /alerts/{id}/flag).
+             * @default false
+             */
+            can_reopen: boolean;
+            /**
              * Category
              * @description The alert's outcome category, as on the investigation view.
              */
@@ -3487,6 +3558,8 @@ export interface components {
              * @description The first value of each entity kind.
              */
             entities: components["schemas"]["CaseEntityRef"][];
+            /** @description A person flagged the AI's close as wrong. */
+            flagged: components["schemas"]["CaseFlagged"] | null;
             /**
              * Hidden For Blind Audit
              * @description The alert waits for its blind-audit label: nothing of the AI's side is given.
@@ -3506,7 +3579,7 @@ export interface components {
             reopened: components["schemas"]["CaseReopened"] | null;
             /**
              * Role
-             * @description primary: the alert the case was opened for. attached: grouped with it, so the decision on the case applies to it. linked: closed by the AI and linked by the safety net; it stays closed. reopened: closed by the AI and reopened by the safety net. withheld: the alert waits for its blind-audit label, so how it joined is withheld with the AI's side.
+             * @description primary: the alert the case was opened for. attached: grouped with it, so the decision on the case applies to it. linked: closed by the AI and linked by the safety net; it stays closed. reopened: closed by the AI and reopened, by the safety net or by a person. withheld: the alert waits for its blind-audit label, so how it joined is withheld with the AI's side.
              * @enum {string}
              */
             role: "primary" | "attached" | "linked" | "reopened" | "withheld";
@@ -3668,6 +3741,12 @@ export interface components {
              */
             closed_by: components["schemas"]["CaseClosedByCounts"];
             /**
+             * Flagged
+             * @description Alerts whose AI close a person flagged as wrong.
+             * @default 0
+             */
+            flagged: number;
+            /**
              * Linked
              * @default 0
              */
@@ -3746,6 +3825,20 @@ export interface components {
             value: string;
         };
         /**
+         * CaseFlagged
+         * @description A person flagged the AI's close of this alert as wrong.
+         */
+        CaseFlagged: {
+            /** At */
+            at: string | null;
+            by: components["schemas"]["CasePerson"] | null;
+            /**
+             * Note
+             * @description The reason the person gave. Data, at most 1000 characters. Null when the timeline no longer has it.
+             */
+            note: string | null;
+        };
+        /**
          * CaseLink
          * @description The safety net linked this alert to the case: it stays closed.
          */
@@ -3783,12 +3876,12 @@ export interface components {
         };
         /**
          * CaseReopened
-         * @description The safety net reopened this alert, which the AI had closed on the model's word.
+         * @description This alert, which the AI had closed on the model's word, was reopened: by the safety net, or by a person.
          */
         CaseReopened: {
             /** At */
             at: string | null;
-            /** @description person: who confirmed. */
+            /** @description person: who confirmed, reopened or flagged. */
             by: components["schemas"]["CasePerson"] | null;
             /**
              * Confirmed By
@@ -3800,6 +3893,12 @@ export interface components {
              * @description folded: it joined the open case and that case's decision settles it. requeued: a new run reviews it.
              */
             mode: ("folded" | "requeued") | null;
+            /**
+             * Note
+             * @description analyst_reopen, analyst_flag: the reason the person gave. Data, at most 1000 characters.
+             */
+            note: string | null;
+            /** @description related_threat: the safety net reopened it. analyst_reopen: a person reopened it. analyst_flag: a person flagged the AI's close as wrong, which reopened it. */
             reason: components["schemas"]["InvestigationReason"];
             /**
              * Threat Alert Id
@@ -6414,6 +6513,39 @@ export interface components {
             /** Recovery Codes */
             recovery_codes: string[];
         };
+        /** ReopenIn */
+        ReopenIn: {
+            /**
+             * Case Id
+             * @description The case the alert returns to (it must hold the alert). Default: the open case it is attached to.
+             */
+            case_id?: string | null;
+            /**
+             * Reason
+             * @description Why, in the person's words: data.
+             */
+            reason: string;
+        };
+        /** ReopenOut */
+        ReopenOut: {
+            /** Alert Id */
+            alert_id: string;
+            /** Case Id */
+            case_id?: string | null;
+            /** Flagged */
+            flagged: boolean;
+            /**
+             * Mode
+             * @description folded: it waits for a person in case_id. requeued: no open case holds it, a new run reviews it.
+             * @enum {string}
+             */
+            mode: "folded" | "requeued";
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "new" | "queued" | "processing" | "waiting_human" | "waiting_approval" | "closed" | "failed";
+        };
         /** ReprocessOut */
         ReprocessOut: {
             /** Alert Id */
@@ -8095,6 +8227,41 @@ export interface operations {
             };
         };
     };
+    flag_alert_api_v1_alerts__alert_id__flag_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                alert_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReopenIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReopenOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     incident_report_api_v1_alerts__alert_id__incident_report_post: {
         parameters: {
             query?: never;
@@ -8183,6 +8350,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AlertEventOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reopen_alert_api_v1_alerts__alert_id__reopen_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                alert_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReopenIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReopenOut"];
                 };
             };
             /** @description Validation Error */

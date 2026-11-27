@@ -28,8 +28,8 @@ unreadable value blocks the close.
   correlation window closed as malicious, and no rule evidence that
   corroborates a threat (``rule_corroborated``);
 * not normalised by a model (the LLM-fallback normalizer chose its fields),
-  and not reopened by the safety net (``reopened``): a reopened alert goes
-  to an analyst;
+  and not reopened (``reopened``), by the safety net or by a person
+  (:mod:`lg_sotf.core.reopen`): a reopened alert goes to an analyst;
 * no related threat of hold grade (AI-E3.16, #435). When the decision is
   made the workflow reads what the database holds about the tenant's other
   alerts and keeps the ones that relate to this one: a shared host or user
@@ -117,6 +117,8 @@ from lg_sotf.domain.benign_evidence import INJECTION_SIGNAL
 from lg_sotf.domain.noise_families import NoiseFamily, noise_family, vendor_never_close_class
 
 __all__ = [
+    "ANALYST_FLAG",
+    "ANALYST_REOPEN",
     "AUTONOMY_TIERS",
     "EVIDENCE_BLOCKERS",
     "EVIDENCE_CITATION",
@@ -163,6 +165,9 @@ CLOSABLE_SEVERITIES: FrozenSet[str] = frozenset({"info", "low", "medium", "high"
 FAST_TIER_THREATS: FrozenSet[str] = frozenset({"likely_threat", "confirmed_threat"})
 #: The alert key the safety net sets on a reopened alert (lg_sotf.core.retro_reopen); it never model-closes.
 REOPENED = "reopened"
+#: The marker's reason when a person reopened the alert, or flagged the AI's close as wrong
+#: (lg_sotf.core.reopen). The safety net's own is ``related_threat``.
+ANALYST_REOPEN, ANALYST_FLAG = "analyst_reopen", "analyst_flag"
 LLM_NORMALIZED_FLAG = "llm_normalized"
 #: The state and alert-summary key of the related-alert check: ``{"threats": [alert ids], "in_progress": [alert
 #: ids], "model_only": [alert ids]}`` as the database held them when the decision was made

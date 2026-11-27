@@ -1,5 +1,6 @@
 # ruff: noqa: B008 - FastAPI declares dependencies and parameters as call defaults
-"""``/alerts``: listing, view counts, detail, timeline, the investigation view, notes and reprocessing.
+"""``/alerts``: listing, view counts, detail, timeline, the investigation view, notes, reprocessing, and a
+person's reopening or flag of an alert the AI closed (:mod:`lg_sotf.core.reopen`).
 
 ``GET /alerts/counts`` is cached for :data:`COUNTS_CACHE_TTL_S` seconds per
 tenant and window in Redis (Redis being down only disables the cache).
@@ -8,19 +9,39 @@ tenant and window in Redis (Redis being down only disables the cache).
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from fastapi import APIRouter, Depends, Query, Request
+from pydantic import BaseModel, Field, field_validator
 from redis.exceptions import RedisError
 
-from lg_sotf.api.auth.deps import ADMIN, ANALYST, VIEWER, require
+from lg_sotf.api.auth.deps import ADMIN, ANALYST, REVIEWER, VIEWER, require
 from lg_sotf.api.auth.principal import Principal
-from lg_sotf.api.common import alert_detail_out, alert_out, aware, blind_view, hidden_alert_ids
+from lg_sotf.api.common import (
+    alert_detail_out,
+    alert_out,
+    aware,
+    blind_view,
+    enqueue_reopened,
+    hidden_alert_ids,
+    reopen_confirmed,
+)
 from lg_sotf.api.context import ApiContext, get_ctx
 from lg_sotf.api.errors import ApiError
-from lg_sotf.api.schemas import AlertCountsOut, AlertDetailOut, AlertEventOut, AlertOut, NoteIn, PageOut, ReprocessOut
+from lg_sotf.api.schemas import (
+    AlertCountsOut,
+    AlertDetailOut,
+    AlertEventOut,
+    AlertOut,
+    AlertStatusStr,
+    In,
+    NoteIn,
+    PageOut,
+    ReprocessOut,
+)
 from lg_sotf.api.stability import route_contract
 from lg_sotf.audit.logger import Actor, AuditLogger
+from lg_sotf.core.reopen import MAX_REASON_CHARS, NotReopenable, reopen
 from lg_sotf.db.errors import InvalidTransition
 from lg_sotf.db.pagination import API_MAX_LIMIT
 from lg_sotf.db.repos.alerts import DEFAULT_SEARCH_WINDOW, MAX_SEARCH_WINDOW
@@ -212,3 +233,86 @@ async def reprocess(alert_id: str, request: Request, principal: Principal = Depe
     entry_id = await ctx.queue.enqueue_process(tenant_id, alert_id, alert.severity)
     await publish_event(ctx.events, "alert.updated", tenant_id, alert_id, {"status": "queued", "reprocess": True})
     return ReprocessOut(alert_id=alert_id, status="queued", entry_id=entry_id)
+
+
+class ReopenIn(In):
+    reason: str = Field(min_length=1, max_length=MAX_REASON_CHARS, description="Why, in the person's words: data.")
+    case_id: Optional[str] = Field(
+        default=None, max_length=128,
+        description="The case the alert returns to (it must hold the alert). Default: the open case it is attached to.",
+    )
+
+    @field_validator("reason")
+    @classmethod
+    def _strip(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("reason must not be blank")
+        return value
+
+
+class ReopenOut(BaseModel):
+    alert_id: str
+    status: AlertStatusStr
+    mode: Literal["folded", "requeued"] = Field(
+        description="folded: it waits for a person in case_id. requeued: no open case holds it, a new run reviews it."
+    )
+    case_id: Optional[str] = None
+    flagged: bool
+
+
+async def _reopen(ctx: ApiContext, principal: Principal, alert_id: str, body: ReopenIn, *, flag: bool) -> ReopenOut:
+    tenant_id = principal.tenant_id
+    try:
+        done = await reopen(
+            ctx.repos, tenant_id, alert_id, actor=principal.actor, reason=body.reason, flag=flag, case_id=body.case_id
+        )
+    except NotReopenable as exc:
+        raise ApiError(409, exc.code, str(exc)) from exc
+    except InvalidTransition as exc:
+        raise ApiError(409, "run_active", f"the alert's run is {exc.current}; it cannot be reopened now") from exc
+    await enqueue_reopened(ctx, tenant_id, alert_id)  # a requeued alert's new run; a folded one has none
+    status = "waiting_human" if done.case_id else "queued"
+    await publish_event(ctx.events, "alert.updated", tenant_id, alert_id, {"status": status, "reopened": True})
+    if flag:
+        # A person stands behind the flag: for the safety net it confirms the threat of the case the alert
+        # returned to (as a true positive on that case would), else the flagged alert itself.
+        threat = await ctx.repos.alerts.get(tenant_id, done.case_alert_id or alert_id)
+        await reopen_confirmed(ctx, tenant_id, threat, principal.actor, escalation_id=done.case_id, path="flag")
+    return ReopenOut(alert_id=alert_id, status=status, mode=done.mode, case_id=done.case_id, flagged=flag)
+
+
+@router.post(
+    "/{alert_id}/reopen",
+    response_model=ReopenOut,
+    summary="Reopen an alert the AI closed, with a reason: it waits for a person",
+    **route_contract(stability="beta"),
+)
+async def reopen_alert(
+    alert_id: str, body: ReopenIn, request: Request, principal: Principal = Depends(require(REVIEWER))
+) -> ReopenOut:
+    """Put an alert the AI closed on the model's word back in front of a person. While its case is open it joins
+    that case as open and the decision on the case settles it; otherwise a new run reviews it. Either way the AI
+    never closes it on the model's word again. Audited ``alert.reopened`` with the person and the reason.
+
+    409 ``not_ai_closed`` for any other alert, ``hidden_for_blind_audit`` while it waits for its blind-audit
+    label, ``already_with_a_person``, ``not_in_case`` when ``case_id`` does not hold it.
+    """
+    return await _reopen(get_ctx(request), principal, alert_id, body, flag=False)
+
+
+@router.post(
+    "/{alert_id}/flag",
+    response_model=ReopenOut,
+    summary="Flag an AI close as wrong, with a reason: recorded as a disagreement, and the alert is reopened",
+    **route_contract(stability="beta"),
+)
+async def flag_alert(
+    alert_id: str, body: ReopenIn, request: Request, principal: Principal = Depends(require(REVIEWER))
+) -> ReopenOut:
+    """Say the AI was wrong to close the alert. The disagreement is audited ``alert.flagged`` and counted by the
+    blind-audit and accuracy reports; the alert is reopened as by ``/reopen``; and, because a person stands
+    behind it, the safety net treats it as a confirmation: the other alerts the AI closed on the same host or
+    user are reopened too. Same refusals as ``/reopen``.
+    """
+    return await _reopen(get_ctx(request), principal, alert_id, body, flag=True)

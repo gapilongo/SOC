@@ -43,6 +43,7 @@ export const OPEN_CASE: CaseOut = {
     "closed": 5,
     "linked": 2,
     "reopened": 0,
+    "flagged": 0,
     "withheld": 0,
     "closed_by": {
       "ai_evidence": 0,
@@ -100,7 +101,9 @@ export const OPEN_CASE: CaseOut = {
         "labelled_at": null
       },
       "link": null,
-      "reopened": null
+      "reopened": null,
+      "flagged": null,
+      "can_reopen": false
     },
     {
       "id": "alr-48190",
@@ -155,7 +158,9 @@ export const OPEN_CASE: CaseOut = {
         "threat_alert_id": "alr-48213",
         "at": "2026-11-14T09:44:35Z"
       },
-      "reopened": null
+      "reopened": null,
+      "flagged": null,
+      "can_reopen": true
     },
     {
       "id": "alr-48212",
@@ -214,7 +219,9 @@ export const OPEN_CASE: CaseOut = {
         "threat_alert_id": "alr-48213",
         "at": "2026-11-14T09:44:35Z"
       },
-      "reopened": null
+      "reopened": null,
+      "flagged": null,
+      "can_reopen": true
     },
     {
       "id": "alr-48213",
@@ -254,7 +261,9 @@ export const OPEN_CASE: CaseOut = {
         "labelled_at": null
       },
       "link": null,
-      "reopened": null
+      "reopened": null,
+      "flagged": null,
+      "can_reopen": false
     },
     {
       "id": "alr-48219",
@@ -286,7 +295,9 @@ export const OPEN_CASE: CaseOut = {
         "labelled_at": null
       },
       "link": null,
-      "reopened": null
+      "reopened": null,
+      "flagged": null,
+      "can_reopen": false
     },
     {
       "id": "alr-48214",
@@ -322,7 +333,9 @@ export const OPEN_CASE: CaseOut = {
         "labelled_at": null
       },
       "link": null,
-      "reopened": null
+      "reopened": null,
+      "flagged": null,
+      "can_reopen": false
     },
     {
       "id": "alr-48226",
@@ -367,7 +380,9 @@ export const OPEN_CASE: CaseOut = {
         "labelled_at": null
       },
       "link": null,
-      "reopened": null
+      "reopened": null,
+      "flagged": null,
+      "can_reopen": false
     },
     {
       "id": "alr-48231",
@@ -412,7 +427,9 @@ export const OPEN_CASE: CaseOut = {
         "labelled_at": null
       },
       "link": null,
-      "reopened": null
+      "reopened": null,
+      "flagged": null,
+      "can_reopen": false
     },
     {
       "id": "alr-48247",
@@ -441,7 +458,9 @@ export const OPEN_CASE: CaseOut = {
         "labelled_at": null
       },
       "link": null,
-      "reopened": null
+      "reopened": null,
+      "flagged": null,
+      "can_reopen": false
     }
   ],
   "alerts_truncated": false,
@@ -868,11 +887,6 @@ export const OPEN_CASE: CaseOut = {
       "issue": null
     },
     {
-      "field": "alerts[].flagged",
-      "reason": "An alert cannot be flagged for the next blind-audit sample yet.",
-      "issue": null
-    },
-    {
       "field": "alerts[].closed_by.rule_reviewed_at",
       "reason": "A suppression rule records when it was created and when it expires, not when it was last reviewed.",
       "issue": null
@@ -929,6 +943,7 @@ export const DECIDED_CASE: CaseOut = {
     "closed": 4,
     "linked": 0,
     "reopened": 2,
+    "flagged": 0,
     "withheld": 0,
     "closed_by": {
       "ai_evidence": 0,
@@ -986,7 +1001,9 @@ export const DECIDED_CASE: CaseOut = {
         "labelled_at": null
       },
       "link": null,
-      "reopened": null
+      "reopened": null,
+      "flagged": null,
+      "can_reopen": false
     },
     {
       "id": "alr-48190",
@@ -1020,6 +1037,7 @@ export const DECIDED_CASE: CaseOut = {
           "code": "related_threat",
           "sentence": "A person confirmed a related threat (a true positive, an approved response action or a blind-audit label), so the safety net reopened this alert, which the AI had closed on the model's word."
         },
+        "note": null,
         "threat_alert_id": "alr-48213",
         "mode": "requeued",
         "confirmed_by": "person",
@@ -1028,7 +1046,9 @@ export const DECIDED_CASE: CaseOut = {
           "email": "ines.moreau@brightwater.example"
         },
         "at": "2026-11-14T10:09:31Z"
-      }
+      },
+      "flagged": null,
+      "can_reopen": false
     },
     {
       "id": "alr-48212",
@@ -1066,6 +1086,7 @@ export const DECIDED_CASE: CaseOut = {
           "code": "related_threat",
           "sentence": "A person confirmed a related threat (a true positive, an approved response action or a blind-audit label), so the safety net reopened this alert, which the AI had closed on the model's word."
         },
+        "note": null,
         "threat_alert_id": "alr-48213",
         "mode": "requeued",
         "confirmed_by": "person",
@@ -1074,7 +1095,9 @@ export const DECIDED_CASE: CaseOut = {
           "email": "ines.moreau@brightwater.example"
         },
         "at": "2026-11-14T10:09:31Z"
-      }
+      },
+      "flagged": null,
+      "can_reopen": false
     },
     {
       "id": "alr-48213",
@@ -1130,7 +1153,9 @@ export const DECIDED_CASE: CaseOut = {
         "labelled_at": null
       },
       "link": null,
-      "reopened": null
+      "reopened": null,
+      "flagged": null,
+      "can_reopen": false
     },
     {
       "id": "alr-48219",
@@ -1162,7 +1187,9 @@ export const DECIDED_CASE: CaseOut = {
         "labelled_at": null
       },
       "link": null,
-      "reopened": null
+      "reopened": null,
+      "flagged": null,
+      "can_reopen": false
     },
     {
       "id": "alr-48214",
@@ -1198,7 +1225,9 @@ export const DECIDED_CASE: CaseOut = {
         "labelled_at": null
       },
       "link": null,
-      "reopened": null
+      "reopened": null,
+      "flagged": null,
+      "can_reopen": false
     },
     {
       "id": "alr-48226",
@@ -1243,7 +1272,9 @@ export const DECIDED_CASE: CaseOut = {
         "labelled_at": null
       },
       "link": null,
-      "reopened": null
+      "reopened": null,
+      "flagged": null,
+      "can_reopen": false
     },
     {
       "id": "alr-48231",
@@ -1288,7 +1319,9 @@ export const DECIDED_CASE: CaseOut = {
         "labelled_at": null
       },
       "link": null,
-      "reopened": null
+      "reopened": null,
+      "flagged": null,
+      "can_reopen": false
     },
     {
       "id": "alr-48247",
@@ -1317,7 +1350,9 @@ export const DECIDED_CASE: CaseOut = {
         "labelled_at": null
       },
       "link": null,
-      "reopened": null
+      "reopened": null,
+      "flagged": null,
+      "can_reopen": false
     }
   ],
   "alerts_truncated": false,
@@ -1786,11 +1821,6 @@ export const DECIDED_CASE: CaseOut = {
     {
       "field": "alerts[].reopened.confirmation",
       "reason": "A reopening records who or what acted, not which confirmation caused it.",
-      "issue": null
-    },
-    {
-      "field": "alerts[].flagged",
-      "reason": "An alert cannot be flagged for the next blind-audit sample yet.",
       "issue": null
     },
     {

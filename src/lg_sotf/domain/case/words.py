@@ -22,6 +22,7 @@ __all__ = [
     "LINK_CODE",
     "NOT_AVAILABLE",
     "REOPENED_BY",
+    "REOPENED_BY_ANALYST",
     "Missing",
 ]
 
@@ -46,6 +47,12 @@ REOPENED_BY: Final[Mapping[Optional[str], str]] = {
         "safety net reopened this alert, which the AI had closed on the model's word."
     ),
     None: "A related threat was confirmed, so the safety net reopened this alert, which the AI had closed on the model's word.",
+}
+
+#: A person's own reopening, by the reason code of the ``reopened`` marker (``lg_sotf.core.reopen``).
+REOPENED_BY_ANALYST: Final[Mapping[str, str]] = {
+    "analyst_reopen": "An analyst reopened this alert, which the AI had closed on the model's word.",
+    "analyst_flag": "An analyst flagged the AI's close of this alert as wrong, so it was reopened.",
 }
 
 CASE_OPENED: Final = Step("policy", "The case was opened for a person's decision.")
@@ -84,10 +91,6 @@ NOT_AVAILABLE: Final[Tuple[Missing, ...]] = (
     Missing(
         "alerts[].reopened.confirmation",
         "A reopening records who or what acted, not which confirmation caused it.",
-    ),
-    Missing(
-        "alerts[].flagged",
-        "An alert cannot be flagged for the next blind-audit sample yet.",
     ),
     Missing(
         "alerts[].closed_by.rule_reviewed_at",

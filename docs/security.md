@@ -446,7 +446,9 @@ creation, and platform-admin cross-tenant access. Accounts created outside
 the API (`lg-sotf migrate`'s bootstrap admin, `create-admin`, the first admin
 of `create-tenant`) are audited as `user.created` (actor `migrate`/`cli`),
 plus `platform.admin_granted` for platform admins; `lg-sotf enqueue` and
-`dlq requeue` record `alert.reprocess_requested`. Entries never contain
+`dlq requeue` record `alert.reprocess_requested`. A person who reopens an
+alert the AI closed, or flags the close as wrong, is recorded with the reason
+they typed (`alert.reopened`, `alert.flagged`; `details.note`). Entries never contain
 secrets or raw alert bodies (they are redacted again before logging).
 Admins read them with `GET /api/v1/audit` and verify the chain with
 `GET /api/v1/audit/verify`. Export the audit log for the period of an

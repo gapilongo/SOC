@@ -52,10 +52,10 @@ def _closes_after_decision(event: CaseEvent) -> bool:
 
 def _entry(event: CaseEvent, alert_id: str, emails: Mapping[str, str]) -> Optional[CaseTimelineEntry]:
     step = plain_step(event)
-    # The case's own sentence for the event, else the investigation's.
-    said = words.EVENT_STEPS.get(event.event_type) or (
-        investigation_words.Step(step.actor, step.text) if step is not None else None
-    )
+    # The case's own sentence for the event, else the investigation's (which also says a person's own reopening).
+    person_reopened = str(event.data.get("reason")) in investigation_words.REOPENED_STEPS
+    own = None if person_reopened else words.EVENT_STEPS.get(event.event_type)
+    said = own or (investigation_words.Step(step.actor, step.text) if step is not None else None)
     if said is None:
         return None
     return CaseTimelineEntry(

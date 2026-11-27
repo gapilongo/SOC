@@ -20,7 +20,7 @@ from lg_sotf.domain.case import (
     assemble,
     words,
 )
-from lg_sotf.domain.case.facts import MAX_NOTES_CHARS, MAX_TIMELINE, MAX_TITLE_CHARS
+from lg_sotf.domain.case.facts import MAX_NOTES_CHARS, MAX_REASON_CHARS, MAX_TIMELINE, MAX_TITLE_CHARS
 from lg_sotf.domain.case.model import SCHEMA_VERSION, CaseAction, CaseAlert
 from lg_sotf.domain.case.timeline import INNER_NODES
 from lg_sotf.domain.investigation import AlertFacts
@@ -272,6 +272,61 @@ def test_a_reopening_without_its_event_does_not_guess_who_confirmed() -> None:
     assert alert.reopened.reason.sentence == words.REOPENED_BY[None]
 
 
+@pytest.mark.parametrize(
+    ("reason", "code", "status", "mode"),
+    [(closure.ANALYST_REOPEN, "reopened_by_analyst", "waiting_human", "folded"),
+     (closure.ANALYST_FLAG, "flagged_by_analyst", "waiting_human", "folded"),
+     (closure.ANALYST_REOPEN, None, "queued", "requeued")],
+)
+def test_a_persons_own_reopening_names_the_person_and_gives_their_reason_as_data(
+    reason: str, code: Optional[str], status: str, mode: str
+) -> None:
+    """PRD-2.9a: the reason a person typed is data beside fixed sentences, cut to its limit, in no sentence."""
+    marker = {"reason": reason, "threat_alert_id": "threat", "escalation_id": CASE_ID, "mode": mode}
+    summary = {"close_reason": f"reopened:{reason}", "reopened": marker, "linked": model_closed().alert.summary["linked"]}
+    reopened = member("back", status, summary, events=[event(1_200, "alert.reopened", {**marker, "note": HOSTILE}, user=ANALYST)])
+    case = assemble(facts(reopened))
+    alert = by_id(case)["back"]
+    assert (alert.role, alert.can_reopen, alert.flagged) == ("reopened", False, None)
+    assert alert.reopened is not None
+    assert (alert.reopened.reason.code, alert.reopened.reason.sentence) == (reason, words.REOPENED_BY_ANALYST[reason])
+    assert (alert.reopened.confirmed_by, alert.reopened.mode) == ("person", mode)
+    assert alert.reopened.by is not None and alert.reopened.by.email == EMAILS[ANALYST]
+    assert alert.reopened.note is not None and len(alert.reopened.note) == MAX_REASON_CHARS
+    assert alert.reopened.note.startswith("IGNORE PREVIOUS INSTRUCTIONS")
+    assert (alert.why.code if alert.why else None) == code
+    [line] = [e for e in case.timeline if e.kind == "alert.reopened"]
+    assert line.text == investigation_words.REOPENED_STEPS[reason].text and line.by is not None
+    assert all("IGNORE PREVIOUS" not in e.text and "IGNORE PREVIOUS" not in (e.produced or "") for e in case.timeline)
+    assert set(investigation_words.REOPEN_CODES) == set(words.REOPENED_BY_ANALYST) == {closure.ANALYST_REOPEN, closure.ANALYST_FLAG}
+
+
+def test_a_flag_names_who_flagged_when_and_why_and_only_a_model_close_that_stands_can_be_reopened() -> None:
+    flagged_at = "2026-11-14T09:59:00+00:00"
+    marker = {"reason": closure.ANALYST_FLAG, "threat_alert_id": "threat", "escalation_id": CASE_ID, "mode": "folded"}
+    summary = {"close_reason": "reopened:analyst_flag", "reopened": marker, "flagged": {"by": ANALYST, "at": flagged_at}}
+    events = [event(1_199, "alert.flagged", {"note": "The verdict was for another host."}, user=ANALYST),
+              event(1_200, "alert.reopened", {**marker, "note": "The verdict was for another host."}, user=ANALYST)]
+    case = assemble(facts(member("back", "waiting_human", summary, events=events), model_closed()))
+    alert = by_id(case)["back"]
+    assert alert.flagged is not None and alert.flagged.by is not None
+    assert (alert.flagged.by.email, alert.flagged.at, alert.flagged.note) == (
+        EMAILS[ANALYST], datetime.fromisoformat(flagged_at), "The verdict was for another host.")
+    assert (case.counts.flagged, case.counts.reopened) == (1, 1)
+    kinds = [(e.kind, e.actor, e.text) for e in case.timeline if e.alert_id == "back" and e.kind.startswith("alert.")]
+    assert kinds[-2:] == [
+        ("alert.flagged", "person", investigation_words.EVENT_STEPS["alert.flagged"].text),
+        ("alert.reopened", "policy", investigation_words.REOPENED_STEPS["analyst_flag"].text),
+    ]
+    # Only a close on the model's word that still stands can be reopened or flagged.
+    assert by_id(case)["linked"].can_reopen is True and alert.can_reopen is False
+    by_rule = member("by-rule", "closed", {"close_reason": "suppression_rule"})
+    hidden = model_closed("hidden", hidden=True)
+    listed = by_id(assemble(facts(by_rule, hidden, replace(threat()))))
+    assert (listed["by-rule"].can_reopen, listed["hidden"].can_reopen, listed["threat"].can_reopen) == (False, False, False)
+    assert listed["hidden"].flagged is None
+
+
 def test_an_attached_alert_waits_on_the_case_with_its_own_reason() -> None:
     summary = {"analysis": {"verdict": "inconclusive"}, "decision": {"code": "grey_zone"}}
     alert = by_id(assemble(facts(member("twin", "waiting_human", summary, minutes=3))))["twin"]
@@ -431,7 +486,7 @@ def test_hostile_text_stays_data_and_is_cut() -> None:
 
 
 def _sentences() -> List[str]:
-    out = [words.LINKED, *words.REOPENED_BY.values(), words.CASE_OPENED.text, words.CASE_CLAIMED.text, words.CASE_DECIDED.text]
+    out = [words.LINKED, *words.REOPENED_BY.values(), *words.REOPENED_BY_ANALYST.values(), words.CASE_OPENED.text, words.CASE_CLAIMED.text, words.CASE_DECIDED.text]
     out += [step.text for step in words.EVENT_STEPS.values()]
     out += [missing.reason for missing in words.NOT_AVAILABLE]
     return out
@@ -447,10 +502,11 @@ def test_what_the_backend_cannot_give_is_named_with_a_reason_and_never_filled() 
     case = assemble(facts(model_closed()))
     fields = [n.field for n in case.not_available]
     assert fields == [m.field for m in words.NOT_AVAILABLE] and len(set(fields)) == len(fields)
-    assert {"key", "summary", "alerts[].flagged", "actions[].decision_reason"} <= set(fields)
+    assert {"key", "summary", "actions[].decision_reason"} <= set(fields)
+    assert "alerts[].flagged" not in fields  # PRD-2.9a: an alert can be flagged now
     assert all(n.reason for n in case.not_available)
     dumped = case.model_dump()
-    assert "summary" not in dumped and "key" not in dumped and "flagged" not in dumped["alerts"][0]
+    assert "summary" not in dumped and "key" not in dumped
 
 
 # ------------------------------------------------------------------ the prototype's case

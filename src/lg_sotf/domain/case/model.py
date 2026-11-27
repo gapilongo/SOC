@@ -144,9 +144,18 @@ class CaseLink(_Model):
 
 
 class CaseReopened(_Model):
-    """The safety net reopened this alert, which the AI had closed on the model's word."""
+    """This alert, which the AI had closed on the model's word, was reopened: by the safety net, or by a person."""
 
-    reason: InvestigationReason
+    reason: InvestigationReason = Field(
+        description=(
+            "related_threat: the safety net reopened it. analyst_reopen: a person reopened it. analyst_flag: a "
+            "person flagged the AI's close as wrong, which reopened it."
+        )
+    )
+    note: Optional[str] = Field(
+        default=None,
+        description="analyst_reopen, analyst_flag: the reason the person gave. Data, at most 1000 characters.",
+    )
     threat_alert_id: Optional[str] = Field(default=None, description="The alert whose threat was confirmed.")
     mode: Optional[ReopenMode] = Field(
         default=None,
@@ -160,8 +169,19 @@ class CaseReopened(_Model):
             "from or a response action it carried out. Null when the timeline no longer has the event."
         ),
     )
-    by: Optional[CasePerson] = Field(default=None, description="person: who confirmed.")
+    by: Optional[CasePerson] = Field(default=None, description="person: who confirmed, reopened or flagged.")
     at: Optional[datetime] = None
+
+
+class CaseFlagged(_Model):
+    """A person flagged the AI's close of this alert as wrong."""
+
+    by: Optional[CasePerson] = None
+    at: Optional[datetime] = None
+    note: Optional[str] = Field(
+        default=None,
+        description="The reason the person gave. Data, at most 1000 characters. Null when the timeline no longer has it.",
+    )
 
 
 class CaseEntityRef(_Model):
@@ -181,7 +201,7 @@ class CaseAlert(_Model):
         description=(
             "primary: the alert the case was opened for. attached: grouped with it, so the decision on the case "
             "applies to it. linked: closed by the AI and linked by the safety net; it stays closed. reopened: "
-            "closed by the AI and reopened by the safety net. withheld: the alert waits for its blind-audit "
+            "closed by the AI and reopened, by the safety net or by a person. withheld: the alert waits for its blind-audit "
             "label, so how it joined is withheld with the AI's side."
         )
     )
@@ -202,6 +222,14 @@ class CaseAlert(_Model):
     blind_audit: CaseBlindAudit
     link: Optional[CaseLink] = Field(default=None, description="role linked: why it was linked, and when.")
     reopened: Optional[CaseReopened] = Field(default=None, description="role reopened: what reopened it.")
+    flagged: Optional[CaseFlagged] = Field(default=None, description="A person flagged the AI's close as wrong.")
+    can_reopen: bool = Field(
+        default=False,
+        description=(
+            "The AI closed it on the model's word and the close stands: an analyst may reopen it or flag the close "
+            "(POST /alerts/{id}/reopen, POST /alerts/{id}/flag)."
+        ),
+    )
 
 
 class CaseAction(ProposedAction):
@@ -248,6 +276,7 @@ class CaseCounts(_Model):
     closed: int = 0
     linked: int = 0
     reopened: int = 0
+    flagged: int = Field(default=0, description="Alerts whose AI close a person flagged as wrong.")
     withheld: int = Field(default=0, description="Alerts that wait for their blind-audit label.")
     closed_by: CaseClosedByCounts = CaseClosedByCounts()
     actions_awaiting_approval: int = 0
@@ -305,6 +334,7 @@ __all__ = [
     "CaseDecision",
     "CaseEntity",
     "CaseEntityRef",
+    "CaseFlagged",
     "CaseLink",
     "CaseOwner",
     "CasePerson",

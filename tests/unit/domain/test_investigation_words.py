@@ -189,7 +189,8 @@ def _sentences() -> List[str]:
     out += [*words.EVIDENCE_REASONS.values(), words.EVIDENCE_STEP.text, words.UNKNOWN_EVIDENCE_REASON]
     out += [*words.SKIPPED_LOOKUP_REASONS.values(), words.UNKNOWN_SKIP_REASON, *words.CITATION_FINDINGS.values()]
     out += [entry.sentence for entry in words.CLOSE_REASONS.values()]
-    out += [step.text for table in (words.NODE_STEPS, words.NODE_STEP_VARIANTS, words.EVENT_STEPS) for step in table.values()]
+    tables = (words.NODE_STEPS, words.NODE_STEP_VARIANTS, words.EVENT_STEPS, words.REOPENED_STEPS)
+    out += [step.text for table in tables for step in table.values()]
     out += [sentence for _, sentence in words.LOOKUP_STATUS_SENTENCES.values()]
     out += [sentence for _, sentence in words.LOOKUP_CLAIMS.values()]
     out += [words.NO_LOOKUP_WHY, words.TOOL_ERROR_SENTENCE, words.NO_TELEMETRY[1], words.NOT_INVESTIGATED[1]]

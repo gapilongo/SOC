@@ -243,7 +243,11 @@ labels would be biased:
   every run is labelled;
 * `strata`: each run with its own rate and Wilson interval; `runs`;
   `uncovered`; `labels_by_organisation` (`null` for the tenant's own people,
-  else the MSSP organisation that labelled under a grant).
+  else the MSSP organisation that labelled under a grant);
+* `flagged_ai_closes`: the AI closes a person flagged as wrong in the window
+  (`POST /alerts/{id}/flag`, by the time of the flag). A flag is a person's
+  choice, not a random draw, so it is counted beside the estimate and never
+  enters it. The accuracy report carries the same count for its window.
 
 ## Detection tuning report
 

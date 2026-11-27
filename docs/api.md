@@ -206,7 +206,7 @@ account; a tenant admin gets 403.
 | Role | May |
 |---|---|
 | `viewer` | read alerts, timelines, escalations, actions, suppressions, dashboard |
-| `analyst` | viewer + notes, create suppression rules, claim and decide escalations, approve/reject low and medium risk actions |
+| `analyst` | viewer + notes, create suppression rules, claim and decide escalations, approve/reject low and medium risk actions, reopen or flag an alert the AI closed |
 | `admin` | everything in the tenant: users, API keys, sources, suppression management, tenant settings, reprocessing, LLM usage, high and critical risk approvals |
 
 The tenant's autonomy policy can disable approval of a risk level entirely.
@@ -231,6 +231,7 @@ The tenant's autonomy policy can disable approval of a risk level entirely.
 | GET | `/alerts/{id}/investigation` (what the AI concluded and why; beta) | viewer / `read` |
 | POST | `/alerts/{id}/notes` | analyst / `write` |
 | POST | `/alerts/{id}/reprocess` | admin |
+| POST | `/alerts/{id}/reopen`, `/alerts/{id}/flag` `{reason, case_id?}` (beta) | analyst (user account) |
 | GET | `/escalations`, `/escalations/{id}`, `/escalations/groups`, `/escalations/{id}/response-preview` | viewer / `read` |
 | POST | `/escalations/{id}/claim`, `/escalations/{id}/decision`, `/escalations/bulk/claim`, `/escalations/bulk/close` | analyst (user account) |
 | POST | `/escalations/bulk/propose-suppression` (creates a disabled rule) | analyst / `write` |
@@ -310,6 +311,56 @@ window is a `400 search_window_too_large`. Notes are stored as `note`
 events on the alert timeline. `reprocess` requeues a finished alert (409
 while its run is active).
 
+#### Reopen and flag
+
+`POST /alerts/{id}/reopen` puts an alert the AI closed on the model's word
+(close reason `ai_closed:*`) back in front of a person. `POST
+/alerts/{id}/flag` does the same and records that the AI was wrong to close
+it. Both take `{"reason": "...", "case_id": "..."}`: `reason` is required
+(1 to 1000 characters after trimming; `422` without it), `case_id` is
+optional and names the case the alert returns to (it must hold the alert;
+without it, the open case the alert is attached to). They are for a person:
+an analyst or an admin with a user account in the tenant, or an MSSP analyst
+under a grant. A viewer, an API key and a platform admin acting from outside
+the tenant get `403`; another tenant's alert or case is `404`.
+
+The answer is `{alert_id, status, mode, case_id, flagged}`:
+
+* `mode: "folded"`: the case is open (or claimed), so the alert joins it
+  as open (`waiting_human`). No run starts, and the decision on the case
+  settles the alert with the others.
+* `mode: "requeued"`: no open case holds the alert (it has none, or its
+  case is decided), so it is queued for a new run (`queued`), which ends
+  with an analyst.
+
+Either way the alert keeps the marker `summary.reopened` (`reason`:
+`analyst_reopen` or `analyst_flag`), which is the closing policy's
+`reopened` blocker: the AI never closes it on the model's word again. A
+suppression rule or approved benign evidence that applies to the alert can
+still close a requeued one in its new run; a folded one has no run.
+
+Both are audited `alert.reopened` with the person and, in `details.note`,
+the reason as it was typed; the alert's timeline gets the same event. A
+flag is also audited `alert.flagged` (the note, the close reason and the
+disposition it disagrees with), leaves `summary.flagged` (`{by, at}`) on
+the alert, is counted in `flagged_ai_closes` of `GET /reports/blind-audit`
+and `GET /reports/accuracy` for the window it was made in (beside their
+rates, never inside them: a flag is not a random draw), and counts as a
+person's confirmation for the safety net: the other alerts the AI closed on
+the same host or user in the last 24 hours, and those linked to the case,
+are reopened too.
+
+The reason is data. It is stored on the audit entry and the timeline event
+only, never in the alert's summary, and no model is shown it: a run reads
+the fixed code of the marker and nothing else. Clients show it as plain
+text.
+
+`409` with a code: `not_ai_closed` (the alert is open, or a person, a rule
+or approved evidence closed it; also when it was already reopened),
+`hidden_for_blind_audit` (it waits for its blind-audit label: label it
+first), `already_with_a_person` (it has an open case of its own),
+`not_in_case` (`case_id` does not hold it), `run_active`.
+
 Every alert carries `source_name` (null once the source is deleted) and
 `entities_preview`: `{"items": [{"kind", "value"}], "counts": {kind: n}}`,
 the first value of up to three entity kinds (users, hosts, IPs, e-mails,
@@ -364,15 +415,16 @@ may read alerts may read it; another tenant's case is `404`.
 | `id`, `alert_id`, `title`, `status`, `active`, `version` | The escalation: its id, the alert it was opened for and that alert's title, its status, whether it still waits for its decision (`open`, `claimed` or `expired`), and the version a claim or a decision is recorded against. |
 | `severity`, `category`, `reason` | The highest severity among the alerts; `needs_decision` or `needs_review` from the alert the case was opened for; why the case is with a person, as `{code, sentence}`. |
 | `opened_at`, `sla_deadline`, `owner`, `decision` | `owner`: `{user_id, email, since}`. `decision`: `{decision, notes, decided_by: {user_id, email}, decided_at}`, null until the case is decided. |
-| `alerts` | Oldest first. Each: `{id, title, severity, status, state, role, occurred_at, closed_at, disposition, entities, hidden_for_blind_audit, category, why, closed_by, blind_audit, link, reopened}`. `state` is `open` (with a person), `processing` or `closed`. `role` is `primary` (the alert the case was opened for), `attached` (grouped with it: the decision on the case applies to it), `linked` (closed by the AI and linked by the safety net; it stays closed), `reopened` (closed by the AI and reopened by the safety net) or `withheld` (it waits for its blind-audit label). `why` says why an open alert is with a person. |
+| `alerts` | Oldest first. Each: `{id, title, severity, status, state, role, occurred_at, closed_at, disposition, entities, hidden_for_blind_audit, category, why, closed_by, blind_audit, link, reopened, flagged, can_reopen}`. `state` is `open` (with a person), `processing` or `closed`. `role` is `primary` (the alert the case was opened for), `attached` (grouped with it: the decision on the case applies to it), `linked` (closed by the AI and linked by the safety net; it stays closed), `reopened` (closed by the AI and reopened, by the safety net or by a person) or `withheld` (it waits for its blind-audit label). `why` says why an open alert is with a person. |
 | `alerts[].closed_by` | `{kind: "ai"\|"suppression_rule"\|"cached_verdict"\|"analyst", reason, at, ...}`, null while the alert is open. An analyst close adds `decision`, `analyst` (`{user_id, email}`), `decided_in_case_id` and, when the decision was recorded on this case, `notes`. An AI close adds `policy` (the rule of the decision policy, `{code, sentence}`) and `tier` (the tenant's closure tier as the decide step recorded it; null when it did not). A suppression rule adds `rule_id` and `rule_name`; a cached verdict adds `source_alert_id` and `decision`. |
 | `alerts[].blind_audit` | `{state: "not_sampled"\|"pending"\|"labelled", label, agrees, labelled_at}`. |
-| `alerts[].link`, `alerts[].reopened` | `link`: `{reason, threat_alert_id, at}` for a linked alert. `reopened`: `{reason, threat_alert_id, mode: "folded"\|"requeued", confirmed_by: "person"\|"workflow", by, at}`. `confirmed_by` is `person` when a person's confirmation was recorded directly (a true positive, an approved response action, a blind-audit label) and `workflow` when the run reopened it. |
-| `counts` | `alerts` (every alert of the case), `open`, `processing`, `closed`, `linked`, `reopened`, `withheld`, `closed_by` (`ai_evidence`, `ai_audit`, `suppression_rule`, `cached_verdict`, `analyst`) and `actions_awaiting_approval`. |
+| `alerts[].link`, `alerts[].reopened` | `link`: `{reason, threat_alert_id, at}` for a linked alert. `reopened`: `{reason, threat_alert_id, mode: "folded"\|"requeued", confirmed_by: "person"\|"workflow", by, at}`. `confirmed_by` is `person` when a person's confirmation was recorded directly (a true positive, an approved response action, a blind-audit label) and `workflow` when the run reopened it. `reason.code` is `related_threat` for the safety net, `analyst_reopen` or `analyst_flag` when a person reopened or flagged the alert themselves; `note` is then the reason they gave (data, at most 1000 characters) and `by` is that person. |
+| `alerts[].flagged`, `alerts[].can_reopen` | `flagged`: `{by, at, note}` when a person flagged the AI's close as wrong, else null. `can_reopen`: the AI closed the alert on the model's word and the close stands, so an analyst may reopen or flag it. |
+| `counts` | `alerts` (every alert of the case), `open`, `processing`, `closed`, `linked`, `reopened`, `flagged`, `withheld`, `closed_by` (`ai_evidence`, `ai_audit`, `suppression_rule`, `cached_verdict`, `analyst`) and `actions_awaiting_approval`. |
 | `entities` | What the case touches: `{kind, value, alerts}`, the value and how many of the case's alerts name it, most shared first. |
 | `actions` | The response actions of the case's alerts, oldest first: the fields of an investigation's planned action (`action_id`, `action_type`, `target`, `risk`, `status`, `reversible`, `guardrail: {verdict, code, reason}`, ...) with `alert_id` and `created_at`. |
 | `timeline` | Oldest first: `{ts, kind, actor: "code"\|"model"\|"check"\|"policy"\|"person", text, produced, alert_id, by}`. The case's opening, claim and decision, and for each alert its arrival and the steps that changed where it stands. The workflow's inner steps are on the alert's investigation view. `timeline_truncated` says when older entries were left out (the newest 300 stay). |
-| `not_available` | `{field, reason, issue}` for what the stored data cannot say yet: a readable case reference, a case summary, which entity a linked alert shares, which confirmation reopened an alert, flagging an alert for audit, a rule's last review, a reason on an approval, asset context. These fields are absent; nothing is estimated in their place. |
+| `not_available` | `{field, reason, issue}` for what the stored data cannot say yet: a readable case reference, a case summary, which entity a linked alert shares, which confirmation reopened an alert, a rule's last review, a reason on an approval, asset context. These fields are absent; nothing is estimated in their place. |
 
 A case lists its primary alert and the newest 199 alerts that joined it;
 `alerts_truncated` says when it has more (`counts.alerts` is the full

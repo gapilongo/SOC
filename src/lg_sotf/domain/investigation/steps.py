@@ -130,6 +130,8 @@ def plain_step(event: EventFacts) -> Optional[PlainStep]:
     else:
         key = event.event_type
         step = words.EVENT_STEPS.get(key)
+        if key == "alert.reopened":  # a person's own reopening says so; any other is the safety net's
+            step = words.REOPENED_STEPS.get(str(event.data.get("reason") or ""), step)
     if step is None:
         return None
     produced = PRODUCED.get(key)

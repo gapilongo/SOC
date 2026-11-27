@@ -19,6 +19,8 @@ MAX_TIMELINE = 300
 MAX_ENTITIES = 40
 MAX_TITLE_CHARS = 300
 MAX_NOTES_CHARS = 4_000
+#: The reason a person gives to reopen or flag an alert (``lg_sotf.core.reopen``).
+MAX_REASON_CHARS = 1_000
 MAX_VALUE_CHARS = 128
 
 

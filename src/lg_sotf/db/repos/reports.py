@@ -168,6 +168,12 @@ FROM audit_log
 WHERE tenant_id = $1 AND ts >= $2 AND ts < $3 AND action = ANY($4::text[])
 """
 
+_FLAGGED_SQL = """
+SELECT count(*)
+FROM audit_log
+WHERE tenant_id = $1 AND ts >= $2 AND ts < $3 AND action = 'alert.flagged'
+"""
+
 _COST_SQL = """
 SELECT day, COALESCE(sum(cost_usd), 0) AS cost_usd
 FROM llm_usage_daily
@@ -424,6 +430,14 @@ class ReportsRepo(Repository):
             rows = await c.fetch(_SLA_SQL, tenant_id, start, end, actions)
             distinct = await c.fetchval(_SLA_DISTINCT_SQL, tenant_id, start, end, actions)
         return {r["day"]: int(r["breaches"]) for r in rows}, int(distinct or 0)
+
+    async def flagged_closes(
+        self, tenant_id: str, start: datetime, end: datetime, *, conn: Optional[Connection] = None
+    ) -> int:
+        """AI closes a person flagged as wrong in ``[start, end)`` (``alert.flagged`` in the audit log)."""
+        _window(start, end)
+        async with self._tenant(tenant_id, conn) as c:
+            return int(await c.fetchval(_FLAGGED_SQL, tenant_id, start, end) or 0)
 
     async def llm_cost_daily(
         self, tenant_id: str, start_day: date, end_day: date, *, conn: Optional[Connection] = None

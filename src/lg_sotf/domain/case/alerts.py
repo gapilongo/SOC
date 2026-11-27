@@ -20,6 +20,7 @@ from lg_sotf.domain import closure
 from lg_sotf.domain.case import words
 from lg_sotf.domain.case.facts import (
     MAX_NOTES_CHARS,
+    MAX_REASON_CHARS,
     MAX_TITLE_CHARS,
     MAX_VALUE_CHARS,
     CaseEscalation,
@@ -33,6 +34,7 @@ from lg_sotf.domain.case.model import (
     CaseBlindAudit,
     CaseClosedBy,
     CaseEntityRef,
+    CaseFlagged,
     CaseLink,
     CasePerson,
     CaseReopened,
@@ -40,7 +42,7 @@ from lg_sotf.domain.case.model import (
 )
 from lg_sotf.domain.digests import entities_preview
 from lg_sotf.domain.investigation import words as investigation_words
-from lg_sotf.domain.investigation.facts import MAX_CODE_CHARS, EscalationFacts, bounded, mapping
+from lg_sotf.domain.investigation.facts import MAX_CODE_CHARS, AlertFacts, EscalationFacts, bounded, mapping
 from lg_sotf.domain.investigation.model import InvestigationReason, OutcomeCategory
 from lg_sotf.domain.investigation.outcome import decide_code, outcome_category, who_closed, why
 
@@ -48,6 +50,10 @@ WAITING_STATUSES = frozenset({"waiting_human", "waiting_approval"})
 REOPEN_MODES = ("folded", "requeued")
 DECISION_EVENT = "analyst.decision"
 REOPENED_EVENT = "alert.reopened"
+#: A person's flag (``lg_sotf.core.reopen``): the timeline event and the alert-summary key.
+FLAGGED_EVENT, FLAGGED = "alert.flagged", "flagged"
+#: The close reasons of a close on the model's word start with this (``lg_sotf.domain.closure.MODEL_CLOSE_REASON``).
+MODEL_CLOSE_PREFIX = "ai_closed:"
 
 
 def state_of(status: str) -> AlertState:
@@ -108,20 +114,45 @@ def _link(case: CaseEscalation, summary: Mapping[str, Any]) -> CaseLink:
     )
 
 
+def _note(event: Optional[CaseEvent]) -> Optional[str]:
+    """The reason a person gave when they reopened or flagged the alert: data, cut to its stored length."""
+    note = event.data.get("note") if event is not None else None
+    return bounded(note, MAX_REASON_CHARS) if isinstance(note, str) and note else None
+
+
 def _reopened(member: MemberFacts, emails: Mapping[str, str]) -> CaseReopened:
     marker = mapping(member.alert.summary.get(closure.REOPENED))
     event = _last(member.events, REOPENED_EVENT)
     by_person = event is not None and event.actor_type == "user"
     confirmed_by: Optional[ConfirmedBy] = None if event is None else ("person" if by_person else "workflow")
     mode = marker.get("mode")
+    code = str(marker.get("reason"))
+    own = words.REOPENED_BY_ANALYST.get(code)  # a person's own reopening; any other reason is the safety net's
     return CaseReopened(
-        reason=InvestigationReason(code=words.LINK_CODE, sentence=words.REOPENED_BY[confirmed_by]),
+        reason=InvestigationReason(code=code if own else words.LINK_CODE, sentence=own or words.REOPENED_BY[confirmed_by]),
+        note=_note(event) if own else None,
         threat_alert_id=_text(marker.get("threat_alert_id")),
         mode=mode if mode in REOPEN_MODES else None,
         confirmed_by=confirmed_by,
         by=person(event.actor_id, emails) if event is not None and by_person else None,
         at=event.ts if event is not None else None,
     )
+
+
+def _flagged(member: MemberFacts, emails: Mapping[str, str]) -> Optional[CaseFlagged]:
+    """The flag on the alert (its summary's ``flagged``: who and when), with the reason from its timeline."""
+    marker = member.alert.summary.get(FLAGGED)
+    if not isinstance(marker, Mapping):
+        return None
+    return CaseFlagged(
+        by=person(_text(marker.get("by")), emails), at=_when(marker.get("at")), note=_note(_last(member.events, FLAGGED_EVENT))
+    )
+
+
+def _can_reopen(alert: AlertFacts) -> bool:
+    """The models closed it alone and the close stands (``lg_sotf.services.folded.closed_by_models``)."""
+    reason = alert.summary.get("close_reason")
+    return alert.status == "closed" and isinstance(reason, str) and reason.startswith(MODEL_CLOSE_PREFIX)
 
 
 def _tier(events: Sequence[CaseEvent]) -> Optional[str]:
@@ -213,4 +244,6 @@ def case_alert(
         blind_audit=_audit(member),
         link=_link(case, alert.summary) if role == "linked" else None,
         reopened=_reopened(member, emails) if role == "reopened" else None,
+        flagged=_flagged(member, emails) if shown else None,
+        can_reopen=shown and _can_reopen(alert),
     )

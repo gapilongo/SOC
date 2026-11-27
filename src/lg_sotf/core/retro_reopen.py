@@ -119,11 +119,13 @@ close.
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
-from typing import Any, Dict, List, Mapping, Optional, Sequence
+from typing import Any, AsyncIterator, Dict, List, Mapping, Optional, Sequence
 
 from lg_sotf.audit.logger import Actor, AuditLogger
 from lg_sotf.core.state import RelatedOpenDigest
+from lg_sotf.db import Connection
 from lg_sotf.db.errors import InvalidTransition, NotFound
 from lg_sotf.db.repos import Repositories
 from lg_sotf.domain.related import (
@@ -149,8 +151,9 @@ LINK_ACTION = "alert.linked"
 MAX_LINKS = 20
 #: The newest alerts a threat remembers it linked (``linked_alert_ids``).
 MAX_LINKED_IDS = 1_000
-#: The close reason a reopened alert carries until it closes again (it no longer reads ``ai_closed:*``).
-REOPENED_CLOSE_REASON = "reopened:related_threat"
+#: The close reason a reopened alert carries until it closes again (it no longer reads ``ai_closed:*``): this
+#: prefix, then the marker's reason (``reopened:related_threat``).
+REOPENED_CLOSE_PREFIX = "reopened:"
 ACTIVE_ESCALATION_STATUSES = frozenset({"open", "claimed"})
 MAX_REOPEN = 200
 #: The alerts the models closed in the window that one call of the safety net compares with a threat.
@@ -334,7 +337,7 @@ async def reopen_related_model_closes(
     reopened: List[str] = []
     for alert_id in dict.fromkeys([*related, *linked]):
         try:
-            if alert_id != threat.id and await _reopen_one(
+            if alert_id != threat.id and await reopen_one(
                 repos, tenant_id, alert_id, threat_id=threat.id, actor=actor, escalation_id=escalation_id
             ):
                 reopened.append(alert_id)
@@ -363,22 +366,42 @@ async def _active_escalation(repos: Repositories, tenant_id: str, escalation_id:
     return escalation if escalation.status in ACTIVE_ESCALATION_STATUSES else None
 
 
-async def _reopen_one(
-    repos: Repositories, tenant_id: str, alert_id: str, *, threat_id: str, actor: Actor, escalation_id: Optional[str]
-) -> bool:
-    async with repos.db.tenant_tx(tenant_id) as conn:
+@asynccontextmanager
+async def _tx(repos: Repositories, tenant_id: str, conn: Optional[Connection]) -> AsyncIterator[Connection]:
+    """The caller's transaction when it passed one, else a new one of the tenant."""
+    if conn is not None:
+        yield conn
+        return
+    async with repos.db.tenant_tx(tenant_id) as own:
+        yield own
+
+
+async def reopen_one(
+    repos: Repositories, tenant_id: str, alert_id: str, *, threat_id: Optional[str], actor: Actor,
+    escalation_id: Optional[str], reason: str = REOPEN_REASON, recorded: Optional[Mapping[str, Any]] = None,
+    conn: Optional[Connection] = None,
+) -> Optional[str]:
+    """Reopen one alert the models closed alone. How it came back: ``folded`` into the open case
+    ``escalation_id`` or ``requeued`` for a new run; ``None`` when the models' close no longer stands.
+
+    ``reason`` is the code the marker keeps: the safety net's, or that of a person's own reopening
+    (:mod:`lg_sotf.core.reopen`). ``recorded`` goes on the timeline event and the audit entry only: what a
+    person wrote is never kept in the alert's summary, which the workflow reads.
+    """
+    async with _tx(repos, tenant_id, conn) as conn:
         alert = await repos.alerts.get(tenant_id, alert_id, conn=conn)
         if not closed_by_models(alert):
-            return False  # reopened already, or closed again by a person: nothing to do
+            return None  # reopened already, or closed again by a person: nothing to do
         # Folded into the threat's case when it is still open: one escalation holds the related alerts, no new run.
         folded = await _attach(repos, tenant_id, escalation_id, alert_id, conn)
         marker = {
-            "reason": REOPEN_REASON, "threat_alert_id": threat_id, "escalation_id": escalation_id,
+            "reason": reason, "threat_alert_id": threat_id, "escalation_id": escalation_id,
             "mode": FOLDED if folded else REQUEUED,
         }
+        close_reason = REOPENED_CLOSE_PREFIX + reason
         if folded:
             await repos.alerts.update_status(tenant_id, alert_id, "waiting_human", conn=conn)
-            summary = {"reopened": marker, "close_reason": REOPENED_CLOSE_REASON, "escalation_id": escalation_id,
+            summary = {"reopened": marker, "close_reason": close_reason, "escalation_id": escalation_id,
                        "escalation_attached": True}
         else:
             # No open case to fold into (a plan without an escalation, a decided one): a new run reviews it.
@@ -386,17 +409,18 @@ async def _reopen_one(
             if run.status != "queued":
                 raise InvalidTransition("workflow run", alert_id, run.status, "queued")
             await repos.alerts.update_status(tenant_id, alert_id, "queued", conn=conn)
-            summary = {"reopened": marker, "close_reason": REOPENED_CLOSE_REASON}
+            summary = {"reopened": marker, "close_reason": close_reason}
         await repos.alerts.update(tenant_id, alert_id, disposition=None, summary=summary, conn=conn)  # type: ignore[arg-type]
+        details = {**marker, **(recorded or {})}
         await repos.alert_events.append(
             tenant_id, alert_id, REOPEN_ACTION, node="retro_reopen", actor_type=actor.type, actor_id=actor.id,
-            data=dict(marker), conn=conn,
+            data=dict(details), conn=conn,
         )
         await AuditLogger(repos).record(
             tenant_id, REOPEN_ACTION, "alert", alert_id, actor_type=actor.type, actor_id=actor.id,
-            details=dict(marker), conn=conn,
+            details=dict(details), conn=conn,
         )
-    return True
+    return FOLDED if folded else REQUEUED
 
 
 async def refold(repos: Repositories, tenant_id: str, threat_id: str, escalation_id: str) -> List[str]:

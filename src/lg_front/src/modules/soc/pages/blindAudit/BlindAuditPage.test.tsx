@@ -232,6 +232,7 @@ const REPORT: BlindAuditReportOut = {
   uncovered: [{ from: '2026-10-12T00:00:00Z', to: '2026-10-31T00:00:00Z' }],
   labels_by_organisation: [{ organisation: 'mssp-org', labelled: 31, malicious: 2, benign: 28, unsure: 1 }],
   runs: [RUN],
+  flagged_ai_closes: 1,
   notes: ['Analysts label each sample without seeing the AI verdict.'],
 };
 
@@ -257,6 +258,8 @@ describe('Reports page, blind audit tab', () => {
     expect(screen.getByText('6.7% (2 of 30; 95% CI 1.8% to 21.3%)')).toBeInTheDocument();
     expect(screen.getByRole('list', { name: 'Uncovered time' })).toBeInTheDocument();
     expect(screen.getByText(/MSSP mssp-org: 31 labels/)).toBeInTheDocument();
+    // A person's flags are beside the estimate, never in it.
+    expect(screen.getByText(/Flagged by a person, outside the samples: 1 AI close in this window\./)).toBeInTheDocument();
     expect(screen.getByRole('table', { name: 'Blind audit sampling runs' })).toBeInTheDocument();
     expect(screen.queryByText(/Not enough data/)).toBeNull();
   });

@@ -196,6 +196,22 @@ export interface ReprocessOut {
   entry_id: string;
 }
 
+/** `POST /alerts/{id}/reopen` and `/flag`: the reason is required, in the person's own words. */
+export interface ReopenIn {
+  reason: string;
+  /** The case the alert returns to; without it, the open case it is attached to. */
+  case_id?: string | null;
+}
+
+export interface ReopenOut {
+  alert_id: string;
+  status: Open<AlertStatus>;
+  /** folded: it waits for a person in `case_id`. requeued: no open case holds it, a new run reviews it. */
+  mode: Open<'folded' | 'requeued'>;
+  case_id: string | null;
+  flagged: boolean;
+}
+
 export interface EscalationOut {
   id: string;
   tenant_id: string;
@@ -1277,6 +1293,8 @@ export interface AccuracyReportOut {
     correlation_helpful: FeedbackRate;
     avg_review_duration_s: number | null;
   };
+  /** AI closes a person flagged as wrong in the window: beside the rates, never in them. */
+  flagged_ai_closes: number;
   notes: string[];
 }
 
@@ -1493,6 +1511,8 @@ export interface BlindAuditReportOut {
   /** Time in the window no run covered: alerts closed then are in no frame. */
   uncovered: Array<{ from: string; to: string }>;
   labels_by_organisation: OrganisationLabels[];
+  /** AI closes a person flagged as wrong in the window: beside the estimate, never in it. */
+  flagged_ai_closes: number;
   notes: string[];
 }
 
@@ -1825,9 +1845,12 @@ export interface CaseLinkOut {
   at: string | null;
 }
 
-/** The safety net reopened the alert, which the AI had closed on the model's word. */
+/** The alert, which the AI had closed on the model's word, was reopened: by the safety net, or by a person. */
 export interface CaseReopenedOut {
+  /** related_threat (the safety net), analyst_reopen or analyst_flag (a person). */
   reason: InvestigationReasonOut;
+  /** analyst_reopen, analyst_flag: the reason the person gave (data). */
+  note: string | null;
   threat_alert_id: string | null;
   /** folded: it joined the open case. requeued: a new run reviews it. */
   mode: Open<'folded' | 'requeued'> | null;
@@ -1835,6 +1858,14 @@ export interface CaseReopenedOut {
   confirmed_by: Open<'person' | 'workflow'> | null;
   by: CasePersonOut | null;
   at: string | null;
+}
+
+/** A person flagged the AI's close of the alert as wrong. */
+export interface CaseFlaggedOut {
+  by: CasePersonOut | null;
+  at: string | null;
+  /** The reason the person gave (data). */
+  note: string | null;
 }
 
 export interface CaseEntityRefOut {
@@ -1868,6 +1899,10 @@ export interface CaseAlertOut {
   link: CaseLinkOut | null;
   /** role reopened: what reopened it. */
   reopened: CaseReopenedOut | null;
+  /** A person flagged the AI's close as wrong. */
+  flagged: CaseFlaggedOut | null;
+  /** The AI closed it on the model's word and the close stands: an analyst may reopen or flag it. */
+  can_reopen: boolean;
 }
 
 /** A response action on the ledger for one of the case's alerts. */
@@ -1909,6 +1944,8 @@ export interface CaseCountsOut {
   closed: number;
   linked: number;
   reopened: number;
+  /** Alerts whose AI close a person flagged as wrong. */
+  flagged: number;
   /** Alerts that wait for their blind-audit label. */
   withheld: number;
   closed_by: CaseClosedByCountsOut;
