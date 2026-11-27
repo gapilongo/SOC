@@ -30,6 +30,7 @@ from a parameter, and the tools are switched off per tenant with ``tenants.setti
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import replace
 from datetime import datetime, timedelta
 from typing import Any, Awaitable, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
@@ -155,15 +156,30 @@ def _found(mapped: Optional[Mapped[Any]]) -> List[Mapped[Any]]:
     return [mapped] if mapped is not None else []
 
 
+async def _host_sample(reader: _Reader, params: HostActivityParams, never_close: List[str], rare: List[str]) -> mappers.HostSample:
+    """The searches that choose a busy host's listed events, sent together: the client runs two at a time, so
+    a slow indexer costs the call two timeouts for them, not four, and the call stays inside its time cap.
+
+    One that fails (the indexer does not answer, or not with a search response) does not fail the call: the
+    host search already read the counts the indicators need. The events are then listed by level, and the
+    fact says the sample was not taken.
+    """
+    bodies = templates.host_sample(params, never_close, rare)
+    answers = await asyncio.gather(*(reader.ask(body) for body in bodies.values()), return_exceptions=True)
+    for error in answers:
+        if isinstance(error, BaseException) and not isinstance(error, (IndexerUnavailable, Malformed)):
+            raise error
+    parts = {part: answer for part, answer in zip(bodies, answers, strict=True) if isinstance(answer, Answer)}
+    return mappers.HostSample(params.at, parts if len(parts) == len(bodies) else {}, failed=len(parts) < len(bodies))
+
+
 async def _host_activity(reader: _Reader, params: HostActivityParams) -> Evidence:
     start, end = params.at - minutes(params.before_min), params.at + minutes(params.after_min)
     answer = await reader.ask(templates.host_activity(params))
     mine = templates.own_event(params)  # the alert under investigation is never its own evidence
     own = await reader.ask(mine) if mine is not None else None
-    sample, busy = None, mappers.host_sample_techniques(answer, own)
-    if busy is not None:  # more events than a fact lists: the listed ones are chosen in parts, not by level alone
-        parts = {part: await reader.ask(body) for part, body in templates.host_sample(params, *busy).items()}
-        sample = mappers.HostSample(params.at, parts)
+    busy = mappers.host_sample_techniques(answer, own)  # more events than a fact lists: a sample, chosen in parts
+    sample = await _host_sample(reader, params, *busy) if busy is not None else None
     mapped = mappers.host_activity(answer, start, end, own, sample)
     return await _evidence(reader, HOST_ACTIVITY, "host_activity", ("host", params.host), _found(mapped), start, end)
 

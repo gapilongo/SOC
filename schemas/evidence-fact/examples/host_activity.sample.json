@@ -17,7 +17,7 @@
       {"group": "sysmon", "count": 1}
     ],
     "techniques": ["T1531", "T1140"],
-    "never_close_class_truncated": true,
+    "never_close_technique_truncated": true,
     "events": [
       {
         "at": "2026-11-07T09:29:00Z",

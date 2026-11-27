@@ -204,7 +204,7 @@ async def test_a_capped_result_is_cut_the_same_way_and_marked(
     # More events than a fact lists: a sample, chosen in parts by the indexer's own searches.
     assert [event.listed_for for event in fact.value.events] == [
         "never_close_class", "rare_technique", *["nearest_in_time"] * 10, *["rule_level"] * 38]
-    assert fact.value.never_close_class_truncated is False and fact.value.techniques == ["T1003.001", "T1140"]
+    assert fact.value.never_close_technique_truncated is False and fact.value.techniques == ["T1003.001", "T1140"]
     assert [event.level for event in fact.value.events[12:22]] == [7] * 10, "the highest levels fill the rest"
     assert TYPED not in fact.model_dump_json() and fact.redactions[0].reason == "secret"
     assert fact.model_dump() == expected.value[0].model_dump()

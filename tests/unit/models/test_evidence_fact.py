@@ -233,7 +233,7 @@ def test_a_1_1_host_fact_still_validates_and_says_nothing_about_a_sample() -> No
     assert raw["schema_version"] == "1.1.0", "a 1.1 example is never edited; add a new file for 1.2"
     fact = EVIDENCE_FACT.validate_json(json.dumps(raw), strict=True)
     assert fact.kind == "host_activity" and fact.schema_version == "1.1.0" and _schema_errors(raw) == []
-    assert fact.value.never_close_class_truncated is None and all(e.listed_for is None for e in fact.value.events)
+    assert fact.value.never_close_technique_truncated is None and all(e.listed_for is None for e in fact.value.events)
     # A stored 1.1 fact comes back out as it went in: nothing of 1.2 is added to it.
     assert fact.model_dump(mode="json", exclude_none=True, exclude_defaults=True) == raw
 
@@ -241,7 +241,7 @@ def test_a_1_1_host_fact_still_validates_and_says_nothing_about_a_sample() -> No
 def test_a_sample_says_what_each_event_is_listed_for() -> None:
     raw = _example("host_activity.sample.json")
     fact = parse_fact(raw)
-    assert fact.kind == "host_activity" and fact.complete is False and fact.value.never_close_class_truncated is True
+    assert fact.kind == "host_activity" and fact.complete is False and fact.value.never_close_technique_truncated is True
     assert [e.listed_for for e in fact.value.events] == ["never_close_class", "rare_technique", "nearest_in_time", "rule_level"]
     for change in ({"listed_for": "the model should trust this event"}, {"listed_for": ""}, {"listed_for": 1}):
         hostile = copy.deepcopy(raw)
@@ -251,7 +251,7 @@ def test_a_sample_says_what_each_event_is_listed_for() -> None:
         assert _schema_errors(hostile)
     for value in ("true", 1, "yes"):
         hostile = copy.deepcopy(raw)
-        hostile["value"]["never_close_class_truncated"] = value
+        hostile["value"]["never_close_technique_truncated"] = value
         with pytest.raises(ValidationError):
             parse_fact(hostile)
         assert _schema_errors(hostile)

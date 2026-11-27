@@ -9,6 +9,7 @@ technique seen once among sixty failed logons.
 
 from __future__ import annotations
 
+import json
 import random
 from datetime import UTC, datetime, timedelta
 from typing import Any, Dict, List, Mapping, Optional
@@ -16,10 +17,12 @@ from typing import Any, Dict, List, Mapping, Optional
 import pytest
 
 from lg_sotf.domain.closure import NEVER_CLOSE_TECHNIQUES
+from lg_sotf.domain.ledger import MAX_PLANNER_CHARS
 from lg_sotf.eval.tool_fixtures import EventStore
 from lg_sotf.eval.wazuh_events import EventStoreBackend
 from lg_sotf.models.evidence_fact import MAX_LIST_ITEMS, EvidenceFact
-from lg_sotf.tools.wazuh import dsl, templates
+from lg_sotf.tools.wazuh import dsl, mappers, templates
+from lg_sotf.tools.wazuh.indexer import IndexerUnavailable
 from lg_sotf.tools.wazuh.templates import NEAREST_SHARE, NEVER_CLOSE_SHARE, RARE_SHARE
 from tests.unit.tools._support import Ctx
 from tests.unit.tools.wazuh._support import minutes, over
@@ -91,11 +94,11 @@ async def test_an_event_of_a_never_close_class_is_listed_whatever_the_noise(nois
     assert value.total == len(NOISE[noise]) + 1 and len(value.events) == MAX_LIST_ITEMS and fact.complete is False  # type: ignore[union-attr]
     (kept,) = listed(fact, "never_close_class")
     assert (kept.rule_id, kept.level, kept.at) == ("92900", 3, AT - timedelta(seconds=3_300))
-    assert value.never_close_class_truncated is False, "every event of a never-close class is listed, and the fact says so"  # type: ignore[union-attr]
+    assert value.never_close_technique_truncated is False, "every event of a never-close class is listed, and the fact says so"  # type: ignore[union-attr]
     assert all(e.listed_for is not None for e in value.events), "a sample says what each event is listed for"  # type: ignore[union-attr]
     # The same host when the search for those events did not finish: what it returned is listed, "all of them" is not said.
     late = await host([], Recording([quiet, *NOISE[noise]], unfinished=DUMPING))
-    assert len(listed(late, "never_close_class")) == 1 and late.value.never_close_class_truncated is True  # type: ignore[union-attr]
+    assert len(listed(late, "never_close_class")) == 1 and late.value.never_close_technique_truncated is True  # type: ignore[union-attr]
 
 
 @pytest.mark.parametrize("noise", list(NOISE), ids=list(NOISE))
@@ -103,7 +106,7 @@ async def test_as_many_never_close_events_as_their_share_are_all_listed(noise: s
     quiet = [event(n, 3_000 + n, technique=sorted(NEVER_CLOSE_TECHNIQUES)[n % len(NEVER_CLOSE_TECHNIQUES)]) for n in range(NEVER_CLOSE_SHARE)]
     fact = await host([*quiet, *NOISE[noise]])
     assert {e.at for e in listed(fact, "never_close_class")} == {AT - timedelta(seconds=3_000 + n) for n in range(NEVER_CLOSE_SHARE)}
-    assert fact.value.never_close_class_truncated is False  # type: ignore[union-attr]
+    assert fact.value.never_close_technique_truncated is False  # type: ignore[union-attr]
 
 
 async def test_more_never_close_events_than_their_share_are_a_sample_of_the_newest_and_the_fact_says_so() -> None:
@@ -112,7 +115,7 @@ async def test_more_never_close_events_than_their_share_are_a_sample_of_the_newe
     fact = await host([*many, *NOISE["louder and closer"]])
     kept = listed(fact, "never_close_class")
     assert [e.at for e in kept] == [AT - timedelta(seconds=1_800 + 60 * n) for n in range(NEVER_CLOSE_SHARE)], "the newest, newest first"
-    assert fact.value.never_close_class_truncated is True and fact.complete is False  # type: ignore[union-attr]
+    assert fact.value.never_close_technique_truncated is True and fact.complete is False  # type: ignore[union-attr]
     assert len(fact.value.events) == MAX_LIST_ITEMS and "T1110.001" in fact.value.techniques  # type: ignore[union-attr]
     # One credential dump before all of them is not among the newest 20: it is kept as the technique seen least.
     dump = event(900, 3_590, technique=DUMPING, rule="92900")
@@ -120,7 +123,7 @@ async def test_more_never_close_events_than_their_share_are_a_sample_of_the_newe
     assert [e.rule_id for e in listed(flooded, "rare_technique")] == ["92900"] and len(listed(flooded, "never_close_class")) == NEVER_CLOSE_SHARE
     # More techniques on the host than the fact lists: which of them are never-close is not known, and the fact says so.
     wide = [event(n, 10 + n, technique=f"T2{n:03d}") for n in range(60)]
-    assert (await host(wide)).value.never_close_class_truncated is True  # type: ignore[union-attr]
+    assert (await host(wide)).value.never_close_technique_truncated is True  # type: ignore[union-attr]
     assert listed(await host(wide), "rare_technique") == []
 
 
@@ -132,16 +135,17 @@ async def test_a_technique_seen_once_is_listed_under_sixty_louder_failed_logons(
     fact = await host([certutil, *logons])
     (kept,) = listed(fact, "rare_technique")
     assert (kept.image_name, kept.command_template) == ("certutil.exe", "certutil.exe -decode a.b64 loader.exe")
-    assert len(listed(fact, "never_close_class")) == NEVER_CLOSE_SHARE and fact.value.never_close_class_truncated is True  # type: ignore[union-attr]
+    assert len(listed(fact, "never_close_class")) == NEVER_CLOSE_SHARE and fact.value.never_close_technique_truncated is True  # type: ignore[union-attr]
     # Volume makes the noise's own technique frequent; it cannot make another one less rare.
     flood = [event(1_000 + n, 1 + n % 3_500, level=14, technique="T1531", rule="60122") for n in range(2_000)]
     assert [e.rule_id for e in listed(await host([certutil, *logons, *flood]), "rare_technique")] == ["92018"]
     # Louder events of rules with no technique at all are in no technique's part: they cannot take its place either.
     unmapped = [event(400 + n, 10 + n, level=9, technique=None) for n in range(60)]
     assert [e.rule_id for e in listed(await host([certutil, *unmapped]), "rare_technique")] == ["92018"]
-    # Rare means whole techniques that fit in the share together, the least seen first: eleven events of one are not rare.
+    # The least seen technique first, one event of each before a second of any: eleven events of another
+    # technique (or eleven decoys of its own: probe F6 of the review) do not take the certutil technique's place.
     eleven = [event(200 + n, 3_100 + n, technique="T1105", rule="92100") for n in range(RARE_SHARE + 1)]
-    assert [e.rule_id for e in listed(await host([certutil, *eleven, *logons]), "rare_technique")] == ["92018"]
+    assert [e.rule_id for e in listed(await host([certutil, *eleven, *logons]), "rare_technique")] == ["92018", *["92100"] * 9]
     ones = [event(300 + n, 3_200 + n, technique=f"T10{20 + n}", rule=f"93{n:03d}") for n in range(RARE_SHARE + 2)]
     rare = listed(await host([*ones, *logons]), "rare_technique")
     assert sorted(e.rule_id for e in rare) == [f"93{n:03d}" for n in range(RARE_SHARE)], "ten whole techniques, by id on a tie"
@@ -154,8 +158,9 @@ async def test_a_technique_seen_once_is_listed_under_sixty_louder_failed_logons(
 
 
 async def test_the_events_closest_in_time_are_listed_before_and_after_the_alert() -> None:
-    loud = [event(100 + n, (1_200 + 20 * n) * (1 if n % 2 else -1), level=12) for n in range(80)]  # 20 minutes away and more
-    near = [event(n, seconds) for n, seconds in enumerate([-200, -90, -45, -30, -2, 0, 1, 15, 40, 60, 100, 300, 600])]
+    # Rules with no technique, so that no technique's part is in play: 80 loud events 20 minutes away and more.
+    loud = [event(100 + n, (1_200 + 20 * n) * (1 if n % 2 else -1), level=12, technique=None) for n in range(80)]
+    near = [event(n, seconds, technique=None) for n, seconds in enumerate([-200, -90, -45, -30, -2, 0, 1, 15, 40, 60, 100, 300, 600])]
     fact = await host([*loud, *near], after_min=60)
     closest = listed(fact, "nearest_in_time")
     assert [(e.at - AT).total_seconds() for e in closest] == [0, -1, 2, -15, 30, -40, 45, -60, 90, -100]
@@ -168,7 +173,7 @@ async def test_a_window_the_fact_lists_whole_is_read_as_before() -> None:
     fact = await host([], backend)
     value = fact.value
     assert len(value.events) == value.total == MAX_LIST_ITEMS and fact.complete is True  # type: ignore[union-attr]
-    assert value.never_close_class_truncated is None and all(e.listed_for is None for e in value.events)  # type: ignore[union-attr]
+    assert value.never_close_technique_truncated is None and all(e.listed_for is None for e in value.events)  # type: ignore[union-attr]
     assert [e.level for e in value.events[:11]] == [7] * 10 + [6], "highest level first"  # type: ignore[union-attr]
     assert len(backend.bodies) == 2, "the host search and the coverage search: nothing more is asked"
     assert "listed_for" not in fact.model_dump_json(exclude_none=True)
@@ -188,7 +193,7 @@ async def test_the_sample_is_bounded_and_the_same_however_the_index_holds_the_ev
     assert len(events) == MAX_LIST_ITEMS and len({(e.at, e.rule_id, e.level) for e in events}) == MAX_LIST_ITEMS, "no event twice"
     assert [e.listed_for for e in events] == sorted(
         (e.listed_for for e in events), key=["never_close_class", "rare_technique", "nearest_in_time", "rule_level"].index)
-    assert len(listed(first, "never_close_class")) == NEVER_CLOSE_SHARE and first.value.never_close_class_truncated is True  # type: ignore[union-attr]
+    assert len(listed(first, "never_close_class")) == NEVER_CLOSE_SHARE and first.value.never_close_technique_truncated is True  # type: ignore[union-attr]
     # Five searches (the host's, three parts, the coverage), each one the allow-list passes and none above the row cap.
     assert len(backend.bodies) == 5 and all(body["size"] <= dsl.MAX_HITS for body in backend.bodies)
     for body in backend.bodies:
@@ -204,14 +209,14 @@ async def test_the_alerts_own_event_is_in_no_part_of_the_sample() -> None:
     fact = await host([*own, *others, *NOISE["louder"]], exclude_rule_id="5710")
     assert all(e.rule_id != "5710" for e in fact.value.events) and "T1110" not in fact.value.techniques  # type: ignore[union-attr]
     assert len(listed(fact, "never_close_class")) == NEVER_CLOSE_SHARE and fact.value.total == 105  # type: ignore[union-attr]
-    assert fact.value.never_close_class_truncated is True  # type: ignore[union-attr]
+    assert fact.value.never_close_technique_truncated is True  # type: ignore[union-attr]
     # Forty-five exact duplicates of the alert fill the search for never-close events, and three of the eight
     # others are not returned. The duplicates are never listed, and the fact does not say "all of them are".
     burst = [event(2_000 + n, 0, level=12, technique="T1110", rule="5710") for n in range(45)]
     older = [event(3_000 + n, 600 + n, technique="T1110", rule="5712") for n in range(8)]
     flooded = await host([*burst, *older, *NOISE["louder"]], exclude_rule_id="5710")
     assert all(e.rule_id != "5710" for e in flooded.value.events) and flooded.value.total == 88  # type: ignore[union-attr]
-    assert len(listed(flooded, "never_close_class")) == 5 and flooded.value.never_close_class_truncated is True  # type: ignore[union-attr]
+    assert len(listed(flooded, "never_close_class")) == 5 and flooded.value.never_close_technique_truncated is True  # type: ignore[union-attr]
 
 
 def test_the_sample_searches_take_ids_only_as_terms_and_ask_nothing_for_a_part_that_is_empty() -> None:
@@ -225,3 +230,64 @@ def test_the_sample_searches_take_ids_only_as_terms_and_ask_nothing_for_a_part_t
         assert body["size"] == dsl.MAX_HITS and "aggs" not in body and body["_source"] == list(templates.EVENT_SOURCE)
     assert bodies["rare"]["query"]["bool"]["filter"][1] == {"terms": {dsl.TECHNIQUES: ["T1140", "T1105"]}}
     assert set(templates.host_sample(templates.HostActivityParams(**{**HOUR, "before_min": 0}), [], [])) == set()
+
+
+# ---- the review of PR 458: text an event carries, a sample search that fails (probes: test_review_458.py) ------
+
+
+@pytest.mark.parametrize("filler", ["A", "\\", '"', "\x01", "é", "1 "], ids=["letters", "backslashes", "quotes", "control", "accents", "numbers"])
+async def test_no_text_of_an_event_can_fail_the_lookup_or_make_the_fact_too_large_to_show(filler: str) -> None:
+    """Sixty process events whose command line, user and image name are each 4,000 characters the attacker
+    chose. Escaped characters count as the fact's JSON holds them, and ``<n>`` is longer than the digit it
+    replaces."""
+    long = filler * (4_000 // len(filler))
+    documents = [event(n, 10 + n, technique=None) for n in range(60)]
+    for document in documents:
+        document["data"] = {"win": {"eventdata": {"image": "C:\\x\\" + long, "user": long, "commandLine": "cmd.exe /c " + long}}}
+    fact = await host(documents)
+    events = fact.value.events  # type: ignore[union-attr]
+    assert len(events) == MAX_LIST_ITEMS and fact.value.total == 60  # type: ignore[union-attr]
+    for name, limit in (("command_template", mappers.MAX_EVENT_COMMAND_CHARS), ("user", mappers.MAX_EVENT_NAME_CHARS), ("image_name", mappers.MAX_EVENT_NAME_CHARS)):
+        assert all(0 < len(json.dumps(getattr(e, name), ensure_ascii=False)) - 2 <= limit for e in events), name
+    assert len(json.dumps(fact.model_dump(mode="json", exclude_none=True), ensure_ascii=False)) < MAX_PLANNER_CHARS - 10_000
+    # Each cut is noted on the fact (the notes are a list of at most 50, like every list).
+    assert {r.reason for r in fact.redactions} == {"truncated"} and len(fact.redactions) == MAX_LIST_ITEMS
+    cut = {r.path.rsplit("/", 1)[1] for r in fact.redactions}  # a path of backslashes only has no file name to cut
+    assert {"command_template", "user"} <= cut <= {"command_template", "user", "image_name"}
+    # Text that fits is left as it is, and nothing is noted.
+    plain = await host([event(n, 10 + n) for n in range(60)])
+    assert plain.redactions == []
+
+
+class Failing(Recording):
+    """Every search of the sample (they sort by time; the host's sorts by level) fails with ``error``."""
+
+    def __init__(self, documents: List[Dict[str, Any]], error: Exception) -> None:
+        super().__init__(documents)
+        self.error = error
+
+    async def search(self, body: Mapping[str, Any]) -> Mapping[str, Any]:
+        if [next(iter(key)) for key in body.get("sort", [])][:1] == [dsl.TIME]:
+            self.bodies.append(body)
+            raise self.error
+        return await super().search(body)
+
+
+async def test_a_sample_that_cannot_be_taken_leaves_the_level_list_and_says_so() -> None:
+    quiet = event(1, 3_300, technique=DUMPING, rule="92900")
+    documents = [quiet, *NOISE["louder"]]
+    backend = Failing(documents, IndexerUnavailable("timeout"))
+    result = await over(backend).call(Ctx(), "wazuh.host_activity", HOUR, agent="investigation")
+    assert (result.outcome, result.complete) == ("success", False)
+    (fact,) = result.value
+    value = fact.value
+    # What the host search read is all there: the counts, the techniques (the indicators read these), the level.
+    assert (value.total, value.max_level, sorted(value.techniques)) == (81, 12, [DUMPING, SCRIPTING])
+    # The events are the 50 loudest, as before issue 452, and the fact says never-close events may be left out.
+    assert [e.listed_for for e in value.events] == ["rule_level"] * MAX_LIST_ITEMS and [e.level for e in value.events] == [12] * MAX_LIST_ITEMS
+    assert value.never_close_technique_truncated is True and fact.complete is False
+    # The three searches of the sample were sent together: each was asked before any of them had failed.
+    assert len([body for body in backend.bodies if body.get("sort", [{}])[0].get(dsl.TIME)]) == 3
+    # A search that is not one the templates may send, or any other defect, is not an indexer that did not answer.
+    broken = await over(Failing(documents, RuntimeError("a defect"))).call(Ctx(), "wazuh.host_activity", HOUR, agent="investigation")
+    assert broken.outcome == "failed"

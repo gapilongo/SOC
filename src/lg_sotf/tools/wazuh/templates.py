@@ -55,10 +55,11 @@ _HOST = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,254}$")
 _SHA256 = re.compile(r"^[0-9A-Fa-f]{64}$")
 
 EVENT_SOURCE = (
-    dsl.TIME, dsl.DOC_ID, dsl.RULE_ID, dsl.RULE_LEVEL, dsl.RULE_GROUPS, dsl.EVENT_ID, dsl.TARGET_USER, dsl.PROCESS_USER,
-    dsl.IMAGE, dsl.COMMAND_LINE,
+    dsl.TIME, dsl.DOC_ID, dsl.RULE_ID, dsl.RULE_LEVEL, dsl.RULE_GROUPS, dsl.TECHNIQUES, dsl.EVENT_ID, dsl.TARGET_USER,
+    dsl.PROCESS_USER, dsl.IMAGE, dsl.COMMAND_LINE,
 )
-"""``DOC_ID`` tells two events apart when two searches return the same one; a fact never holds it."""
+"""``DOC_ID`` tells two events apart when two searches return the same one, and ``TECHNIQUES`` says which
+technique an event of the rare part stands for; an event of a fact holds neither."""
 PROCESS_SOURCE = (
     dsl.TIME, dsl.IMAGE, dsl.COMMAND_LINE, dsl.PROCESS_GUID, dsl.PROCESS_ID, dsl.PROCESS_USER, dsl.PARENT_GUID,
     dsl.PARENT_ID, dsl.PARENT_IMAGE, dsl.PARENT_COMMAND_LINE, dsl.PARENT_USER,

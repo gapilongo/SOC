@@ -62,7 +62,7 @@ schema does not allow a `tenant_id` field.
 | `process_lineage` | `process` | `chain`: the ancestry, oldest first and the subject process last; each node has `name` and optionally `pid`, `command_line`, `sha256`, `user`, `started_at`. Since 1.1 a node may also carry `command_template` (the command line with its variable parts replaced), `image_name` (the executable's file name) and `process_guid`, and the value may carry `children`: up to 50 processes the subject process started, as nodes. `children` absent means the source did not look; an empty list means it found none |
 | `sign_in_history` | `user` | `window_start`, `window_end`, `total`, `failed`, and up to 50 `sign_ins` (newest first): `at`, `result` (`success`, `failure`, `interrupted`), `ip`, `country` (ISO 3166-1 alpha-2), `app`, `risk` (`none`, `low`, `medium`, `high`) |
 | `related_alert` | `host`, `user`, `ip`… | Another alert on the same subject: `alert_id`, `title`, `severity`, `created_at`, `disposition` |
-| `host_activity` (1.1) | `host` | What the host's detections show around an alert: `window_start`, `window_end`, `total` (events in the window), `max_level` (the highest rule level, 0–16), `by_group` (up to 50 `{group, count}`), `techniques` (up to 50 MITRE ATT&CK ids), and up to 50 `events` (highest level first): `at`, `rule_id`, `level`, `groups`, `event_id`, `user`, `image_name`, `command_template`. Since 1.2, when the window held more than 50 events the list is a sample: each event says what it is `listed_for` (`never_close_class`, `rare_technique`, `nearest_in_time`, `rule_level`), the events are in that order, and `never_close_class_truncated` says whether events of a never-close class were left out; see [A busy host](#a-busy-host) |
+| `host_activity` (1.1) | `host` | What the host's detections show around an alert: `window_start`, `window_end`, `total` (events in the window), `max_level` (the highest rule level, 0–16), `by_group` (up to 50 `{group, count}`), `techniques` (up to 50 MITRE ATT&CK ids), and up to 50 `events` (highest level first): `at`, `rule_id`, `level`, `groups`, `event_id`, `user`, `image_name`, `command_template`. Since 1.2, when the window held more than 50 events the list is a sample: each event says what it is `listed_for` (`never_close_class`, `rare_technique`, `nearest_in_time`, `rule_level`), the events are in that order, and `never_close_technique_truncated` says whether events of a never-close technique were left out; see [A busy host](#a-busy-host) |
 | `logon_fanout` (1.1) | `ip`, `host`, `user` | Logons around one pivot: `pivot` (`source_ip`, `source_host`, `target_user`, `target_host`: what the subject is), `family` (`windows`, `sshd`), `window_start`, `window_end`, the counts `failures`, `successes`, `lockouts`, `unknown_user_failures`, `distinct_target_users`, `distinct_sources`, `distinct_target_hosts`, `first_success_after_failure_s`, and up to 50 each of `success_users`, `failed_users`, `sources` (addresses), `source_hosts` and `logon_types`. `source_hosts` are names the client supplied: a lead, never proof |
 | `prevalence` (1.1) | `file`, `process`, `service`, `command_template` | How widely the subject is seen: `scope` (`tenant_fleet`: the tenant's hosts in its telemetry; `tenant_alerts`: the tenant's alerts), `window_start` and `window_end` (the window the source actually covered), `first_seen_at`, `last_seen_at`, `host_count`, `event_count`, `fleet_size` |
 
@@ -216,7 +216,7 @@ from its own search, so that nothing in one part takes a place in another:
 | `listed_for` | Events kept | Share |
 |---|---|---|
 | `never_close_class` | The newest events whose ATT&CK technique is in a class only a person may close (`NEVER_CLOSE_TECHNIQUES` in `lg_sotf.domain.closure`, sub-techniques included) | up to 20 |
-| `rare_technique` | The events of the techniques the host showed least often: as many whole techniques as fit, the least seen first. A never-close technique counts here too once there are more than 20 never-close events, so one seen once is not lost under newer ones of another technique | up to 10 |
+| `rare_technique` | Events of the techniques the host showed least often, the least seen first: one event of each (the newest) before a second of any, so more events of a technique cannot keep it out. A never-close technique counts here too once there are more than 20 never-close events, so one seen once is not lost under newer ones of another technique | up to 10 |
 | `nearest_in_time` | The events closest in time to the alert, before and after | up to 10 |
 | `rule_level` | The highest rule levels among the rest, as before | what is left |
 
@@ -224,27 +224,51 @@ An event two parts would keep is listed once, for the first of them. The
 events are listed in the order of the table. The choice depends only on
 what the index holds: the same events give the same list.
 
-What this guarantees: while the window holds at most 20 events of a
-never-close class, every one of them is listed, whatever else happens on the
-host, and `never_close_class_truncated` is `false`. With more than 20, the
-newest 20 are listed and `never_close_class_truncated` is `true`. It is
-also `true` when the host showed more than 50 techniques (which of them are
-never-close is then not known), and when that part's search came back full,
-which more than 30 exact duplicates of the investigated alert (its rule, at
-its millisecond) can cause: they are the alert itself and are never listed.
+What this guarantees, about the list the fact records (what the citation
+check, the case record and the API read): while the window holds at most 20
+events whose ATT&CK technique is in a never-close class, every one of them
+is listed, whatever else happens on the host, and
+`never_close_technique_truncated` is `false`. With more than 20, the newest
+20 are listed and the flag is `true`. It is also `true` whenever "all of
+them are listed" is not known: the host showed more than 50 techniques, a
+search of the sample did not finish or failed, or that part's search came
+back full (which more than 30 exact duplicates of the investigated alert,
+its rule at its millisecond, can cause: they are the alert itself and are
+never listed).
 
-What it does not: a class given only by the tactic or by the vendor's rule
-group (a Wazuh authentication failure with no technique) is not in that
-part; the rare part can be filled by ten other techniques seen once; and
-the fact stays incomplete, so no claim of absence can rest on it. The
-counts, the techniques and the highest level are computed over every event
-of the window, listed or not, and the skill's indicators read those.
+The flag reads the technique only. An event that is in a never-close class
+by its tactic, by the vendor's rule group or rule id (a Wazuh authentication
+failure with no technique), or for having no ATT&CK mapping at all, is not
+in that part and is not counted by the flag: the query allow-list has no
+"or", so one search cannot ask for a technique or a rule group.
 
-The prompt shows the events of a sample grouped by part
-(`{"never_close_class": [...], "rare_technique": [...]}`). A prompt that
-cannot hold a list cuts every member of it alike; grouped, a part the noise
-fills is cut and a small part is shown whole. The ledger and the API keep
-the list as the tool wrote it.
+What it does not guarantee:
+
+- **The rare part is best effort.** Ten other techniques seen once fill it.
+- **The prompt.** The deep model is shown the events of a sample grouped by
+  part (`{"never_close_class": [...], "rare_technique": [...]}`), so each
+  part is fitted to the prompt on its own and one part's volume does not
+  cut the others'. Fifty events with their command lines do not fit the
+  prompt: within a part that does not fit, every event is cut alike (its
+  longest fields first), the cut is marked and the record says
+  `evidence_truncated: true`. The fact keeps the list whole.
+- **A claim of absence.** The fact stays incomplete. The counts, the
+  techniques and the highest level are computed over every event of the
+  window, listed or not, and the skill's indicators read those.
+
+Two limits keep the lookup itself from being switched off:
+
+- One listed event holds at most 400 characters of its command template and
+  100 of its user and of its image name, counted as JSON holds them. A cut
+  is noted in the fact's `redactions` (`truncated`). So no text an attacker
+  writes into an event can fail the lookup or make the fact too large for
+  the prompt to show (an observation the prompt leaves out whole also sets
+  `evidence_truncated`). The process lineage facts keep full command lines.
+- When a search of the sample fails, the lookup does not: the fact is built
+  from the first search, the 50 events are the highest rule levels (all
+  `listed_for: rule_level`) and `never_close_technique_truncated` is
+  `true`. The sample's searches are sent together, so a busy host on a slow
+  indexer stays inside the tool's time cap.
 
 ## Versioning
 
@@ -266,7 +290,7 @@ does not know rather than reject the fact.
 
 | Version | Change |
 |---|---|
-| 1.2.0 | A `host_activity` fact says how the events of a busy host were chosen: `listed_for` on each event and `never_close_class_truncated` on the value (#452). Every 1.1.0 fact is still valid. |
+| 1.2.0 | A `host_activity` fact says how the events of a busy host were chosen: `listed_for` on each event and `never_close_technique_truncated` on the value (#452). Every 1.1.0 fact is still valid. |
 | 1.1.0 | New kinds `host_activity`, `logon_fanout` and `prevalence`. `complete` on every fact. `children` on a process lineage, and `command_template`, `image_name` and `process_guid` on its nodes. Subject types `service` and `command_template`. Every 1.0.0 fact is still valid. |
 | 1.0.0 | First version: `reputation`, `process_lineage`, `sign_in_history`, `related_alert`. |
 

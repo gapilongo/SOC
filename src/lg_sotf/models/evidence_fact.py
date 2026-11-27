@@ -14,7 +14,7 @@ tools return (``host_activity``, ``logon_fanout``, ``prevalence``), the
 children of a process lineage, and ``complete``. Every 1.0 fact is a valid 1.1
 fact. Schema 1.2 (issue 452) says how the events of a busy host's
 ``host_activity`` fact were chosen (``listed_for``,
-``never_close_class_truncated``). Every 1.1 fact is a valid 1.2 fact.
+``never_close_technique_truncated``). Every 1.1 fact is a valid 1.2 fact.
 
 This model is the source of the public JSON Schema ``schemas/evidence-fact/v1.json``
 (``scripts/export_schemas.py`` writes it; ``tests/unit/models/test_evidence_fact.py``
@@ -241,12 +241,14 @@ class HostActivityValue(_Strict):
             "what it is listed for, and the events are in that order."
         ),
     )
-    never_close_class_truncated: Optional[StrictBool] = Field(
+    never_close_technique_truncated: Optional[StrictBool] = Field(
         default=None,
         description=(
-            "1.2: set when the events are a sample. False: every event of a never-close class is listed. "
-            "True: that is not known; the window held more of them than the list keeps (the newest are "
-            "listed), or more techniques than the fact lists."
+            "1.2: set when the events are a sample. False: every event whose ATT&CK technique is in a "
+            "never-close class is listed. True: that is not known; the window held more of them than the "
+            "list keeps (the newest are listed), or more techniques than the fact lists, or a search for "
+            "them did not answer. It reads the technique only: an event that is in such a class by its "
+            "tactic, by the vendor's rule group or id, or for having no ATT&CK mapping, is not counted."
         ),
     )
 
