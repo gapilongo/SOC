@@ -1,9 +1,9 @@
 """From a search response to the typed value of a fact (INT3.4, ADR 0014 section 3.3).
 
 Rows never leave this module: a mapper reads the allow-listed fields of a response and returns the typed
-value of one evidence fact (:mod:`lg_sotf.models.evidence_fact`, schema 1.1), with
+value of one evidence fact (:mod:`lg_sotf.models.evidence_fact`, schema 1.2), with
 
-* ``whole``: false when something the value lists was cut (more alerts than the 50 returned, more
+* ``whole``: false when something the value lists was cut (more alerts than the 50 listed, more
   buckets than the 50 listed, a distinct count above the exact range, an event that could not be read);
 * ``redactions``: where a command line was masked (a secret) or cut to the schema's length.
 
@@ -14,11 +14,13 @@ the schema's bound and never interpreted. A response that is not a search respon
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, Dict, Generic, List, Mapping, Optional, Sequence, Tuple, TypeVar
 
+from lg_sotf.domain.closure import NEVER_CLOSE_TECHNIQUES
 from lg_sotf.models.evidence_fact import (
     MAX_COMMAND_LINE_CHARS,
     MAX_LIST_ITEMS,
@@ -29,6 +31,7 @@ from lg_sotf.models.evidence_fact import (
     GroupCount,
     HostActivityValue,
     HostEvent,
+    ListedFor,
     LogonFanoutValue,
     PrevalenceValue,
     ProcessLineageValue,
@@ -37,7 +40,14 @@ from lg_sotf.models.evidence_fact import (
 )
 from lg_sotf.security.redaction import redact_text
 from lg_sotf.tools.wazuh import dsl
-from lg_sotf.tools.wazuh.templates import LOGONS, LogonFanoutParams, counted
+from lg_sotf.tools.wazuh.templates import (
+    LOGONS,
+    NEAREST_SHARE,
+    NEVER_CLOSE_SHARE,
+    RARE_SHARE,
+    LogonFanoutParams,
+    counted,
+)
 
 V = TypeVar("V")
 _TECHNIQUE = re.compile(r"^T\d{4}(\.\d{3})?$")
@@ -199,7 +209,9 @@ def _level(doc: Mapping[str, Any]) -> Optional[int]:
     return int(level) if level and level.isdigit() and int(level) <= MAX_RULE_LEVEL else None
 
 
-def _host_event(doc: Mapping[str, Any], path: str, notes: List[Redaction]) -> Optional[HostEvent]:
+def _host_event(
+    doc: Mapping[str, Any], path: str, notes: List[Redaction], listed_for: Optional[ListedFor] = None
+) -> Optional[HostEvent]:
     at = when(first(doc, dsl.TIME))
     if at is None:
         return None
@@ -213,6 +225,7 @@ def _host_event(doc: Mapping[str, Any], path: str, notes: List[Redaction]) -> Op
         user=clip(first(doc, dsl.PROCESS_USER) or first(doc, dsl.TARGET_USER), MAX_TEXT_CHARS),
         image_name=image_name(first(doc, dsl.IMAGE)),
         command_template=command_template(line) if line else None,
+        listed_for=listed_for,
     )
 
 
@@ -228,15 +241,20 @@ def _own_event(doc: Mapping[str, Any], own: Answer) -> bool:
     return (first(doc, dsl.RULE_ID), when(first(doc, dsl.TIME))) in mine
 
 
-def host_activity(
-    answer: Answer, start: datetime, end: datetime, own: Optional[Answer] = None
-) -> Optional[Mapped[HostActivityValue]]:
-    """``None`` when the host raised nothing in the window.
+@dataclass(frozen=True)
+class _Window:
+    """A host's window as the level search answered it, with the alert's own event taken out of everything."""
 
-    ``own`` is the search for the investigated alert's own event (and its exact duplicates) with the same
-    aggregations: its counts are taken out of every number, group and technique, its events are not listed,
-    and the highest level is the highest of what is left. An alert alone on its host shows nothing.
-    """
+    total: int
+    groups: List[Tuple[str, int]]
+    techniques: List[Tuple[str, int]]
+    level: Optional[float]
+    hits: Tuple[Mapping[str, Any], ...]
+    all_groups: bool
+    all_techniques: bool
+
+
+def _window(answer: Answer, own: Optional[Answer]) -> _Window:
     total = count(answer.aggs, "total")
     groups, all_groups = buckets(answer.aggs, "groups")
     technique_rows, all_techniques = buckets(answer.aggs, "techniques")
@@ -249,13 +267,115 @@ def host_activity(
         hits = tuple(doc for doc in hits if not _own_event(doc, own))
         levels = [n for n in (_level(doc) for doc in hits) if n is not None]
         level = max(levels) if levels else level if total else None  # the others' highest is among the listed
-    techniques = [key for key, _ in sorted(technique_rows, key=lambda row: -row[1])]  # stable: the index order on a tie
-    if not total and not hits:
+    return _Window(total, groups, technique_rows, level, hits, all_groups, all_techniques)
+
+
+@dataclass(frozen=True)
+class HostSample:
+    """The answers to :func:`lg_sotf.tools.wazuh.templates.host_sample`, by part, and the alert's time."""
+
+    at: datetime
+    parts: Mapping[str, Answer]
+
+
+def _never_close(technique: str) -> bool:
+    return technique.split(".", 1)[0] in NEVER_CLOSE_TECHNIQUES
+
+
+def host_sample_techniques(answer: Answer, own: Optional[Answer] = None) -> Optional[Tuple[List[str], List[str]]]:
+    """``None`` when the level search lists every event of the window. Otherwise the list is a sample, and
+    these are the technique ids part of it is kept for: the ids the host showed that are in a never-close
+    class, and the ids it showed least often, as many whole ones as fit in :data:`RARE_SHARE` events.
+
+    Volume cannot make a technique rarer, and no level or time changes either list. A never-close id counts
+    among the rare ones only when there are more never-close events than their share: one of them seen once
+    is then still listed, however many newer ones of another technique fill that share. With more techniques
+    than the aggregation lists, the rarest are not known: none is named.
+    """
+    window = _window(answer, own)
+    if window.total <= len(window.hits):
         return None
+    rows = [row for row in window.techniques if _TECHNIQUE.fullmatch(row[0])]
+    never_close = [row for row in rows if _never_close(row[0])]
+    listed_anyway = never_close if sum(n for _, n in never_close) <= NEVER_CLOSE_SHARE else []
+    rare: List[str] = []
+    room = RARE_SHARE if window.all_techniques else 0
+    for key, n in sorted((row for row in rows if row not in listed_anyway), key=lambda row: (row[1], row[0])):
+        if n > room:
+            break
+        rare.append(key)
+        room -= n
+    return [key for key, _ in never_close], rare
+
+
+def _sampled(window: _Window, own: Optional[Answer], sample: HostSample) -> Tuple[List[Tuple[Mapping[str, Any], ListedFor]], bool]:
+    """The events a busy host's fact lists, each with the part that kept it, in the order of the parts; and
+    whether the window may hold never-close events that are not listed.
+
+    Each part is filled from its own search, so nothing in another part (a louder alert, a closer one, any
+    number of them) takes its place. An event two parts would keep is listed once, for the first. Not every
+    never-close event is known to be listed when there are more than their share, when their search came
+    back full (the alert's own exact duplicates may have filled it) or unfinished, or when the techniques
+    were cut.
+    """
+
+    def pool(part: str) -> List[Mapping[str, Any]]:
+        answer = sample.parts.get(part)
+        return [doc for doc in answer.hits if own is None or not _own_event(doc, own)] if answer is not None else []
+
+    def away(doc: Mapping[str, Any]) -> timedelta:
+        at = when(first(doc, dsl.TIME))
+        return abs(at - sample.at) if at is not None else timedelta.max
+
+    never, asked = pool("never_close"), sample.parts.get("never_close")
+    unsure = asked is not None and (asked.partial or len(asked.hits) >= dsl.MAX_HITS)
+    cut = len(never) > NEVER_CLOSE_SHARE or unsure or not window.all_techniques
+    near = {_identity(doc): doc for doc in sorted(pool("before") + pool("after"), key=away)}  # stable: closest first
+    parts: List[Tuple[ListedFor, Sequence[Mapping[str, Any]]]] = [
+        ("never_close_class", never[:NEVER_CLOSE_SHARE]),
+        ("rare_technique", pool("rare")[:RARE_SHARE]),
+        ("nearest_in_time", list(near.values())[:NEAREST_SHARE]),
+        ("rule_level", window.hits),
+    ]
+    listed: Dict[str, Tuple[Mapping[str, Any], ListedFor]] = {}
+    for part, docs in parts:
+        for doc in docs:
+            if len(listed) < MAX_LIST_ITEMS:
+                listed.setdefault(_identity(doc), (doc, part))
+    return list(listed.values()), cut
+
+
+def _identity(doc: Mapping[str, Any]) -> str:
+    """Everything read of an event (its document id among it): what tells two searches' hits apart."""
+    return json.dumps(doc, sort_keys=True, default=str)
+
+
+def host_activity(
+    answer: Answer, start: datetime, end: datetime, own: Optional[Answer] = None, sample: Optional[HostSample] = None
+) -> Optional[Mapped[HostActivityValue]]:
+    """``None`` when the host raised nothing in the window.
+
+    ``own`` is the search for the investigated alert's own event (and its exact duplicates) with the same
+    aggregations: its counts are taken out of every number, group and technique, its events are not listed,
+    and the highest level is the highest of what is left. An alert alone on its host shows nothing.
+
+    ``sample``: the window holds more events than the fact lists (:func:`host_sample_techniques`), and these
+    searches choose the listed ones (:func:`_sampled`). Each event then says what it is listed for.
+    """
+    window = _window(answer, own)
+    total, level = window.total, window.level
+    techniques = [key for key, _ in sorted(window.techniques, key=lambda row: -row[1])]  # stable: the index order on a tie
+    if not total and not window.hits:
+        return None
+    chosen: Sequence[Tuple[Mapping[str, Any], Optional[ListedFor]]] = [(doc, None) for doc in window.hits[:MAX_LIST_ITEMS]]
+    truncated: Optional[bool] = None
+    if sample is not None:
+        chosen, cut = _sampled(window, own, sample)
+        truncated = cut or answer.partial  # a search that did not finish may not have listed every technique
     notes: List[Redaction] = []
     events: List[HostEvent] = []
-    for doc in hits[:MAX_LIST_ITEMS]:
-        event = _host_event(doc, f"/value/events/{len(events)}", notes)
+    for doc, part in chosen:
+        event = _host_event(doc, f"/value/events/{len(events)}", notes, part)
         if event is not None:
             events.append(event)
     value = HostActivityValue(
@@ -263,11 +383,12 @@ def host_activity(
         window_end=end,
         total=max(total, len(events)),
         max_level=int(level) if level is not None and 0 <= level <= MAX_RULE_LEVEL else None,
-        by_group=[GroupCount(group=group[:MAX_TOKEN_CHARS], count=n) for group, n in groups if group],
+        by_group=[GroupCount(group=group[:MAX_TOKEN_CHARS], count=n) for group, n in window.groups if group],
         techniques=[t for t in techniques if _TECHNIQUE.fullmatch(t)],
         events=events,
+        never_close_class_truncated=truncated,
     )
-    return Mapped(value, all_groups and all_techniques and total == len(events), _noted(notes))
+    return Mapped(value, window.all_groups and window.all_techniques and total == len(events), _noted(notes))
 
 
 # ---- logon fan-out ------------------------------------------------------------------------------------------

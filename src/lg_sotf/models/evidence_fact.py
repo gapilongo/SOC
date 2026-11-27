@@ -12,7 +12,9 @@ never an instruction.
 Schema 1.1 (INT9.3, ADR 0014 section 3.3) adds the kinds the Wazuh evidence
 tools return (``host_activity``, ``logon_fanout``, ``prevalence``), the
 children of a process lineage, and ``complete``. Every 1.0 fact is a valid 1.1
-fact.
+fact. Schema 1.2 (issue 452) says how the events of a busy host's
+``host_activity`` fact were chosen (``listed_for``,
+``never_close_class_truncated``). Every 1.1 fact is a valid 1.2 fact.
 
 This model is the source of the public JSON Schema ``schemas/evidence-fact/v1.json``
 (``scripts/export_schemas.py`` writes it; ``tests/unit/models/test_evidence_fact.py``
@@ -35,7 +37,7 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, StrictBool, Ty
 from lg_sotf.models.vocabulary import Disposition, Severity
 
 SCHEMA_NAME = "evidence-fact"
-SCHEMA_VERSION = "1.1.0"
+SCHEMA_VERSION = "1.2.0"
 SCHEMA_ID = f"urn:lg-sotf:schema:{SCHEMA_NAME}:{SCHEMA_VERSION}"
 JSON_SCHEMA_DIALECT = "https://json-schema.org/draft/2020-12/schema"
 
@@ -64,6 +66,7 @@ RedactionReason = Literal["secret", "pii", "truncated"]
 LogonPivot = Literal["source_ip", "source_host", "target_user", "target_host"]
 LogonFamily = Literal["windows", "sshd"]
 PrevalenceScope = Literal["tenant_fleet", "tenant_alerts"]
+ListedFor = Literal["never_close_class", "rare_technique", "nearest_in_time", "rule_level"]  # 1.2
 
 Text = Annotated[str, Field(min_length=1, max_length=MAX_TEXT_CHARS)]
 # A short identifier the source wrote: a rule id, a rule group, an event id, a logon type, a process GUID.
@@ -205,6 +208,16 @@ class HostEvent(_Strict):
     user: Optional[Text] = None
     image_name: Optional[ImageName] = None
     command_template: Optional[CommandTemplate] = None
+    listed_for: Optional[ListedFor] = Field(
+        default=None,
+        description=(
+            "1.2: why the event is one of those listed when the window held more events than the list "
+            "(the list is then a sample). never_close_class: its technique is in a class only a person may "
+            "close; rare_technique: its technique is one the host showed least often; nearest_in_time: it "
+            "is one of the closest in time to the alert; rule_level: it has one of the highest rule levels "
+            "among the rest. Absent: every event of the window is listed."
+        ),
+    )
 
 
 class HostActivityValue(_Strict):
@@ -221,7 +234,20 @@ class HostActivityValue(_Strict):
     )
     techniques: List[Technique] = Field(default_factory=list, max_length=MAX_LIST_ITEMS)
     events: List[HostEvent] = Field(
-        default_factory=list, max_length=MAX_LIST_ITEMS, description="Up to 50 events, highest level first."
+        default_factory=list,
+        max_length=MAX_LIST_ITEMS,
+        description=(
+            "Up to 50 events, highest level first. 1.2: when the window held more, a sample; each event says "
+            "what it is listed for, and the events are in that order."
+        ),
+    )
+    never_close_class_truncated: Optional[StrictBool] = Field(
+        default=None,
+        description=(
+            "1.2: set when the events are a sample. False: every event of a never-close class is listed. "
+            "True: that is not known; the window held more of them than the list keeps (the newest are "
+            "listed), or more techniques than the fact lists."
+        ),
     )
 
 

@@ -14,7 +14,7 @@ JSON Schema 2020-12 with a SemVer version:
 | | |
 |---|---|
 | Schema | [`schemas/evidence-fact/v1.json`](../schemas/evidence-fact/v1.json) |
-| `$id` | `urn:lg-sotf:schema:evidence-fact:1.1.0` |
+| `$id` | `urn:lg-sotf:schema:evidence-fact:1.2.0` |
 | Examples | [`schemas/evidence-fact/examples/`](../schemas/evidence-fact/examples/), one or more per kind |
 | Python model | `lg_sotf.models.evidence_fact` (`parse_fact`, `EvidenceFact`) |
 
@@ -62,7 +62,7 @@ schema does not allow a `tenant_id` field.
 | `process_lineage` | `process` | `chain`: the ancestry, oldest first and the subject process last; each node has `name` and optionally `pid`, `command_line`, `sha256`, `user`, `started_at`. Since 1.1 a node may also carry `command_template` (the command line with its variable parts replaced), `image_name` (the executable's file name) and `process_guid`, and the value may carry `children`: up to 50 processes the subject process started, as nodes. `children` absent means the source did not look; an empty list means it found none |
 | `sign_in_history` | `user` | `window_start`, `window_end`, `total`, `failed`, and up to 50 `sign_ins` (newest first): `at`, `result` (`success`, `failure`, `interrupted`), `ip`, `country` (ISO 3166-1 alpha-2), `app`, `risk` (`none`, `low`, `medium`, `high`) |
 | `related_alert` | `host`, `user`, `ip`… | Another alert on the same subject: `alert_id`, `title`, `severity`, `created_at`, `disposition` |
-| `host_activity` (1.1) | `host` | What the host's detections show around an alert: `window_start`, `window_end`, `total` (events in the window), `max_level` (the highest rule level, 0–16), `by_group` (up to 50 `{group, count}`), `techniques` (up to 50 MITRE ATT&CK ids), and up to 50 `events` (highest level first): `at`, `rule_id`, `level`, `groups`, `event_id`, `user`, `image_name`, `command_template` |
+| `host_activity` (1.1) | `host` | What the host's detections show around an alert: `window_start`, `window_end`, `total` (events in the window), `max_level` (the highest rule level, 0–16), `by_group` (up to 50 `{group, count}`), `techniques` (up to 50 MITRE ATT&CK ids), and up to 50 `events` (highest level first): `at`, `rule_id`, `level`, `groups`, `event_id`, `user`, `image_name`, `command_template`. Since 1.2, when the window held more than 50 events the list is a sample: each event says what it is `listed_for` (`never_close_class`, `rare_technique`, `nearest_in_time`, `rule_level`), the events are in that order, and `never_close_class_truncated` says whether events of a never-close class were left out; see [A busy host](#a-busy-host) |
 | `logon_fanout` (1.1) | `ip`, `host`, `user` | Logons around one pivot: `pivot` (`source_ip`, `source_host`, `target_user`, `target_host`: what the subject is), `family` (`windows`, `sshd`), `window_start`, `window_end`, the counts `failures`, `successes`, `lockouts`, `unknown_user_failures`, `distinct_target_users`, `distinct_sources`, `distinct_target_hosts`, `first_success_after_failure_s`, and up to 50 each of `success_users`, `failed_users`, `sources` (addresses), `source_hosts` and `logon_types`. `source_hosts` are names the client supplied: a lead, never proof |
 | `prevalence` (1.1) | `file`, `process`, `service`, `command_template` | How widely the subject is seen: `scope` (`tenant_fleet`: the tenant's hosts in its telemetry; `tenant_alerts`: the tenant's alerts), `window_start` and `window_end` (the window the source actually covered), `first_seen_at`, `last_seen_at`, `host_count`, `event_count`, `fleet_size` |
 
@@ -101,7 +101,7 @@ them for a tenant that switched them on.
 
 | Tool | Parameters | Fact |
 |---|---|---|
-| `wazuh.host_activity` | `host`, `at`, `before_min` and `after_min` (0 to 60 each), optional `exclude_rule_id` | `host_activity`: the host's alerts in the window, counted by rule group and technique, and the 50 with the highest rule level. With `exclude_rule_id`, the host's events of that rule at exactly `at` (the investigated alert's own event and its exact duplicates) are left out of every number and of the list |
+| `wazuh.host_activity` | `host`, `at`, `before_min` and `after_min` (0 to 60 each), optional `exclude_rule_id` | `host_activity`: the host's alerts in the window, counted by rule group and technique, and up to 50 of them listed: all of them, highest rule level first, or a sample chosen in parts when there are more ([A busy host](#a-busy-host)). With `exclude_rule_id`, the host's events of that rule at exactly `at` (the investigated alert's own event and its exact duplicates) are left out of every number and of the list |
 | `wazuh.logon_fanout` | `pivot` (`source_ip`, `source_host`, `target_user`, `target_host`), `value`, `at`, `before_min` (1 to 1440), `after_min` (0 to 60), `family` (`windows`, `sshd`) | `logon_fanout`: failures, successes, lockouts, distinct users, sources and hosts, who failed and who got in, and the seconds from the first failure to the first success after it. Always every outcome and every logon type of the pivot: a caller cannot narrow it |
 | `wazuh.process_lineage` | `host`, `process_guid` or `image`, `at`, `after_min` (0 to 30), `depth` (parents, 0 to 8), `child_depth` (1 to 4, default 2) | `process_lineage`: the process's parents, and what it started, down to what its children started. One fact per process that matches (at most 3) |
 | `wazuh.prevalence` | `kind` (`sha256`, `process_image`, `service_image_path`, `service_name`), `value`, `days` (1 to 30), optional `at` | `prevalence`: on how many of the tenant's agents the value was seen, how often, first and last. The window ends at `at` (the alert's time: what was seen up to the alert); without it, where the index is settled |
@@ -200,12 +200,51 @@ Limits measured on a Wazuh 4.14 indexer:
   (`unknown_user_failures`) but not listed.
 - **A busy host** with more than 50 alerts in the window always gives an
   incomplete `host_activity` fact: its counts are exact, its event list is
-  the 50 highest. Whoever can raise louder alerts on the host can push a
-  quieter one out of that list (the counts, techniques and highest level
-  still include it); choosing the list better is #452.
+  a sample (next section).
 - **Shared clusters.** A tenant is separated by its source's index pattern
   and indexer user. No setting scopes a tenant by agent group or label yet
   (INT3.2).
+
+### A busy host
+
+A fact lists at most 50 events. Whoever can raise alerts on a host chooses
+how many there are, how loud they are and when they happen, so 50 events
+kept by rule level alone are a list an attacker can fill. When the window
+holds more events than the fact lists, the 50 are chosen in four parts, each
+from its own search, so that nothing in one part takes a place in another:
+
+| `listed_for` | Events kept | Share |
+|---|---|---|
+| `never_close_class` | The newest events whose ATT&CK technique is in a class only a person may close (`NEVER_CLOSE_TECHNIQUES` in `lg_sotf.domain.closure`, sub-techniques included) | up to 20 |
+| `rare_technique` | The events of the techniques the host showed least often: as many whole techniques as fit, the least seen first. A never-close technique counts here too once there are more than 20 never-close events, so one seen once is not lost under newer ones of another technique | up to 10 |
+| `nearest_in_time` | The events closest in time to the alert, before and after | up to 10 |
+| `rule_level` | The highest rule levels among the rest, as before | what is left |
+
+An event two parts would keep is listed once, for the first of them. The
+events are listed in the order of the table. The choice depends only on
+what the index holds: the same events give the same list.
+
+What this guarantees: while the window holds at most 20 events of a
+never-close class, every one of them is listed, whatever else happens on the
+host, and `never_close_class_truncated` is `false`. With more than 20, the
+newest 20 are listed and `never_close_class_truncated` is `true`. It is
+also `true` when the host showed more than 50 techniques (which of them are
+never-close is then not known), and when that part's search came back full,
+which more than 30 exact duplicates of the investigated alert (its rule, at
+its millisecond) can cause: they are the alert itself and are never listed.
+
+What it does not: a class given only by the tactic or by the vendor's rule
+group (a Wazuh authentication failure with no technique) is not in that
+part; the rare part can be filled by ten other techniques seen once; and
+the fact stays incomplete, so no claim of absence can rest on it. The
+counts, the techniques and the highest level are computed over every event
+of the window, listed or not, and the skill's indicators read those.
+
+The prompt shows the events of a sample grouped by part
+(`{"never_close_class": [...], "rare_technique": [...]}`). A prompt that
+cannot hold a list cuts every member of it alike; grouped, a part the noise
+fills is cut and a small part is shown whole. The ledger and the API keep
+the list as the tool wrote it.
 
 ## Versioning
 
@@ -227,6 +266,7 @@ does not know rather than reject the fact.
 
 | Version | Change |
 |---|---|
+| 1.2.0 | A `host_activity` fact says how the events of a busy host were chosen: `listed_for` on each event and `never_close_class_truncated` on the value (#452). Every 1.1.0 fact is still valid. |
 | 1.1.0 | New kinds `host_activity`, `logon_fanout` and `prevalence`. `complete` on every fact. `children` on a process lineage, and `command_template`, `image_name` and `process_guid` on its nodes. Subject types `service` and `command_template`. Every 1.0.0 fact is still valid. |
 | 1.0.0 | First version: `reputation`, `process_lineage`, `sign_in_history`, `related_alert`. |
 
