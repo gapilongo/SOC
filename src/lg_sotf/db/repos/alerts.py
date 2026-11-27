@@ -25,7 +25,7 @@ from lg_sotf.db.repos._base import (
     to_models,
     utcnow,
 )
-from lg_sotf.models.vocabulary import ALERT_STATUSES, DISPOSITIONS, HIGH_SEVERITIES, SEVERITIES
+from lg_sotf.models.vocabulary import ALERT_STATUSES, DISPOSITIONS, HIGH_SEVERITIES, POLICY_APPROVER, SEVERITIES
 from lg_sotf.security.shadow import egress, sink
 
 if TYPE_CHECKING:
@@ -94,12 +94,21 @@ _RELATED_FACTS = """
     a.summary->'analysis'->>'verdict' AS verdict,
     a.summary ? 'response' AS planned
 """
-_CONFIRMED = """
+# A response to the alert that a person approved under their own authority, or that really ran (AI-E3.15, #456):
+# what confirms a threat backward (lg_sotf.core.retro_reopen). Never a rollback, an approval the autonomy policy
+# gave alone, or a dry run nobody approved.
+_RESPONDED = f"""
+    EXISTS (SELECT 1 FROM response_actions r
+            WHERE r.tenant_id = a.tenant_id AND r.alert_id = a.id AND r.rollback_of IS NULL
+              AND (r.status = 'succeeded' OR (r.approved_by IS NOT NULL AND r.approved_by <> '{POLICY_APPROVER}')))
+"""  # noqa: S608 (constants only)
+_CONFIRMED = f"""
     (EXISTS (SELECT 1 FROM escalations e
              WHERE e.tenant_id = a.tenant_id AND e.alert_id = a.id AND e.decision = 'true_positive')
      OR EXISTS (SELECT 1 FROM blind_audit_items b
-                WHERE b.tenant_id = a.tenant_id AND b.alert_id = a.id AND b.label = 'malicious'))
-"""
+                WHERE b.tenant_id = a.tenant_id AND b.alert_id = a.id AND b.label = 'malicious')
+     OR {_RESPONDED})
+"""  # noqa: S608 (constants only)
 # Open alerts that are a threat as stored, or serious work in progress. $1 tenant, $2 the alert being decided,
 # $3 the open statuses (never ``failed``), $4 ingested since, $5 the fast-tier threat assessments, $6 the high
 # severities, $7 limit. Served by ix_alerts_status.
@@ -115,13 +124,14 @@ WHERE a.tenant_id = $1 AND a.id <> $2 AND a.status = ANY($3::text[]) AND a.inges
 ORDER BY a.ingested_at DESC, a.id
 LIMIT $7
 """  # noqa: S608 (constants only)
-# Closed alerts a person confirmed: an analyst's true positive closed since $3 (served by ix_alerts_closed_at), or a
-# blind-audit malicious label since $4 whose escalation is still open (the alert stays closed until it is decided).
+# Closed alerts a person confirmed: closed malicious since $3 (served by ix_alerts_closed_at) on an analyst's true
+# positive or after a response a person approved or that really ran, or a blind-audit malicious label since $4
+# whose escalation is still open (the alert stays closed until it is decided).
 _CONFIRMED_CLOSED_SQL = f"""
 (SELECT {_RELATED_FACTS}, true AS confirmed
  FROM alerts a
  WHERE a.tenant_id = $1 AND a.id <> $2 AND a.status = 'closed' AND a.closed_at >= $3
-   AND a.disposition = 'malicious' AND a.summary->>'analyst_decision' = 'true_positive'
+   AND a.disposition = 'malicious' AND (a.summary->>'analyst_decision' = 'true_positive' OR {_RESPONDED})
  ORDER BY a.closed_at DESC, a.id LIMIT $5)
 UNION ALL
 (SELECT {_RELATED_FACTS}, true AS confirmed
@@ -656,8 +666,13 @@ class AlertsRepo(Repository):
         * not closed and not failed, ingested since ``open_since``, and a threat as stored (waiting for a response
           approval, a response plan, a model's verdict ``malicious`` or a fast-tier assessment in
           ``threat_assessments``, a person's confirmation) or high or critical and in ``processing``;
-        * closed, and confirmed by a person: an analyst's true positive closed since ``closed_since``, or a
-          blind-audit malicious label since ``open_since`` whose escalation is still open.
+        * closed, and confirmed by a person: closed malicious since ``closed_since`` on an analyst's true positive
+          or after a response a person approved or that really ran, or a blind-audit malicious label since
+          ``open_since`` whose escalation is still open.
+
+        ``confirmed`` is true for an analyst's true positive, a blind-audit malicious label, and a response to
+        the alert that a person approved or that really ran (``succeeded``; never a rollback, a dry run or an
+        approval the autonomy policy gave alone).
 
         At most ``limit`` of each: a caller that gets ``limit`` open ones or more has not seen them all."""
         require_aware(open_since, "open_since")

@@ -98,7 +98,10 @@ related one its role (:func:`lg_sotf.domain.related.classify`):
 
 * **hold**: a hold-grade alert that is open (up to seven days from its
   ingestion), or one a person confirmed and that closed in the last 24
-  hours. The model-led close is withheld and the alert goes to an analyst
+  hours. Confirmed by a person means here what it means backward: an
+  analyst's true positive, a blind-audit malicious label, a response a
+  person approved, or a response that really ran (AI-E3.15, #456). The
+  model-led close is withheld and the alert goes to an analyst
   through the ordinary escalation path (:mod:`lg_sotf.domain.closure`).
 * **in progress**: a high or critical alert on the same host that is being
   processed and changed in the last 15 minutes. Also withheld.

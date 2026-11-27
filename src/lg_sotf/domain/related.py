@@ -21,7 +21,8 @@ a stronger signal acts. The stronger signal is one of:
   tier's ``malicious``, the fast tier's ``likely_threat`` or
   ``confirmed_threat``; never ``suspicious``);
 * a person confirmed it: an analyst's ``true_positive``, a blind-audit
-  ``malicious`` label.
+  ``malicious`` label, a response to it that a person approved, or one that
+  really ran (``succeeded``; AI-E3.15, #456: these confirmed backward only).
 
 A response that waits for an approval is not one of them: a response a model
 proposed and nobody has approved is still only the model's word (on dev,
@@ -139,7 +140,8 @@ class RelatedFacts:
     verdict: Optional[str]
     #: A response was planned for it.
     planned: bool
-    #: A person confirmed it: an analyst's true positive, or a blind-audit malicious label.
+    #: A person confirmed it: an analyst's true positive, a blind-audit malicious label, or a response to it that a
+    #: person approved or that really ran.
     confirmed: bool
     ingested_at: datetime
     #: When the row last changed (the last progress of a run in ``processing``).
