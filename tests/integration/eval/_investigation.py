@@ -27,14 +27,15 @@ PER_FAMILY_AND_LABEL = 3
 
 
 def selection(dataset: Dataset) -> Dataset:
-    """The first few items of every family and label (the whole corpus when a report is asked for)."""
+    """The first few items of every family and label, and the Kerberoasting ticket requests (the whole corpus
+    when a report is asked for)."""
     if REPORT:
         return dataset
     seen: Counter[Any] = Counter()
     chosen = []
     for item in dataset.items:
         key = (item.family, item.expected.disposition)
-        if seen[key] < PER_FAMILY_AND_LABEL:
+        if seen[key] < PER_FAMILY_AND_LABEL or item.id in KERBEROAST_TICKETS:
             seen[key] += 1
             chosen.append(item)
     return dataclasses.replace(dataset, items=chosen)
@@ -87,6 +88,9 @@ def measurement(analyses: Mapping[str, Mapping[str, Any]]) -> Dict[str, Any]:
 EVIDENCE_CODES = ("evidence_steering", "evidence_indicator", "evidence_citation")
 ITEM_0351 = "cv1-0351"
 """The T1110 attack the stand-in closed once it was shown its host's facts (review of PR 443, the major finding)."""
+KERBEROAST_TICKETS = ("cv1-0061", "cv1-0062", "cv1-0063", "cv1-0294", "cv1-0295", "cv1-0296")
+"""The corpus's six Kerberos service ticket requests (Windows event 4769, RC4): rule 60106 "Windows Logon Success",
+level 3, T1078. A never-close class since AI-E3.15 (#456); every run of the selection includes them."""
 
 
 def held_by_evidence(run: EvalRun, analyses: Mapping[str, Mapping[str, Any]]) -> Dict[str, Any]:

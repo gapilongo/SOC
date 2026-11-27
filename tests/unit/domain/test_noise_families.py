@@ -10,6 +10,7 @@ from __future__ import annotations
 import copy
 import json
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import pytest
@@ -28,6 +29,7 @@ from lg_sotf.domain.noise_families import (
     noise_family,
 )
 from lg_sotf.domain.routing import RoutingThresholds
+from lg_sotf.eval.dataset import load_dataset
 from lg_sotf.ingestion.normalizers import get_normalizer
 from lg_sotf.ingestion.normalizers.base import NormalizeContext
 
@@ -364,3 +366,121 @@ def test_final_a_cut_groups_list_never_closes() -> None:
     assert never_close_class(early) == "credential_access"
     few = state_alert({**wazuh_event("2902", DPKG), "data": padding})
     assert "groups_truncated" not in few["raw"]["rule"] and model_close_class(few) is None
+
+
+# --------------------------------------------------------------------------- AI-E3.15 (#456): Kerberos service tickets
+
+CORPUS = Path(__file__).resolve().parents[2] / "fixtures" / "eval" / "corpus_v1.jsonl.gz"
+KERBEROAST_TICKETS = ["cv1-0061", "cv1-0062", "cv1-0063", "cv1-0294", "cv1-0295", "cv1-0296"]
+LOGON = {"id": ["T1078"], "tactic": ["Defense Evasion", "Persistence", "Privilege Escalation", "Initial Access"]}
+ABSENT: Any = object()
+
+
+def ticket_event(encryption: Any = "0x17", service: Any = "svc_sql", *, event_id: Any = "4769",
+                 padding: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """A Kerberos service ticket request as Wazuh 4.14 reports it: rule 60106 "Windows Logon Success", level 3,
+    T1078, with the Windows event under ``data.win`` (the shape of the six corpus_v1 alerts)."""
+    eventdata = {"targetUserName": "dwilson@CORP.EXAMPLE.COM", "serviceName": service, "ticketOptions": "0x40810000",
+                 "ticketEncryptionType": encryption, "ipAddress": "::ffff:10.20.1.91", "status": "0x0"}
+    event = wazuh_event("60106", "Windows Logon Success", level=3, mitre=LOGON,
+                        groups=WIN + ["authentication_success"], full_log="")
+    event["data"] = {"win": {"system": {"providerName": "Microsoft-Windows-Security-Auditing", "eventID": event_id,
+                                        "channel": "Security", "computer": "DC-02.corp.example.com"},
+                             "eventdata": {k: v for k, v in eventdata.items() if v is not ABSENT}},
+                     **(padding or {})}
+    return event
+
+
+@pytest.mark.parametrize("encryption", ["0x17", "0X17", " 0x17 ", "0x00000017", "0x18", "0x1", "0x3", "0x00000003"])
+@pytest.mark.parametrize("service", ["svc_sql", "svc_sharepoint", "krbtgt_backup", "web$ervice"])
+def test_an_rc4_or_des_service_ticket_never_closes_on_a_benign_verdict(encryption: str, service: str) -> None:
+    """The request Kerberoasting makes reads as a normal sign-in (rule 60106, level 3, T1078) and the deep model
+    calls it benign: it is credential access whatever the rule's mapping, and waits for a person at every tier."""
+    state = wazuh_state(ticket_event(encryption, service))
+    assert state["severity"] == "low" and state["analysis"]["verdict"] == "benign"
+    assert never_close_class(state["alert"]) == model_close_class(state["alert"]) == "credential_access"
+    assert model_close_blockers(state, tier=AUTO) == ["never_close_class"]
+    for tier in ("off", AUTO):
+        assert routing.decide(state, T, tier).route == "escalate"
+    # The check only ever blocks, so it counts whatever format built the alert.
+    assert never_close_class({**state["alert"], "normalizer": "canonical"}) == "credential_access"
+
+
+@pytest.mark.parametrize(
+    ("encryption", "service", "event_id"),
+    [
+        ("0x12", "svc_sql", "4769"),  # AES256
+        ("0x11", "svc_sql", "4769"),  # AES128
+        ("0x00000012", "svc_sql", 4769),
+        ("0x17", "SRV-APP-02$", "4769"),  # a machine account: its password is random, the ticket is not crackable
+        ("0x17", "krbtgt", "4769"),
+        ("0x17", " KRBTGT ", "4769"),
+        ("0x17", "svc_sql", "4768"),  # a ticket-granting ticket request, another event
+        ("0x17", "svc_sql", "4624"),
+    ],
+)
+def test_an_aes_ticket_a_machine_account_and_krbtgt_are_unchanged(encryption: str, service: str, event_id: Any) -> None:
+    state = wazuh_state(ticket_event(encryption, service, event_id=event_id))
+    assert never_close_class(state["alert"]) is None  # the rule's own mapping (T1078) decides, as before
+    decision = routing.decide(state, T, AUTO)
+    assert (decision.route, decision.code) == ("close", MODEL_CLOSED)
+
+
+@pytest.mark.parametrize(
+    ("encryption", "service"),
+    [
+        (ABSENT, "svc_sql"), (None, "svc_sql"), ("", "svc_sql"), (23, "svc_sql"), ("17", "svc_sql"), ("RC4", "svc_sql"),
+        ("0x", "svc_sql"), ("0x100000017", "svc_sql"), (["0x12"], "svc_sql"), ("0x12...", "svc_sql"),
+        # A service name that cannot be read is no machine account.
+        ("0x17", ABSENT), ("0x17", None), ("0x17", ["DC-01$"]), ("0x17", ""), (ABSENT, ABSENT),
+    ],
+)
+def test_a_service_ticket_whose_fields_cannot_be_read_fails_closed(encryption: Any, service: Any) -> None:
+    state = wazuh_state(ticket_event(encryption, service))
+    assert never_close_class(state["alert"]) == "credential_access"
+    assert routing.decide(state, T, AUTO).route == "escalate"
+
+
+def test_a_truncated_or_inflated_service_ticket_event_fails_closed() -> None:
+    """The state size cap keeps the three fields the check reads (the event id, the encryption type, the service
+    name), so an inflated event hides nothing; what it cuts or cannot keep counts against the close."""
+    padding = {f"field{i}": "x" * 1_500 for i in range(30)}
+    oversized = state_alert(ticket_event(padding=padding))
+    assert oversized["raw"]["_omitted"] and set(oversized["raw"]) == {"_omitted", "rule", "data"}
+    assert oversized["raw"]["data"] == {"win": {"system": {"eventID": "4769"},
+                                                "eventdata": {"ticketEncryptionType": "0x17", "serviceName": "svc_sql"}}}
+    assert never_close_class(oversized) == "credential_access"
+    assert never_close_class(state_alert(ticket_event("0x12", padding=padding))) is None  # AES: read, and unchanged
+    # A raw event kept whole whose mappings have more keys than the cap keeps: the fields are not lost with the rest.
+    crowded = ticket_event()
+    crowded["data"]["win"]["eventdata"] = {**{f"k{i}": "v" for i in range(150)}, **crowded["data"]["win"]["eventdata"]}
+    crowded["data"]["win"]["system"] = {**{f"k{i}": "v" for i in range(150)}, **crowded["data"]["win"]["system"]}
+    cut = state_alert(crowded)
+    assert cut["raw"]["data"]["win"]["system"] == {"eventID": "4769"} and never_close_class(cut) == "credential_access"
+    # A machine-account name too long to keep whole is not read as one; an event without its Windows fields at all
+    # is not a service ticket; a Wazuh-built alert whose raw event is gone never closes (vendor_unknown).
+    long_name = state_alert(ticket_event(service="x" * 300 + "$", padding=padding))
+    assert never_close_class(long_name) == "credential_access"
+    assert never_close_class(state_alert(wazuh_event("60106", "Windows Logon Success", mitre=LOGON, groups=WIN))) is None
+    gone = {k: v for k, v in state_alert(ticket_event()).items() if k != "raw"}
+    assert model_close_class(gone) == VENDOR_UNKNOWN
+    # Without a vendor rule to keep (another format's event), the Windows fields are kept all the same.
+    ruleless = cap_alert({"title": "t", "raw": {"data": {"win": {"system": {"eventID": "4769"}}}, **padding}})
+    assert ruleless["raw"] == {"_omitted": "raw event too large for workflow state",
+                               "data": {"win": {"system": {"eventID": "4769"}}}}
+    assert never_close_class({**ruleless, "mitre": {"techniques": ["T1078"]}}) == "credential_access"
+
+
+def test_the_ticket_check_changes_six_corpus_attacks_and_no_benign_corpus_alert() -> None:
+    """corpus_v1 holds six event-4769 alerts, all RC4 and all Kerberoasting: the check puts exactly those in a
+    never-close class. No other alert of the 520 changes class, so no benign one can end differently for it."""
+    items = load_dataset(CORPUS).items
+    changed = []
+    for item in items:
+        alert = state_alert(dict(item.alert))
+        without = {**alert, "raw": {k: v for k, v in alert["raw"].items() if k != "data"}}
+        if never_close_class(alert) != never_close_class(without):
+            changed.append((item.id, item.expected.disposition, never_close_class(without), never_close_class(alert)))
+    assert changed == [(item_id, "malicious", None, "credential_access") for item_id in KERBEROAST_TICKETS]
+    service_tickets = [i.id for i in items if i.alert.get("data", {}).get("win", {}).get("system", {}).get("eventID") == "4769"]
+    assert len(items) == 520 and service_tickets == KERBEROAST_TICKETS

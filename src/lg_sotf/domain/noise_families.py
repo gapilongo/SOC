@@ -45,9 +45,13 @@ Wazuh maps many authentication-failure rules outside credential access
 IP to T1078, "possible replay attack" to T1550), so the rule's own groups
 (``authentication_failed``, ``authentication_failures``, ``invalid_login``,
 ``login_denied``) and a short list of rule ids without those groups make
-it credential access. These checks only ever block a close, so they read
-the raw event whatever format built the alert; a Wazuh-built alert whose
-rule cannot be read at all is ``vendor_unknown`` and never closes.
+it credential access. So does a Kerberos service ticket request (Windows
+event 4769, which Wazuh reports as rule 60106 "Windows Logon Success",
+T1078) for an RC4 or DES ticket: the request Kerberoasting makes, and one a
+model reads as a normal sign-in (AI-E3.15, #456). These checks only ever
+block a close, so they read the raw event whatever format built the alert; a
+Wazuh-built alert whose rule cannot be read at all is ``vendor_unknown`` and
+never closes.
 
 Changing the catalogue is a reviewed change to the decision policy: bump
 :data:`CATALOGUE_VERSION`, justify the entry from the vendor ruleset's
@@ -65,7 +69,9 @@ __all__ = [
     "AUTH_FAILURE_GROUPS",
     "CATALOGUE",
     "NEVER_CLOSE_RULE_IDS",
+    "SERVICE_TICKET_EVENT",
     "VENDOR_UNKNOWN",
+    "WEAK_TICKET_ENCRYPTION",
     "CATALOGUE_VERSION",
     "WAZUH",
     "DetectionRule",
@@ -189,6 +195,39 @@ NEVER_CLOSE_RULE_IDS: Mapping[str, str] = {
 MAX_RULE_GROUPS = 50
 #: The class of a Wazuh-built alert whose vendor rule cannot be read: its groups are unknown, so it never closes.
 VENDOR_UNKNOWN = "vendor_unknown"
+#: Windows event 4769, "a Kerberos service ticket was requested" (``raw.data.win.system.eventID``).
+SERVICE_TICKET_EVENT = "4769"
+#: The ticket encryption types of a Kerberoasting request (``raw.data.win.eventdata.ticketEncryptionType``):
+#: DES-CBC-CRC, DES-CBC-MD5, RC4-HMAC and RC4-HMAC-EXP. AES (``0x11``, ``0x12``) is not among them.
+WEAK_TICKET_ENCRYPTION: FrozenSet[int] = frozenset({0x1, 0x3, 0x17, 0x18})
+_HEX = re.compile(r"^0x[0-9a-f]{1,8}$")
+
+
+def _win(alert: Mapping[str, Any], part: str) -> Mapping[str, Any]:
+    """``raw.data.win.<part>`` of the alert's Windows event, or an empty mapping."""
+    found: Any = alert.get("raw")
+    for key in ("data", "win", part):
+        found = found.get(key) if isinstance(found, Mapping) else None
+    return found if isinstance(found, Mapping) else {}
+
+
+def _weak_service_ticket(alert: Mapping[str, Any]) -> bool:
+    """Whether the raw event is a Kerberos service ticket request (:data:`SERVICE_TICKET_EVENT`) with an RC4 or
+    DES ticket (:data:`WEAK_TICKET_ENCRYPTION`; ``0x17`` and ``0x00000017`` are one value, in either case) for a
+    service that is neither a machine account (a name ending in ``$``) nor ``krbtgt``.
+
+    Fail closed: an encryption type that cannot be read counts as weak, and a service name that cannot be read
+    is no machine account.
+    """
+    if str(_win(alert, "system").get("eventID")).strip() != SERVICE_TICKET_EVENT:
+        return False
+    eventdata = _win(alert, "eventdata")
+    encryption, service = eventdata.get("ticketEncryptionType"), eventdata.get("serviceName")
+    value = encryption.strip().lower() if isinstance(encryption, str) else ""
+    if _HEX.match(value) and int(value, 16) not in WEAK_TICKET_ENCRYPTION:
+        return False
+    name = service.strip().lower() if isinstance(service, str) else ""
+    return not (name.endswith("$") or name == "krbtgt")
 
 
 def _raw_rule(alert: Mapping[str, Any]) -> Optional[Mapping[str, Any]]:
@@ -235,16 +274,20 @@ def vendor_never_close_class(alert: Any) -> Optional[str]:
     """The never-close class the vendor's own rule puts the alert in, whatever its ATT&CK mapping, or ``None``.
 
     ``credential_access`` for a Wazuh rule in an authentication-failure group
-    (:data:`AUTH_FAILURE_GROUPS`) or in :data:`NEVER_CLOSE_RULE_IDS`. These
-    checks only block, so they read the raw event whatever format built the
-    alert. The state size cap always keeps ``raw.rule``
-    (:func:`lg_sotf.core.graph.cap_alert`); a Wazuh-built alert whose rule
-    still cannot be read, or whose groups list the cap cut (``groups_truncated``)
-    without an authentication-failure group in what it kept, is
-    :data:`VENDOR_UNKNOWN`, a never-close class.
+    (:data:`AUTH_FAILURE_GROUPS`) or in :data:`NEVER_CLOSE_RULE_IDS`, and for
+    a Kerberos service ticket request with an RC4 or DES ticket
+    (:func:`_weak_service_ticket`). These checks only block, so they read the
+    raw event whatever format built the alert. The state size cap always
+    keeps ``raw.rule`` and the three Windows event fields the ticket check
+    reads (:func:`lg_sotf.core.graph.cap_alert`); a Wazuh-built alert whose
+    rule still cannot be read, or whose groups list the cap cut
+    (``groups_truncated``) without an authentication-failure group in what it
+    kept, is :data:`VENDOR_UNKNOWN`, a never-close class.
     """
     if not isinstance(alert, Mapping):
         return None
+    if _weak_service_ticket(alert):
+        return "credential_access"
     rule = _raw_rule(alert)
     if rule is None:
         # A Wazuh alert whose rule cannot be read (the raw event is gone): its groups are unknown, so it may be an
