@@ -145,6 +145,12 @@ async def test_a_technique_seen_once_is_listed_under_sixty_louder_failed_logons(
     ones = [event(300 + n, 3_200 + n, technique=f"T10{20 + n}", rule=f"93{n:03d}") for n in range(RARE_SHARE + 2)]
     rare = listed(await host([*ones, *logons]), "rare_technique")
     assert sorted(e.rule_id for e in rare) == [f"93{n:03d}" for n in range(RARE_SHARE)], "ten whole techniques, by id on a tie"
+    # The limit of this part, pinned (it is best effort, not the guarantee): ten other techniques seen once, with
+    # ids that sort before T1140, fill it. Each is a detection of its own and is listed; the certutil event is not.
+    crowd = [event(500 + n, 3_300 + n, technique=f"T10{10 + n}", rule=f"94{n:03d}") for n in range(RARE_SHARE)]
+    crowded = await host([certutil, *crowd, *logons])
+    assert sorted(e.rule_id for e in listed(crowded, "rare_technique")) == [f"94{n:03d}" for n in range(RARE_SHARE)]
+    assert "92018" not in [e.rule_id for e in crowded.value.events] and "T1140" in crowded.value.techniques  # type: ignore[union-attr]
 
 
 async def test_the_events_closest_in_time_are_listed_before_and_after_the_alert() -> None:
