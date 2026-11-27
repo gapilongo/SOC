@@ -48,6 +48,8 @@ from lg_sotf.db.repos.alerts import DEFAULT_SEARCH_WINDOW, MAX_SEARCH_WINDOW
 from lg_sotf.domain.blind_audit import shown_while_hidden
 from lg_sotf.domain.events import publish_event
 from lg_sotf.domain.investigation import Investigation
+from lg_sotf.domain.investigation.model import CloserKind
+from lg_sotf.domain.investigation.outcome import close_reasons_of
 from lg_sotf.models.vocabulary import AlertStatus, Disposition, Severity
 from lg_sotf.observability.logging import get_logger, log_failure
 from lg_sotf.services import alerts as alert_changes
@@ -67,6 +69,9 @@ async def list_alerts(
     status: Optional[List[AlertStatus]] = Query(default=None),
     severity: Optional[List[Severity]] = Query(default=None),
     disposition: Optional[List[Disposition]] = Query(default=None),
+    closed_by: Optional[List[CloserKind]] = Query(
+        default=None, description="Who or what closed it (closed alerts only; never one that waits for its blind-audit label)"
+    ),
     source_id: Optional[str] = Query(default=None, max_length=128),
     q: Optional[str] = Query(
         default=None, max_length=200, description="Title search; needs a window of at most 93 days"
@@ -99,6 +104,7 @@ async def list_alerts(
         status=status,
         severity=severity,
         disposition=disposition,
+        close_reasons=close_reasons_of(closed_by) if closed_by else None,
         source_id=source_id,
         q=q,
         since=since,

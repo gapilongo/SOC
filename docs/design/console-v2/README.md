@@ -310,7 +310,7 @@ give, the page says "not measured yet" and shows no number:
 
 | On the page | Shown as | The API field it waits for |
 |---|---|---|
-| Closed without a person, by who or what closed it (five kinds) | Two measured rows (`handled_without_human`, `needed_human`) and one row "not measured yet" | `closed_by` breakdown on `DashboardOut`, for the same window and cohort |
+| Closed without a person, by who or what closed it (five kinds) | **Built (PRD-2.9a, #440):** the closes without a person are split in four rows from `DashboardOut.closed_without_human_by` (a person's closes are the "reached a person" row) | Nothing more |
 | "125 were decided, in a median of 14 minutes" | The mean time to claim over `acknowledged`, withheld under 5 | Decided count and median for alerts that reached a person |
 | "2 of them have a deadline inside 15 minutes" | Unclaimed items past their deadline (`unassigned_breaching`) | A count of unclaimed items due inside 15 minutes |
 | "The oldest has waited 19 minutes" (approvals) | Left out | Age of the oldest pending approval |

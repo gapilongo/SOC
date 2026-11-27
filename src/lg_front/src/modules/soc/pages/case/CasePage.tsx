@@ -229,7 +229,7 @@ function AlertRow({ alert, c, userId, ask }: { alert: CaseAlertOut; c: CaseOut; 
       </td>
       <td className={cx(TD, 'min-[900px]:whitespace-nowrap min-[900px]:text-right')}>
         {alert.can_reopen && ask && (
-          <span className="flex flex-wrap items-center gap-1.5 pt-1 min-[900px]:justify-end min-[900px]:pt-0">
+          <span className="flex flex-wrap items-center gap-1.5 pt-1 min-[900px]:flex-nowrap min-[900px]:justify-end min-[900px]:pt-0">
             <Button size="sm" onClick={() => ask({ alert, verb: 'reopen' })}>
               Reopen<span className="sr-only">: {alert.title}</span>
             </Button>

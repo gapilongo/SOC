@@ -747,9 +747,10 @@ test('main pages render under the CSP (and screenshots for the README)', async (
   const closed = page.getByRole('region', { name: 'Closed without a person' });
   await expect(closed.getByTestId('overview-alerts-received')).not.toHaveText('0');
   // The beacon was decided by a person, so the window has a finished alert and the table is drawn;
-  // the split of the closes by who or what closed them is not in the API and says so.
+  // the closes without a person are split by who or what closed them, as the API counts them.
   await expect(closed.getByRole('row').filter({ hasText: 'Reached a person' })).toBeVisible();
-  await expect(closed.getByText('not measured yet')).toBeVisible();
+  for (const closer of ['ai_evidence', 'ai_audit', 'suppression_rule', 'cached_verdict']) await expect(closed.locator(`tr[data-row="closed-by-${closer}"]`)).toBeVisible();
+  await expect(closed.getByText('not measured yet')).toHaveCount(0);
   const verified = page.getByRole('region', { name: "How the AI's closes are verified" });
   await expect(verified.getByRole('heading', { name: 'Blind audit, last 30 days' })).toBeVisible();
   await expect(verified.getByText('Not measured yet')).toHaveCount(2);

@@ -34,6 +34,9 @@ ENDPOINTS: List[Tuple[str, str, str, Optional[Any]]] = [
     ("GET", f"/api/v1/alerts/{X}/investigation", "viewer", None),
     ("POST", f"/api/v1/alerts/{X}/notes", "analyst", {"text": "note"}),
     ("POST", f"/api/v1/alerts/{X}/reprocess", "admin", None),
+    # Attributed to a person, like a decision: analyst and up with a user account, never an API key (PRD-2.9a).
+    ("POST", f"/api/v1/alerts/{X}/reopen", "reviewer", {"reason": "look again"}),
+    ("POST", f"/api/v1/alerts/{X}/flag", "reviewer", {"reason": "the close was wrong"}),
     ("GET", "/api/v1/escalations", "viewer", None),
     ("GET", "/api/v1/escalations/groups", "viewer", None),
     ("POST", "/api/v1/escalations/bulk/claim", "reviewer", {"items": [{"escalation_id": X, "version": 1}]}),

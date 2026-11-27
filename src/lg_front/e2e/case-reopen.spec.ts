@@ -32,10 +32,15 @@ const run = `ro${Date.now().toString(36)}`;
 const admin: Credentials = { email: requiredEnv('E2E_ADMIN_EMAIL'), password: requiredEnv('E2E_ADMIN_PASSWORD') };
 const analyst: Credentials = { email: `analyst-${run}@e2e.example.com`, password: randomPassword() };
 const HOST = `ws-${run}`;
-// Both tiers of the demo model call this benign, and the rule's name holds no benign word: only the models close it.
-const ROUTINE_TITLE = `Authorized approved expected patch healthcheck ${run}, allowlisted and sanctioned`;
-// The fast tier calls this a likely threat; at medium severity the policy sends it to an analyst.
-const THREAT_TITLE = `Kerberoasting exploit ${run}`;
+// The demo model reads keywords. It calls this benign ("expected"), and the rule's name holds no benign
+// word, so there is no approved benign evidence: only the models close it.
+const ROUTINE_TITLE = `Windows logon success ${run}`;
+const ROUTINE_TEXT = 'An expected logon.';
+// It calls this malicious, below the response policy's threshold: at medium severity the alert goes to an
+// analyst as a threat only a model stands behind. (Three threat words: the host's history, which the model
+// is shown, carries the routine alert's benign one.)
+const THREAT_TITLE = `Suspicious lateral movement ${run}`;
+const THREAT_TEXT = 'Possible credential dumping with mimikatz on the workstation.';
 const REASON = `This logon is the first step of the attack on ${HOST}.`;
 
 async function bearer(request: APIRequestContext): Promise<Record<string, string>> {
@@ -69,7 +74,7 @@ test('an analyst reopens an alert the AI closed from its case page, with a reaso
           source_alert_id: `${run}-routine`,
           title: ROUTINE_TITLE,
           rule_name: '60106: Windows logon success',
-          description: ROUTINE_TITLE,
+          description: ROUTINE_TEXT,
           severity: 'low',
           occurred_at: new Date().toISOString(),
           entities: { hosts: [HOST] },
@@ -87,9 +92,10 @@ test('an analyst reopens an alert the AI closed from its case page, with a reaso
         {
           source_alert_id: `${run}-threat`,
           title: THREAT_TITLE,
+          description: THREAT_TEXT,
           severity: 'medium',
           occurred_at: new Date().toISOString(),
-          entities: { ips: ['185.220.101.44', '10.0.0.5'], hosts: [HOST], users: [`u-${run}`], processes: ['powershell.exe'] },
+          entities: { hosts: [HOST], users: [`u-${run}`] },
         },
       ]);
       const threatId = item.alert_id as string;

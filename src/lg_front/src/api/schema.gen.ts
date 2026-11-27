@@ -2090,6 +2090,11 @@ export interface components {
             category?: string | null;
             /** Closed At */
             closed_at?: string | null;
+            /**
+             * Closed By
+             * @description Who or what closed it. Null while it is open, or waits for its blind-audit label.
+             */
+            closed_by?: ("analyst" | "ai_evidence" | "ai_audit" | "suppression_rule" | "cached_verdict") | null;
             /** Confidence */
             confidence?: number | null;
             /** Disposition */
@@ -2418,6 +2423,11 @@ export interface components {
             category?: string | null;
             /** Closed At */
             closed_at?: string | null;
+            /**
+             * Closed By
+             * @description Who or what closed it. Null while it is open, or waits for its blind-audit label.
+             */
+            closed_by?: ("analyst" | "ai_evidence" | "ai_audit" | "suppression_rule" | "cached_verdict") | null;
             /** Confidence */
             confidence?: number | null;
             /** Disposition */
@@ -4027,6 +4037,13 @@ export interface components {
             };
             /** By Status */
             by_status: {
+                [key: string]: number;
+            };
+            /**
+             * Closed Without Human By
+             * @description handled_without_human by who or what closed the alert: ai_evidence, ai_audit, suppression_rule, cached_verdict, and other (a close reason this release does not know).
+             */
+            closed_without_human_by?: {
                 [key: string]: number;
             };
             /**
@@ -8056,6 +8073,8 @@ export interface operations {
                 status?: ("new" | "queued" | "processing" | "waiting_human" | "waiting_approval" | "closed" | "failed")[] | null;
                 severity?: ("info" | "low" | "medium" | "high" | "critical")[] | null;
                 disposition?: ("malicious" | "benign" | "inconclusive")[] | null;
+                /** @description Who or what closed it (closed alerts only; never one that waits for its blind-audit label) */
+                closed_by?: ("analyst" | "ai_evidence" | "ai_audit" | "suppression_rule" | "cached_verdict")[] | null;
                 source_id?: string | null;
                 /** @description Title search; needs a window of at most 93 days */
                 q?: string | null;

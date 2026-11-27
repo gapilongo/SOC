@@ -158,6 +158,37 @@ describe('AlertsPage view tabs', () => {
     expect(screen.getByRole('button', { name: /^Severity:/ })).toHaveTextContent('High');
   });
 
+  it('says who or what closed each alert on Closed, and filters by it (PRD-2.9a)', async () => {
+    const closedRows = [
+      alertRow('c-1', { title: 'Unusual sign-in pattern', status: 'closed', closed_by: 'ai_audit' }),
+      alertRow('c-2', { title: 'Defender update', status: 'closed', closed_by: 'suppression_rule' }),
+      alertRow('c-3', { title: 'Decided by a person', status: 'closed', closed_by: 'analyst' }),
+      alertRow('c-4', { title: 'Sampled for the blind audit', status: 'closed', closed_by: null, hidden_for_blind_audit: true }),
+      alertRow('c-5', { title: 'From an older API', status: 'closed' }),
+    ];
+    const { calls } = await renderPage('/alerts?view=closed', { rows: closedRows });
+    const [first, second, third, hidden, older] = await rows();
+    expect(within(grid()).getByRole('columnheader', { name: 'Closed by' })).toBeInTheDocument();
+    expect(within(grid()).queryByRole('columnheader', { name: 'Status' })).toBeNull();
+    expect(first).toHaveTextContent("AI, on the model's word");
+    expect(second).toHaveTextContent('Suppression rule');
+    expect(third).toHaveTextContent('Analyst');
+    expect(hidden).toHaveTextContent('Withheld for the blind audit');
+    expect(older).toHaveTextContent('Closed, by whom is not recorded');
+
+    await userEvent.click(screen.getByRole('button', { name: /^Closed by:/ }));
+    await userEvent.click(await screen.findByRole('option', { name: "AI, on the model's word" }));
+    await waitFor(() => expect(lastListQuery(calls)).toMatchObject({ status: ['closed'], closed_by: ['ai_audit'] }));
+    expect(search().getAll('closed_by')).toEqual(['ai_audit']);
+    // The filter belongs to the views that list closed alerts: another view drops it.
+    await userEvent.keyboard('{Escape}');
+    await userEvent.click(within(screen.getByRole('navigation', { name: 'Alert views' })).getByRole('link', { name: /^Failed/ }));
+    await waitFor(() => expect(lastListQuery(calls)).toMatchObject({ status: ['failed'] }));
+    expect(lastListQuery(calls)?.closed_by).toBeUndefined();
+    expect(screen.queryByRole('button', { name: /^Closed by:/ })).toBeNull();
+    expect(within(grid()).getByRole('columnheader', { name: 'Status' })).toBeInTheDocument();
+  });
+
   it('labels a custom closing window "Closed"', async () => {
     const { calls } = await renderPage('/alerts?view=closed&closed_from=2026-11-01T00:00:00.000Z');
     expect(await screen.findByRole('link', { name: /^Closed \d/ })).toHaveAttribute('aria-current', 'page');

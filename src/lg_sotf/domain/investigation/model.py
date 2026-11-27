@@ -16,7 +16,7 @@ cut to a stated length, and is never formatted into a sentence.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Annotated, Any, Dict, List, Literal, Optional
+from typing import Annotated, Any, Dict, List, Literal, Optional, Tuple, get_args
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, WithJsonSchema
@@ -28,6 +28,10 @@ SCHEMA_VERSION = 1
 
 OutcomeCategory = Literal["ai_closed_evidence", "ai_closed_audit", "needs_decision", "needs_review"]
 ClosedByKind = Literal["ai", "suppression_rule", "cached_verdict", "analyst"]
+#: Who or what closed an alert, for lists and counts: :data:`ClosedByKind` with the AI's closes split by what
+#: backs them (approved evidence, or the model's word).
+CloserKind = Literal["analyst", "ai_evidence", "ai_audit", "suppression_rule", "cached_verdict"]
+CLOSERS: Tuple[CloserKind, ...] = get_args(CloserKind)
 Direction = Literal["malicious", "benign"]
 ClaimCheck = Literal["supported", "unsupported", "rejected"]
 ObservationOutcome = Literal["success", "empty", "failed"]
@@ -406,10 +410,12 @@ class Investigation(_Model):
 
 
 __all__ = [
+    "CLOSERS",
     "SCHEMA_VERSION",
     "ClaimCheck",
     "ClaimFinding",
     "ClosedByKind",
+    "CloserKind",
     "Direction",
     "EvidenceBudget",
     "EvidenceIndicator",

@@ -731,6 +731,25 @@
             ],
             "title": "Closed At"
           },
+          "closed_by": {
+            "anyOf": [
+              {
+                "enum": [
+                  "analyst",
+                  "ai_evidence",
+                  "ai_audit",
+                  "suppression_rule",
+                  "cached_verdict"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Who or what closed it. Null while it is open, or waits for its blind-audit label.",
+            "title": "Closed By"
+          },
           "confidence": {
             "anyOf": [
               {
@@ -1947,6 +1966,25 @@
               }
             ],
             "title": "Closed At"
+          },
+          "closed_by": {
+            "anyOf": [
+              {
+                "enum": [
+                  "analyst",
+                  "ai_evidence",
+                  "ai_audit",
+                  "suppression_rule",
+                  "cached_verdict"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Who or what closed it. Null while it is open, or waits for its blind-audit label.",
+            "title": "Closed By"
           },
           "confidence": {
             "anyOf": [
@@ -6334,6 +6372,14 @@
               "type": "integer"
             },
             "title": "By Status",
+            "type": "object"
+          },
+          "closed_without_human_by": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "description": "handled_without_human by who or what closed the alert: ai_evidence, ai_audit, suppression_rule, cached_verdict, and other (a close reason this release does not know).",
+            "title": "Closed Without Human By",
             "type": "object"
           },
           "generated_at": {
@@ -16600,6 +16646,34 @@
                 }
               ],
               "title": "Disposition"
+            }
+          },
+          {
+            "description": "Who or what closed it (closed alerts only; never one that waits for its blind-audit label)",
+            "in": "query",
+            "name": "closed_by",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "enum": [
+                      "analyst",
+                      "ai_evidence",
+                      "ai_audit",
+                      "suppression_rule",
+                      "cached_verdict"
+                    ],
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Who or what closed it (closed alerts only; never one that waits for its blind-audit label)",
+              "title": "Closed By"
             }
           },
           {

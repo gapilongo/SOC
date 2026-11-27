@@ -303,13 +303,24 @@ Redis fails; a database whose pool is fully busy counts as ready.
 
 ### Alerts
 
-`GET /alerts` filters: `status`, `severity`, `disposition`, `source_id`,
-`from`/`to` (ingestion time), `closed_from`/`closed_to` (closing time; only
-closed alerts match), `q` (title substring). A `q` search is limited
+`GET /alerts` filters: `status`, `severity`, `disposition`, `closed_by`,
+`source_id`, `from`/`to` (ingestion time), `closed_from`/`closed_to`
+(closing time; only closed alerts match), `q` (title substring). A `q` search is limited
 to a window of at most 93 days (default: the 30 days before `to`); a wider
 window is a `400 search_window_too_large`. Notes are stored as `note`
 events on the alert timeline. `reprocess` requeues a finished alert (409
 while its run is active).
+
+Every alert carries `closed_by`: who or what closed it, from its close
+reason. `analyst`, `ai_evidence` (the AI, on approved benign evidence or
+after an automatic response), `ai_audit` (the AI, on the model's word),
+`suppression_rule` or `cached_verdict` (an earlier analyst verdict for the
+same detection). It is null while the alert is open, for a close reason
+this release does not know, and while the alert waits for its blind-audit
+label. The `closed_by` filter takes one or more of the five values and
+matches closed alerts only; like the `disposition` filter it never matches
+an alert that waits for its blind-audit label, which would say who closed
+it.
 
 #### Reopen and flag
 
@@ -330,8 +341,7 @@ The answer is `{alert_id, status, mode, case_id, flagged}`:
   as open (`waiting_human`). No run starts, and the decision on the case
   settles the alert with the others.
 * `mode: "requeued"`: no open case holds the alert (it has none, or its
-  case is decided), so it is queued for a new run (`queued`), which ends
-  with an analyst.
+  case is decided), so it is queued for a new run (`queued`).
 
 Either way the alert keeps the marker `summary.reopened` (`reason`:
 `analyst_reopen` or `analyst_flag`), which is the closing policy's
@@ -642,7 +652,11 @@ status (the tenant's queue depth; completed and dead-lettered runs are not
 counted) and LLM tokens and cost; it is cached for 15 seconds
 per tenant and window. It also carries `handled_without_human`,
 `needed_human`, `handled_without_human_rate` and `analyst_hours_saved`
-(definitions in docs/reporting.md). The escalation queue figures count
+(definitions in docs/reporting.md), and `closed_without_human_by`: the
+alerts of `handled_without_human` by who or what closed them
+(`ai_evidence`, `ai_audit`, `suppression_rule`, `cached_verdict`, and
+`other` for a close reason this release does not know). The five counts
+add up to `handled_without_human`. The escalation queue figures count
 active escalations: `overdue_escalations`, `unassigned_escalations`,
 `unassigned_breaching`, `next_sla_deadline` (the earliest deadline still
 ahead) and `open_escalations_by_severity` (by the alert's severity); the

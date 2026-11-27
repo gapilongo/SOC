@@ -51,6 +51,8 @@ async def test_reads_and_writes_across_tenants_are_not_found(api: ApiHarness) ->
         ("GET", f"/api/v1/alerts/{b['alert']}/investigation", None),
         ("POST", f"/api/v1/alerts/{b['alert']}/notes", {"text": "x"}),
         ("POST", f"/api/v1/alerts/{b['alert']}/reprocess", None),
+        ("POST", f"/api/v1/alerts/{b['alert']}/reopen", {"reason": "x"}),
+        ("POST", f"/api/v1/alerts/{b['alert']}/flag", {"reason": "x"}),
         ("GET", f"/api/v1/escalations/{b['escalation'].id}", None),
         ("POST", f"/api/v1/escalations/{b['escalation'].id}/claim", {"version": b["escalation"].version}),
         (

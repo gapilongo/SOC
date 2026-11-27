@@ -332,6 +332,26 @@ describe('HandledBar', () => {
     expect(screen.getByText('Figures appear as alerts arrive.')).toBeInTheDocument();
   });
 
+  it('splits the closes without a person by who or what closed them, as the API counts them (PRD-2.9a)', () => {
+    const by = { ai_evidence: 400, ai_audit: 600, suppression_rule: 100, cached_verdict: 31, other: 0 };
+    const { unmount } = render(<HandledBar d={summary({ closed_without_human_by: by })} phrase={phrase} isAdmin={false} />);
+    const table = within(screen.getByRole('table', { name: 'Closed without a person' }));
+    const texts = table.getAllByRole('row').slice(2, 6).map((r) => r.textContent);
+    expect(texts[0]).toMatch(/^AI, backed by evidenceAlerts400Share31%Checked byApproved benign evidence/);
+    expect(texts[1]).toMatch(/^AI, on the model's wordAlerts600Share47%Checked byNo independent evidence backs these closes\. The blind audit samples them/);
+    expect(texts[2]).toMatch(/^Suppression ruleAlerts100Share8%/);
+    expect(texts[3]).toMatch(/^Earlier analyst verdictAlerts31Share2%/);
+    expect(table.queryByText('not measured yet')).toBeNull();
+    expect(table.getAllByRole('row')[6]).toHaveTextContent(/^Reached a person/);
+    unmount();
+    // A close reason this release does not know is counted and said; a small sample has no share.
+    const small = summary({ alerts_total: 9, handled_without_human: 3, needed_human: 1, handled_without_human_rate: 0.75, closed_without_human_by: { ...by, ai_audit: 2, ai_evidence: 0, suppression_rule: 0, cached_verdict: 0, other: 1 } });
+    render(<HandledBar d={small} phrase={phrase} isAdmin={false} />);
+    const rows = within(screen.getByRole('table', { name: 'Closed without a person' })).getAllByRole('row');
+    expect(rows[3]).toHaveTextContent(/^AI, on the model's wordAlerts2Sharetoo few for a share/);
+    expect(rows[6]).toHaveTextContent(/^Close reason not recognisedAlerts1/);
+  });
+
   it('gives the count alone on an API without the split', () => {
     const older = summary();
     delete older.handled_without_human;

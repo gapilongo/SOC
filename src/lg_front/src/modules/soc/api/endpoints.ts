@@ -97,6 +97,8 @@ export interface AlertFilters {
   status?: string[];
   severity?: string[];
   disposition?: string[];
+  /** Who or what closed it; only closed alerts match. */
+  closed_by?: string[];
   /** The API filters on one source id (a repeated parameter would keep only the last). */
   source_id?: string;
   q?: string;

@@ -103,6 +103,10 @@ export interface RecoveryCodesOut {
   recovery_codes: string[];
 }
 
+/** Who or what closed an alert: a person, the AI on approved evidence or on the model's word, a rule, an earlier verdict. */
+export const CLOSERS = ['analyst', 'ai_evidence', 'ai_audit', 'suppression_rule', 'cached_verdict'] as const;
+export type Closer = (typeof CLOSERS)[number];
+
 export interface AlertOut {
   id: string;
   tenant_id: string;
@@ -124,6 +128,8 @@ export interface AlertOut {
   closed_at?: string | null;
   summary?: JsonObject;
   case_key?: string | null;
+  /** Who or what closed it; null while it is open or waits for its blind-audit label (newer APIs). */
+  closed_by?: Open<Closer> | null;
   /** Name of the source; null once the source is deleted (newer APIs). */
   source_name?: string | null;
   /** First value of up to three entity kinds and how many each kind has; null without entities (newer APIs). */
@@ -658,6 +664,8 @@ export interface DashboardOut {
   handled_without_human?: number;
   needed_human?: number;
   handled_without_human_rate?: number | null;
+  /** `handled_without_human` by who or what closed the alert: the four closers that are not a person, and `other` (newer APIs). */
+  closed_without_human_by?: Record<string, number>;
   analyst_hours_saved?: number;
   minutes_per_alert?: number;
   /** Unassigned escalations past their SLA (newer APIs; the sidebar hides the count without it). */

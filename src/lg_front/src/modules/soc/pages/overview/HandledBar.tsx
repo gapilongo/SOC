@@ -4,14 +4,16 @@
  * the table the bar is drawn from (the bar never carries a figure alone).
  *
  * States: both kinds; one kind only (a single segment); nothing finished
- * yet; no alert in the window; a sample too small for a share. The split of
- * the closes by who or what closed them (the prototype's five kinds) is not
- * in the API yet and is shown as "not measured yet", never worked out here.
+ * yet; no alert in the window; a sample too small for a share. The closes
+ * without a person are split by who or what closed them, as the API counts
+ * them for the window (`closed_without_human_by`); on an API that does not
+ * send the split it reads "not measured yet", never worked out here.
  */
 
 import type { ReactNode } from 'react';
 
 import type { DashboardOut } from '../../api/types';
+import { CloserMark, type CloserKind } from '../../components/case';
 import { cx } from '../../../../components/ui';
 import { formatInt } from '../../../../lib/format';
 import { formatPct } from '../../lib/reports';
@@ -68,11 +70,38 @@ function Row({ kind, name, count, share, children }: { kind: keyof typeof FILL; 
   );
 }
 
+/** Who or what closed the alerts no person touched, and how each kind of close is checked. */
+const CLOSED_BY: ReadonlyArray<{ key: string; kind: CloserKind; how: string }> = [
+  { key: 'ai_evidence', kind: 'ai_evidence', how: 'Approved benign evidence backed the close, or an automatic response completed first.' },
+  { key: 'ai_audit', kind: 'ai_audit', how: 'No independent evidence backs these closes. The blind audit samples them, and an analyst can reopen or flag one from its case.' },
+  { key: 'suppression_rule', kind: 'suppression_rule', how: 'A suppression rule of this customer matched the alert, so no investigation ran.' },
+  { key: 'cached_verdict', kind: 'cached_verdict', how: 'An analyst had already decided the same detection and behaviour is benign.' },
+];
+
+interface ClosedByRow {
+  key: string;
+  /** Null for a close reason this release does not know. */
+  kind: CloserKind | null;
+  count: number;
+  how: string;
+}
+
+/** The split of the closes without a person, in the order above; null on an API that does not send it. */
+export function closedBy(d: DashboardOut): ClosedByRow[] | null {
+  const by = d.closed_without_human_by;
+  if (!by) return null;
+  const rows: ClosedByRow[] = CLOSED_BY.map((c) => ({ ...c, count: by[c.key] ?? 0 }));
+  const other = by.other ?? 0;
+  if (other > 0) rows.push({ key: 'other', kind: null, count: other, how: 'The alert records a close reason this release does not know.' });
+  return rows;
+}
+
 export function HandledBar({ d, phrase, isAdmin }: { d: DashboardOut; phrase: string; isAdmin: boolean }) {
   const split = handledSplit(d);
   const claim = claimMean(d);
   const close = closeMean(d);
   const counted = split !== null && split.finished > 0;
+  const closers = closedBy(d);
   return (
     <section aria-labelledby="ov-handled">
       <SectionHead
@@ -114,15 +143,32 @@ export function HandledBar({ d, phrase, isAdmin }: { d: DashboardOut; phrase: st
               <Row kind="handled" name="Closed without a person" count={split.handled} share={split.handledShare}>
                 No analyst decided it and no person approved or rejected a response action. The blind audit below is drawn from these closes.
               </Row>
-              <tr className={TR} data-row="split">
-                <Cell className="text-secondary lg:pl-7">By AI on evidence, AI on the model&apos;s word, a suppression rule, an earlier analyst verdict</Cell>
-                <Cell colSpan={2} label="Alerts" className="lg:text-right">
-                  <Withheld>not measured yet</Withheld>
-                </Cell>
-                <Cell label="Checked by" className={HOW}>
-                  Who or what closed each alert is not counted for this window yet, so the closes above are not split further.
-                </Cell>
-              </tr>
+              {closers ? (
+                closers.map((c) => (
+                  <tr key={c.key} className={TR} data-row={`closed-by-${c.key}`}>
+                    <Cell className="lg:pl-7">{c.kind ? <CloserMark kind={c.kind} /> : <span className="text-secondary">Close reason not recognised</span>}</Cell>
+                    <Cell label="Alerts" className={NUM}>
+                      {formatInt(c.count)}
+                    </Cell>
+                    <Cell label="Share" className={NUM}>
+                      <Share value={split.handledShare === null ? null : c.count / split.finished} />
+                    </Cell>
+                    <Cell label="Checked by" className={HOW}>
+                      {c.how}
+                    </Cell>
+                  </tr>
+                ))
+              ) : (
+                <tr className={TR} data-row="split">
+                  <Cell className="text-secondary lg:pl-7">By AI on evidence, AI on the model&apos;s word, a suppression rule, an earlier analyst verdict</Cell>
+                  <Cell colSpan={2} label="Alerts" className="lg:text-right">
+                    <Withheld>not measured yet</Withheld>
+                  </Cell>
+                  <Cell label="Checked by" className={HOW}>
+                    Who or what closed each alert is not counted for this window yet, so the closes above are not split further.
+                  </Cell>
+                </tr>
+              )}
               <Row kind="needed" name="Reached a person" count={split.needed} share={split.neededShare}>
                 An analyst decided it, a person approved or rejected an action, or it waits for one. {plural(d.open_escalations, 'item waits', 'items wait')}{' '}
                 right now.{' '}

@@ -17,7 +17,7 @@ closed at the gate has no category: the AI never looked at it.
 
 from __future__ import annotations
 
-from typing import Any, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from lg_sotf.domain import closure
 from lg_sotf.domain.investigation import words
@@ -34,6 +34,7 @@ from lg_sotf.domain.investigation.facts import (
     strings,
 )
 from lg_sotf.domain.investigation.model import (
+    CLOSERS,
     InvestigationClosedBy,
     InvestigationOutcome,
     InvestigationReason,
@@ -159,6 +160,32 @@ def _closed_by(alert: AlertFacts, reason: str, entry: words.CloseReason) -> Inve
         source_alert_id=_code(by.get("source_alert_id")) if entry.closed_by == "cached_verdict" else None,
         decision=_code(decision) if entry.closed_by in ("cached_verdict", "analyst") else None,
     )
+
+
+def closer(status: str, close_reason: Any) -> Optional[str]:
+    """Which of :data:`~lg_sotf.domain.investigation.model.CLOSERS` closed an alert, from its close reason;
+    ``None`` while it is open, or closed with a reason this release does not know."""
+    entry = words.CLOSE_REASONS.get(close_reason) if status == "closed" and isinstance(close_reason, str) else None
+    if entry is None:
+        return None
+    if entry.closed_by != "ai":
+        return entry.closed_by
+    return "ai_audit" if close_reason in AUDIT_CLOSE_REASONS else "ai_evidence"
+
+
+def close_reasons_of(closers: Sequence[str]) -> List[str]:
+    """The close reasons :func:`closer` maps to one of ``closers``: what a list filter on the closer matches."""
+    return [reason for reason in words.CLOSE_REASONS if closer("closed", reason) in closers]
+
+
+def closed_without_a_person(by_close_reason: Mapping[str, int]) -> Dict[str, int]:
+    """Alerts closed without a person, counted by close reason, as counts by who or what closed them: the four
+    of :data:`CLOSERS` that are not a person, and ``other`` for a close reason this release does not know."""
+    out = {kind: 0 for kind in CLOSERS if kind != "analyst"} | {"other": 0}
+    for reason, count in by_close_reason.items():
+        kind = closer("closed", reason)
+        out[kind if kind in out else "other"] += count
+    return out
 
 
 def who_closed(alert: AlertFacts) -> Optional[InvestigationClosedBy]:

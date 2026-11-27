@@ -38,6 +38,11 @@ MAX_INSERT_BATCH = 5_000
 DEFAULT_SEARCH_WINDOW = timedelta(days=30)
 MAX_SEARCH_WINDOW = timedelta(days=93)
 MAX_QUERY_CHARS = 200
+# A sample waiting for its blind-audit label: a filter on its verdict, or on who closed it, would reveal it.
+_NOT_A_PENDING_SAMPLE = (
+    "NOT EXISTS (SELECT 1 FROM blind_audit_items b WHERE b.tenant_id = alerts.tenant_id "
+    "AND b.alert_id = alerts.id AND b.label IS NULL)"
+)
 
 # Contract section 6, plus the edges operations need: reprocess (closed/failed
 # -> queued), queue retry after a failed run (failed -> processing) and
@@ -366,6 +371,7 @@ class AlertsRepo(Repository):
         status: Union[str, Sequence[str], None] = None,
         severity: Union[str, Sequence[str], None] = None,
         disposition: Union[str, Sequence[str], None] = None,
+        close_reasons: Optional[Sequence[str]] = None,
         source_id: Optional[str] = None,
         assigned_to: Optional[UUID] = None,
         q: Optional[str] = None,
@@ -378,7 +384,8 @@ class AlertsRepo(Repository):
         conn: Optional[Connection] = None,
     ) -> Page[AlertListItem]:
         """Newest first by (ingested_at, id); ``since``/``until`` bound ``ingested_at``,
-        ``closed_from``/``closed_to`` bound ``closed_at`` (so only closed alerts match them).
+        ``closed_from``/``closed_to`` bound ``closed_at`` (so only closed alerts match them);
+        ``close_reasons``: closed with one of these reasons (``summary.close_reason``).
 
         ``q`` is a case-insensitive substring match on the title. A ``q``
         search always has a time window: without ``since`` it covers
@@ -408,12 +415,10 @@ class AlertsRepo(Repository):
             where.append(f"severity = ANY({params.add(severities)}::text[])")
         dispositions = check_choices(disposition, DISPOSITIONS, "disposition")
         if dispositions:
-            where.append(f"disposition = ANY({params.add(dispositions)}::text[])")
-            # A sample waiting for its blind-audit label: filtering on its verdict would reveal it.
-            where.append(
-                "NOT EXISTS (SELECT 1 FROM blind_audit_items b WHERE b.tenant_id = alerts.tenant_id "
-                "AND b.alert_id = alerts.id AND b.label IS NULL)"
-            )
+            where += [f"disposition = ANY({params.add(dispositions)}::text[])", _NOT_A_PENDING_SAMPLE]
+        if close_reasons is not None:  # who or what closed it: only closed alerts match
+            reasons = params.add(list(close_reasons))
+            where += [f"status = 'closed' AND summary->>'close_reason' = ANY({reasons}::text[])", _NOT_A_PENDING_SAMPLE]
         if source_id is not None:
             where.append(f"source_id = {params.add(source_id)}")
         if assigned_to is not None:

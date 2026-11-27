@@ -8,10 +8,13 @@ thing whoever reopened it:
 * its case is still open: the alert is **folded** into it and waits for a
   person there (``waiting_human``). No run starts; the decision on the case
   settles it (:mod:`lg_sotf.services.folded`);
-* no open case holds it: it is **requeued** for a new run, which goes to an
-  analyst. The marker ``reopened`` on its summary is the closing policy's
-  ``reopened`` blocker (:func:`lg_sotf.domain.closure.model_close_blockers`):
-  the models never close it on their word again.
+* no open case holds it: it is **requeued** for a new run. The marker
+  ``reopened`` on its summary is the closing policy's ``reopened`` blocker
+  (:func:`lg_sotf.domain.closure.model_close_blockers`): the models never
+  close it on their word again, so that run sends it to an analyst. What the
+  blocker does not cover is unchanged: a suppression rule or approved benign
+  evidence that applies to the alert by then still closes it, as for an alert
+  the safety net requeued.
 
 **Reopen** is "a person wants to look at it". **Flag** is "the AI was wrong
 to close it": the alert also keeps ``flagged`` (who, when) on its summary and
