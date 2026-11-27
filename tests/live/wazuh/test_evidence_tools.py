@@ -188,7 +188,10 @@ async def test_a_capped_result_is_cut_the_same_way_and_marked(
 ) -> None:
     at = datetime(2026, 11, 2, 9, 0, tzinfo=UTC)
     old = {**_busy_host(1, at - timedelta(days=3))[0], "id": "1789000000.1", "agent": {"id": "098", "name": "OLD-01"}}
-    docs = [old, *_busy_host(60, at)]
+    # Two quiet events two minutes before, each with a technique: one of a never-close class, one seen once (issue 452).
+    quiet = [{**doc, "id": f"1790000001.{n}", "rule": {**doc["rule"], "level": 3, "mitre": {"id": [technique]}}}
+             for n, (doc, technique) in enumerate(zip(_busy_host(2, at - timedelta(minutes=2)), ["T1003.001", "T1140"], strict=True))]
+    docs = [old, *_busy_host(60, at), *quiet]
     assert lab_admin.load(docs, alert_index) == (len(docs), [])
     now = at + timedelta(minutes=30)
     params = {"host": "BUSY-01", "at": at, "before_min": 5, "after_min": 5}
@@ -197,8 +200,12 @@ async def test_a_capped_result_is_cut_the_same_way_and_marked(
     expected = await offline(EventStore(docs), now).call(Ctx(), "wazuh.host_activity", params, agent="investigation")
     fact = live.value[0]
     assert (live.outcome, live.complete, fact.complete) == ("success", False, False)
-    assert (fact.value.total, len(fact.value.events), fact.value.max_level) == (60, 50, 7)
-    assert [event.level for event in fact.value.events[:12]] == [7] * 12, "the highest levels are the ones returned"
+    assert (fact.value.total, len(fact.value.events), fact.value.max_level) == (62, 50, 7)
+    # More events than a fact lists: a sample, chosen in parts by the indexer's own searches.
+    assert [event.listed_for for event in fact.value.events] == [
+        "never_close_class", "rare_technique", *["nearest_in_time"] * 10, *["rule_level"] * 38]
+    assert fact.value.never_close_technique_truncated is False and fact.value.techniques == ["T1003.001", "T1140"]
+    assert [event.level for event in fact.value.events[12:22]] == [7] * 10, "the highest levels fill the rest"
     assert TYPED not in fact.model_dump_json() and fact.redactions[0].reason == "secret"
     assert fact.model_dump() == expected.value[0].model_dump()
     await tenant.indexers.aclose()

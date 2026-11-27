@@ -203,6 +203,27 @@ def test_a_prompt_sees_ids_outcomes_and_typed_fields_only() -> None:
     ]
 
 
+def test_a_prompt_sees_a_sample_of_events_by_part() -> None:
+    """Issue 452: a prompt cuts every member of a list alike, so one part's noise would cut the others' events."""
+    window = {"window_start": "2026-11-14T09:00:00Z", "window_end": "2026-11-14T10:00:00Z", "total": 61}
+    noise = [{"at": f"2026-11-14T09:5{n}:00Z", "rule_id": "60122", "groups": [], "listed_for": "never_close_class"} for n in range(3)]
+    rare = {"at": "2026-11-14T09:10:00Z", "rule_id": "92018", "groups": [], "image_name": "certutil.exe", "listed_for": "rare_technique"}
+    host = {"type": "host", "value": "FIN-SRV-02"}
+    sampled = fact(kind="host_activity", subject=host, complete=False, value={**window, "events": [*noise, rare]})
+    (entry,) = build_entries(step("success", sampled, evidence_id="host", complete=False), [], AT)
+    (shown,) = planner_view([entry])
+    assert shown["value"]["events"] == {
+        "never_close_class": [{k: v for k, v in event.items() if k != "listed_for"} for event in noise],
+        "rare_technique": [{k: v for k, v in rare.items() if k != "listed_for"}],
+    }
+    assert shown["value"]["total"] == 61 and shown["complete"] is False
+    assert entry.fact is not None and len(entry.fact["value"]["events"]) == 4, "the ledger keeps the list as the tool wrote it"
+    # A list that is not a sample (every event of the window is listed) is shown as it is.
+    whole = fact(kind="host_activity", subject=host, value={**window, "total": 1, "events": [{"at": rare["at"], "rule_id": "92018"}]})
+    (plain,) = planner_view(build_entries(step("success", whole, evidence_id="host"), [], AT))
+    assert plain["value"]["events"] == [{"at": rare["at"], "rule_id": "92018", "groups": []}]
+
+
 def test_what_a_prompt_sees_is_bounded() -> None:
     big = fact(subject={"type": "host", "value": "H" * 1024})
     ledger: List[LedgerEntry] = []

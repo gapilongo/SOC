@@ -78,14 +78,16 @@ def investigation_record(
     investigation.
 
     ``evidence_truncated``: the prompt builder cut the evidence to fit its size limit, so the model saw some
-    facts in part (the prompt says so, and so does the record). ``claims_checked`` is false when the check
-    itself failed: the claims are then left out, and that never fails the analysis.
+    facts in part (the prompt says so, and so does the record). An observation the prompt's view left out
+    whole (``omitted``) is truncated evidence too. ``claims_checked`` is false when the check itself failed:
+    the claims are then left out, and that never fails the analysis.
     """
     if investigation is None:
         return None
     record = investigation.record()
     shown = investigation.context is not None
-    record["evidence_truncated"] = shown and evidence_truncated
+    omitted = bool((investigation.context or {}).get("omitted"))
+    record["evidence_truncated"] = shown and (evidence_truncated or omitted)
     try:
         record["claims"] = checked_claims(investigation.ledger, (getattr(final, "claims", None) or []) if shown else [])
         record["claims_checked"] = True
