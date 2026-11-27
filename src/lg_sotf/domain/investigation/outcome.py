@@ -70,7 +70,7 @@ def decide_code(
     the last ``decide`` step's. While a reopened alert is open again: ``reopened`` for the safety net's
     reopening, ``reopened_by_analyst`` or ``flagged_by_analyst`` for a person's."""
     if alert.status != "closed" and alert.summary.get(closure.REOPENED):
-        return words.REOPEN_CODES.get(str(mapping(alert.summary.get(closure.REOPENED)).get("reason")), "reopened")
+        return closure.reopened_code(alert.summary)
     own = _own(alert, escalation)
     stored = (
         _code(mapping(mapping(own.summary).get("routing")).get("code")) if own is not None else None
@@ -162,9 +162,16 @@ def _closed_by(alert: AlertFacts, reason: str, entry: words.CloseReason) -> Inve
     )
 
 
-def closer(status: str, close_reason: Any) -> Optional[str]:
+def closer(status: str, close_reason: Any, *, person: bool = False) -> Optional[str]:
     """Which of :data:`~lg_sotf.domain.investigation.model.CLOSERS` closed an alert, from its close reason;
-    ``None`` while it is open, or closed with a reason this release does not know."""
+    ``None`` while it is open, or closed with a reason this release does not know.
+
+    ``person``: a person stands behind the close whatever its reason (an analyst decided the alert, or a person
+    approved or rejected one of its response actions, after which the workflow closed it ``policy:response``).
+    It is then ``analyst``, as the Overview counts it among the alerts that reached a person.
+    """
+    if status == "closed" and person:
+        return "analyst"
     entry = words.CLOSE_REASONS.get(close_reason) if status == "closed" and isinstance(close_reason, str) else None
     if entry is None:
         return None

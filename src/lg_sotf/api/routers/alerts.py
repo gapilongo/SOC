@@ -105,6 +105,7 @@ async def list_alerts(
         severity=severity,
         disposition=disposition,
         close_reasons=close_reasons_of(closed_by) if closed_by else None,
+        closed_by_person="analyst" in (closed_by or ()),
         source_id=source_id,
         q=q,
         since=since,
@@ -280,11 +281,12 @@ async def _reopen(ctx: ApiContext, principal: Principal, alert_id: str, body: Re
     await enqueue_reopened(ctx, tenant_id, alert_id)  # a requeued alert's new run; a folded one has none
     status = "waiting_human" if done.case_id else "queued"
     await publish_event(ctx.events, "alert.updated", tenant_id, alert_id, {"status": status, "reopened": True})
-    if flag:
-        # A person stands behind the flag: for the safety net it confirms the threat of the case the alert
-        # returned to (as a true positive on that case would), else the flagged alert itself.
-        threat = await ctx.repos.alerts.get(tenant_id, done.case_alert_id or alert_id)
-        await reopen_confirmed(ctx, tenant_id, threat, principal.actor, escalation_id=done.case_id, path="flag")
+    if flag and done.case_id is None:
+        # A person stands behind the flag, and what they judged is this alert: for the safety net it confirms
+        # this alert and nothing else. An alert that joined an open case confirms nothing there: nobody has
+        # judged the case's threat yet, and its decision is what reopens the alerts linked to it.
+        threat = await ctx.repos.alerts.get(tenant_id, alert_id)
+        await reopen_confirmed(ctx, tenant_id, threat, principal.actor, escalation_id=None, path="flag", by_flag=True)
     return ReopenOut(alert_id=alert_id, status=status, mode=done.mode, case_id=done.case_id, flagged=flag)
 
 
@@ -298,8 +300,9 @@ async def reopen_alert(
     alert_id: str, body: ReopenIn, request: Request, principal: Principal = Depends(require(REVIEWER))
 ) -> ReopenOut:
     """Put an alert the AI closed on the model's word back in front of a person. While its case is open it joins
-    that case as open and the decision on the case settles it; otherwise a new run reviews it. Either way the AI
-    never closes it on the model's word again. Audited ``alert.reopened`` with the person and the reason.
+    that case as open and the decision on the case settles it; otherwise a new run sends it to an analyst.
+    Nothing closes a reopened alert without a person: no model, no suppression rule, no earlier verdict, no
+    approved evidence. Audited ``alert.reopened`` with the person and the reason.
 
     409 ``not_ai_closed`` for any other alert, ``hidden_for_blind_audit`` while it waits for its blind-audit
     label, ``already_with_a_person``, ``not_in_case`` when ``case_id`` does not hold it.
@@ -317,8 +320,10 @@ async def flag_alert(
     alert_id: str, body: ReopenIn, request: Request, principal: Principal = Depends(require(REVIEWER))
 ) -> ReopenOut:
     """Say the AI was wrong to close the alert. The disagreement is audited ``alert.flagged`` and counted by the
-    blind-audit and accuracy reports; the alert is reopened as by ``/reopen``; and, because a person stands
-    behind it, the safety net treats it as a confirmation: the other alerts the AI closed on the same host or
-    user are reopened too. Same refusals as ``/reopen``.
+    blind-audit and accuracy reports, and the alert is reopened as by ``/reopen``. A person stands behind the
+    flag, so when no open case holds the alert the safety net treats it as a confirmation of this alert: the
+    other alerts the AI closed on its host or user in the last 24 hours are reopened too (never one that waits
+    for its blind-audit label). Inside an open case a flag reopens the flagged alert only. Same refusals as
+    ``/reopen``.
     """
     return await _reopen(get_ctx(request), principal, alert_id, body, flag=True)

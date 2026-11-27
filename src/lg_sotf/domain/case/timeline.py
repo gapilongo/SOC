@@ -18,7 +18,7 @@ from typing import List, Mapping, Optional, Sequence, Tuple
 
 from lg_sotf.domain.blind_audit import shown_while_hidden
 from lg_sotf.domain.case import words
-from lg_sotf.domain.case.alerts import DECISION_EVENT, person
+from lg_sotf.domain.case.alerts import DECISION_EVENT, by_flag, person
 from lg_sotf.domain.case.facts import MAX_TIMELINE, CaseEscalation, CaseEvent, MemberFacts
 from lg_sotf.domain.case.model import CaseTimelineEntry
 from lg_sotf.domain.investigation import words as investigation_words
@@ -55,6 +55,8 @@ def _entry(event: CaseEvent, alert_id: str, emails: Mapping[str, str]) -> Option
     # The case's own sentence for the event, else the investigation's (which also says a person's own reopening).
     person_reopened = str(event.data.get("reason")) in investigation_words.REOPENED_STEPS
     own = None if person_reopened else words.EVENT_STEPS.get(event.event_type)
+    if own is not None and by_flag(event):
+        own = words.REOPENED_BY_FLAG_STEP
     said = own or (investigation_words.Step(step.actor, step.text) if step is not None else None)
     if said is None:
         return None

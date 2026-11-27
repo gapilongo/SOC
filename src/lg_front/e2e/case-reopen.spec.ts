@@ -42,6 +42,8 @@ const ROUTINE_TEXT = 'An expected logon.';
 const THREAT_TITLE = `Suspicious lateral movement ${run}`;
 const THREAT_TEXT = 'Possible credential dumping with mimikatz on the workstation.';
 const REASON = `This logon is the first step of the attack on ${HOST}.`;
+// `CACHE_TTL_S` of `GET /dashboard/summary` (api/routers/dashboard.py), and a second more.
+const DASHBOARD_CACHE_MS = 16_000;
 
 async function bearer(request: APIRequestContext): Promise<Record<string, string>> {
   const r = await request.post(`${API}/auth/login`, { data: admin });
@@ -66,6 +68,7 @@ test('an analyst reopens an alert the AI closed from its case page, with a reaso
 
   let closedId = '';
   let caseId = '';
+  let lastIngestAt = 0;
   await closureTier(request, auth, 'auto_full_audit');
   try {
     await test.step('the AI closes a routine alert on the model’s word', async () => {
@@ -98,6 +101,7 @@ test('an analyst reopens an alert the AI closed from its case page, with a reaso
           entities: { hosts: [HOST], users: [`u-${run}`] },
         },
       ]);
+      lastIngestAt = Date.now();
       const threatId = item.alert_id as string;
       await waitForAlert(request, key, threatId, ['waiting_human']);
       const detail = (await getAlert(request, key, threatId)) as unknown as { summary: { escalation_id?: string } };
@@ -169,6 +173,12 @@ test('an analyst reopens an alert the AI closed from its case page, with a reaso
     expect(entry?.actor_id).toBe(analystId);
     expect(entry?.details).toMatchObject({ reason: 'analyst_reopen', note: REASON, mode: 'folded', escalation_id: caseId });
   });
+
+  // The dashboard figures are cached for 15 seconds. The next spec reads the Overview's count of alerts
+  // received and then counts its own: a copy cached before this spec's two alerts arrived must have expired
+  // by then, or that count would jump by two more.
+  const cached = DASHBOARD_CACHE_MS - (Date.now() - lastIngestAt);
+  if (cached > 0) await page.waitForTimeout(cached);
 
   await watch.assertClean();
   await context.close();

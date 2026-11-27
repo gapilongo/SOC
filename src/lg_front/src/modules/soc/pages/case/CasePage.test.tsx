@@ -451,7 +451,7 @@ describe('case page: reopen and flag (PRD-2.9a)', () => {
     await userEvent.click(within(row(container, 'alr-48212')).getByRole('button', { name: /^Reopen ?: Outlook opened a Word attachment/ }));
     const dialog = within(await screen.findByRole('dialog', { name: 'Reopen this alert' }));
     expect(dialog.getByText(LINKED_TITLE)).toBeInTheDocument();
-    expect(dialog.getByText(/The AI can no longer close it on the model’s word/)).toBeInTheDocument();
+    expect(dialog.getByText(/Nothing closes it again without a person: no model, no suppression rule, no earlier verdict\./)).toBeInTheDocument();
     const send = dialog.getByRole('button', { name: 'Reopen alert' });
     expect(send).toBeDisabled();
     const reason = dialog.getByRole('textbox', { name: /Why reopen it \(required\)/ });

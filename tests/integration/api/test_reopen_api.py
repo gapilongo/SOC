@@ -284,11 +284,11 @@ async def test_only_an_alert_the_ai_closed_on_the_models_word_can_be_reopened_or
 # ------------------------------------------------------------------ flag
 
 
-async def test_a_flag_records_the_disagreement_reopens_the_alert_and_confirms_for_the_safety_net(api: ApiHarness) -> None:
+async def test_a_flag_records_the_disagreement_and_reopens_the_alert_into_its_case_and_nothing_else(api: ApiHarness) -> None:
     """A flag says the AI was wrong: audited with the person and the reason, counted by the blind-audit and
-    accuracy reports, the alert reopened into its case, and (a person stands behind it) the other alert the AI
-    closed on the same host reopened by the safety net."""
-    threat, linked, case = await threat_with_linked(api, HOST)
+    accuracy reports, and the alert reopened into its case. Inside an open case it confirms nothing for the
+    safety net: nobody has judged the case's threat, so the other alert the AI closed on the host stays closed."""
+    _, linked, case = await threat_with_linked(api, HOST)
     assert case is not None
     recent = await model_closed(api, {"hosts": [HOST]})  # closed on the same host, never linked
     unrelated = await model_closed(api, {"hosts": ["srv-db-01"]})
@@ -312,12 +312,9 @@ async def test_a_flag_records_the_disagreement_reopens_the_alert_and_confirms_fo
     [reopen] = await audit_of(api, REOPEN_ACTION, linked)
     assert (reopen.actor_id, reopen.details["reason"], reopen.details["note"]) == (str(analyst.id), "analyst_flag", HOSTILE)
 
-    # The safety net: the confirmation reopens the other model close on the host into the same case.
-    related = await api.repos.alerts.get(TENANT_A, recent)
-    assert (related.status, related.summary["reopened"]["reason"], related.summary["reopened"]["mode"]) == (
-        "waiting_human", "related_threat", "folded")
-    assert related.summary["reopened"]["threat_alert_id"] == threat and "flagged" not in related.summary
-    assert sorted(await audited(api, REOPEN_ACTION)) == sorted([linked, recent])
+    # In a case the flag moves the flagged alert only: no other close of the AI is reopened.
+    assert await audited(api, REOPEN_ACTION) == [linked]
+    await unchanged(api, recent)
     await unchanged(api, unrelated)
 
     shown = await case_alert(api, case.id, linked, api.auth(analyst))
@@ -326,7 +323,7 @@ async def test_a_flag_records_the_disagreement_reopens_the_alert_and_confirms_fo
     assert shown["reopened"]["reason"] == {"code": "analyst_flag", "sentence": words.REOPENED_BY_ANALYST["analyst_flag"]}
     assert shown["why"]["code"] == "flagged_by_analyst"
     body = (await api.client.get(f"{API}/cases/{case.id}", headers=api.auth(analyst))).json()
-    assert (body["counts"]["flagged"], body["counts"]["reopened"], body["counts"]["open"]) == (1, 2, 2)
+    assert (body["counts"]["flagged"], body["counts"]["reopened"], body["counts"]["open"]) == (1, 1, 1)
     kinds = [(e["kind"], e["actor"]) for e in body["timeline"] if e["alert_id"] == linked]
     assert kinds[-2:] == [("alert.flagged", "person"), ("alert.reopened", "policy")]
     assert "alerts[].flagged" not in {n["field"] for n in body["not_available"]}
@@ -345,6 +342,8 @@ async def test_a_flag_records_the_disagreement_reopens_the_alert_and_confirms_fo
 
 
 async def test_a_flag_without_an_open_case_queues_the_alert_and_reopens_what_the_ai_closed_beside_it(api: ApiHarness) -> None:
+    """With no open case a person stands behind the flagged alert itself: for the safety net that confirms this
+    alert, so the other close of the AI on its host is reopened, and its record says a flag caused it."""
     flagged = await model_closed(api, {"hosts": [HOST]})
     beside = await model_closed(api, {"hosts": [HOST]})
     response = await post(api, flagged, "flag", await api.login_headers(TENANT_A, "analyst"), reason=REASON)
@@ -356,3 +355,5 @@ async def test_a_flag_without_an_open_case_queues_the_alert_and_reopens_what_the
             "queued", reason, "requeued")
         assert close_blockers(alert) == ["reopened"]
     assert (await api.repos.alerts.get(TENANT_A, beside)).summary["reopened"]["threat_alert_id"] == flagged
+    [entry] = await audit_of(api, REOPEN_ACTION, beside)
+    assert entry.details["confirmation"] == "flag" and "note" not in entry.details

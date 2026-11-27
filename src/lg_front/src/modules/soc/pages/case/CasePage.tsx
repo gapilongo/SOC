@@ -293,7 +293,7 @@ function Alerts({ c, userId, ask }: { c: CaseOut; userId: string | null | undefi
       {reopenable && (
         <p data-reopen-note className="max-w-[62em] pt-2 text-xs text-muted">
           {ask
-            ? 'Reopen puts an alert the AI closed on the model’s word back in front of a person and stops the AI from closing it that way again. Flag does the same and records that the close was wrong. Both ask for a reason.'
+            ? 'Reopen puts an alert the AI closed on the model’s word back in front of a person, and nothing closes it again without one. Flag does the same and records that the close was wrong. Both ask for a reason.'
             : 'An analyst can reopen an alert the AI closed on the model’s word, or flag the close as wrong.'}
         </p>
       )}

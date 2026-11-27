@@ -1688,6 +1688,11 @@ report's later items no longer reflect the model.
 
 ## Limitations
 
+* No item of the shipped corpora is a reopened alert, so the rule that nothing closes a reopened alert
+  without a person (#461: the gate, the first assessment, approved evidence and the models' word are all
+  held) changes none of their numbers. It is covered by the test suite instead
+  (`tests/unit/domain/test_closure.py`, `tests/unit/domain/test_routing.py`, `tests/unit/core/test_gate.py`,
+  and through the real workflow in `tests/integration/api/test_review_459.py`).
 * Enrichment providers (VirusTotal, AbuseIPDB) run only if configured for the
   evaluation install; results then depend on live third-party data.
 * Escalation grouping and correlation make items of the same split (the same

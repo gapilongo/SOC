@@ -6070,7 +6070,7 @@
                 "type": "null"
               }
             ],
-            "description": "person: a person's confirmation was recorded directly (a true positive, an approved response action or a blind-audit label). workflow: the run reopened it, after an analyst's true positive it resumed from or a response action it carried out. Null when the timeline no longer has the event.",
+            "description": "person: a person's confirmation was recorded directly (a true positive, an approved response action, a blind-audit label, or a flag on a related alert's AI close). workflow: the run reopened it, after an analyst's true positive it resumed from or a response action it carried out. Null when the timeline no longer has the event.",
             "title": "Confirmed By"
           },
           "mode": {
@@ -17095,7 +17095,7 @@
     },
     "/api/v1/alerts/{alert_id}/flag": {
       "post": {
-        "description": "Say the AI was wrong to close the alert. The disagreement is audited ``alert.flagged`` and counted by the\nblind-audit and accuracy reports; the alert is reopened as by ``/reopen``; and, because a person stands\nbehind it, the safety net treats it as a confirmation: the other alerts the AI closed on the same host or\nuser are reopened too. Same refusals as ``/reopen``.",
+        "description": "Say the AI was wrong to close the alert. The disagreement is audited ``alert.flagged`` and counted by the\nblind-audit and accuracy reports, and the alert is reopened as by ``/reopen``. A person stands behind the\nflag, so when no open case holds the alert the safety net treats it as a confirmation of this alert: the\nother alerts the AI closed on its host or user in the last 24 hours are reopened too (never one that waits\nfor its blind-audit label). Inside an open case a flag reopens the flagged alert only. Same refusals as\n``/reopen``.",
         "operationId": "flag_alert_api_v1_alerts__alert_id__flag_post",
         "parameters": [
           {
@@ -17299,7 +17299,7 @@
     },
     "/api/v1/alerts/{alert_id}/reopen": {
       "post": {
-        "description": "Put an alert the AI closed on the model's word back in front of a person. While its case is open it joins\nthat case as open and the decision on the case settles it; otherwise a new run reviews it. Either way the AI\nnever closes it on the model's word again. Audited ``alert.reopened`` with the person and the reason.\n\n409 ``not_ai_closed`` for any other alert, ``hidden_for_blind_audit`` while it waits for its blind-audit\nlabel, ``already_with_a_person``, ``not_in_case`` when ``case_id`` does not hold it.",
+        "description": "Put an alert the AI closed on the model's word back in front of a person. While its case is open it joins\nthat case as open and the decision on the case settles it; otherwise a new run sends it to an analyst.\nNothing closes a reopened alert without a person: no model, no suppression rule, no earlier verdict, no\napproved evidence. Audited ``alert.reopened`` with the person and the reason.\n\n409 ``not_ai_closed`` for any other alert, ``hidden_for_blind_audit`` while it waits for its blind-audit\nlabel, ``already_with_a_person``, ``not_in_case`` when ``case_id`` does not hold it.",
         "operationId": "reopen_alert_api_v1_alerts__alert_id__reopen_post",
         "parameters": [
           {

@@ -33,6 +33,12 @@ Safety rules enforced here (contract section 8):
   (AI-E3.16: codes ``related_open_threat`` and ``related_in_progress``,
   read from the database by the ``decide`` node; ``related_unchecked``
   when that read did not complete).
+* An alert that was reopened, by the safety net or by a person, is never
+  closed without a person (#461, :func:`reopened`): the gate applies no
+  suppression rule and no cached verdict to it, the first assessment does
+  not close it, and below the response policy ``decide`` sends it to an
+  analyst under the code that says who reopened it. It only blocks: a
+  threat score that meets the response policy still gets its response.
 * A response the policy (not an analyst) chose goes to an analyst when an
   action failed or none completed; it closes (disposition ``malicious``)
   once its actions succeeded or ran in the tenant's dry-run mode. Blocked
@@ -146,6 +152,12 @@ def llm_normalized(state: Mapping[str, Any]) -> bool:
     return isinstance(flags, list) and LLM_NORMALIZED_FLAG in flags
 
 
+def reopened(state: Mapping[str, Any]) -> Optional[str]:
+    """The decide code of an alert that was reopened, by the safety net or by a person (``None`` when it was
+    not): a person asked for it to be looked at again, so nothing automatic may close it (#461)."""
+    return closure.reopened_code(state.get("alert"))
+
+
 def route_after_gate(state: Mapping[str, Any]) -> GateRoute:
     gate = cast("GateDigest", state.get("gate") or {})
     return "close" if gate.get("suppressed") else "triage"
@@ -165,7 +177,7 @@ def route_after_triage(state: Mapping[str, Any], t: RoutingThresholds) -> Triage
     or the fast LLM) is never enough to close them. For the rest, closing
     needs at least one rule-based false-positive signal besides the LLM's.
     """
-    if _is_high(state) or llm_normalized(state):
+    if _is_high(state) or llm_normalized(state) or reopened(state):
         return "correlation"
     triage = cast("TriageDigest", state.get("triage") or {})
     if isinstance(triage.get("llm_refusal"), Mapping):
@@ -238,6 +250,9 @@ def decide(state: Mapping[str, Any], t: RoutingThresholds, tier: str = "off") ->
         return Decision(
             "plan_response", f"threat score {threat:.0f} meets the response policy", "malicious", "high_risk"
         )
+    again = reopened(state)
+    if again is not None:  # below the response policy every route left is a close or an analyst: an analyst
+        return Decision("escalate", "the alert was reopened: only a person closes it", None, again)
 
     grey = verdict == "inconclusive" or t.correlation_grey_zone_min <= threat <= t.correlation_grey_zone_max
     low = None if grey or threat >= t.close_max_threat else _low_threat(state, triage, verdict)

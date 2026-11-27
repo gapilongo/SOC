@@ -206,8 +206,8 @@ class WorkflowNodes:
         tenant_id, alert = state["tenant_id"], state["alert"]
         raw_flags = alert.get("flags")
         # An LLM-normalised alert's fields were chosen by a model from attacker-shaped text: no suppression
-        # rule and no cached verdict closes it.
-        if "llm_normalized" in (raw_flags if isinstance(raw_flags, list) else []):
+        # rule and no cached verdict closes it. Nor one that was reopened: a person asked to see it again (#461).
+        if "llm_normalized" in (raw_flags if isinstance(raw_flags, list) else []) or routing.reopened(state):
             return {"gate": {"suppressed": False}, EVENT_KEY: {"suppressed": False}}
         view = alert_match_view(
             title=str(alert.get("title", "")),

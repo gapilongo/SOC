@@ -264,6 +264,18 @@ def test_a_reopened_alert_says_what_reopened_it(user: Optional[str], confirmed_b
         assert alert.why is not None and alert.why.code == "reopened"
 
 
+def test_a_reopening_that_followed_a_flag_says_so_and_not_that_a_threat_was_confirmed() -> None:
+    """A person's flag on a related alert made the safety net reopen this one (``confirmation: flag``)."""
+    marker = {"reason": "related_threat", "threat_alert_id": "flagged-one", "escalation_id": None, "mode": "requeued"}
+    events = [event(1_200, "alert.reopened", {**marker, "confirmation": "flag"}, user=ANALYST)]
+    case = assemble(facts(member("back", "queued", {"close_reason": "reopened:related_threat", "reopened": marker}, events=events)))
+    reopened = by_id(case)["back"].reopened
+    assert reopened is not None and (reopened.reason.code, reopened.reason.sentence) == ("related_threat", words.REOPENED_BY_FLAG)
+    assert (reopened.confirmed_by, reopened.note) == ("person", None) and reopened.by is not None
+    [line] = [e for e in case.timeline if e.kind == "alert.reopened"]
+    assert (line.actor, line.text) == (words.REOPENED_BY_FLAG_STEP.actor, words.REOPENED_BY_FLAG_STEP.text)
+
+
 def test_a_reopening_without_its_event_does_not_guess_who_confirmed() -> None:
     summary = {"reopened": {"mode": "mode_of_a_newer_release", "threat_alert_id": "threat"}}
     alert = by_id(assemble(facts(member("back", "queued", summary))))["back"]
@@ -298,7 +310,8 @@ def test_a_persons_own_reopening_names_the_person_and_gives_their_reason_as_data
     [line] = [e for e in case.timeline if e.kind == "alert.reopened"]
     assert line.text == investigation_words.REOPENED_STEPS[reason].text and line.by is not None
     assert all("IGNORE PREVIOUS" not in e.text and "IGNORE PREVIOUS" not in (e.produced or "") for e in case.timeline)
-    assert set(investigation_words.REOPEN_CODES) == set(words.REOPENED_BY_ANALYST) == {closure.ANALYST_REOPEN, closure.ANALYST_FLAG}
+    assert set(closure.REOPEN_CODES) == set(words.REOPENED_BY_ANALYST) == {closure.ANALYST_REOPEN, closure.ANALYST_FLAG}
+    assert set(closure.REOPEN_CODES.values()) <= set(investigation_words.DECIDE_SENTENCES)
 
 
 def test_a_flag_names_who_flagged_when_and_why_and_only_a_model_close_that_stands_can_be_reopened() -> None:
@@ -486,7 +499,8 @@ def test_hostile_text_stays_data_and_is_cut() -> None:
 
 
 def _sentences() -> List[str]:
-    out = [words.LINKED, *words.REOPENED_BY.values(), *words.REOPENED_BY_ANALYST.values(), words.CASE_OPENED.text, words.CASE_CLAIMED.text, words.CASE_DECIDED.text]
+    out = [words.LINKED, *words.REOPENED_BY.values(), *words.REOPENED_BY_ANALYST.values(), words.CASE_OPENED.text]
+    out += [words.CASE_CLAIMED.text, words.CASE_DECIDED.text, words.REOPENED_BY_FLAG, words.REOPENED_BY_FLAG_STEP.text]
     out += [step.text for step in words.EVENT_STEPS.values()]
     out += [missing.reason for missing in words.NOT_AVAILABLE]
     return out

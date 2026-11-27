@@ -40,7 +40,6 @@ __all__ = [
     "NOT_INVESTIGATED",
     "PENDING_HARNESS",
     "REOPENED_STEPS",
-    "REOPEN_CODES",
     "TOOL_ERROR_SENTENCE",
     "UNCHECKED_KINDS",
     "UNKNOWN_LOOKUP_TITLE",
@@ -241,9 +240,8 @@ EVENT_STEPS: Final[Mapping[str, Step]] = {
     "action.rollback_requested": Step("person", "A person asked to undo a response action."),
 }
 
-#: A person's own reopening (``lg_sotf.core.reopen``), by the reason code of the ``reopened`` marker: the
-#: decide code an open alert reads, and its ``alert.reopened`` step. Any other reason is the safety net's.
-REOPEN_CODES: Final[Mapping[str, str]] = {"analyst_reopen": "reopened_by_analyst", "analyst_flag": "flagged_by_analyst"}
+#: A person's own reopening (``lg_sotf.core.reopen``), by the reason code of the ``reopened`` marker: its
+#: ``alert.reopened`` step. Any other reason is the safety net's.
 REOPENED_STEPS: Final[Mapping[str, Step]] = {
     "analyst_reopen": Step("person", "An analyst reopened this alert, which the AI had closed on the model's word."),
     "analyst_flag": Step("policy", "The flag reopened this alert for a person's decision."),

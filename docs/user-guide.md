@@ -213,13 +213,14 @@ still opens from the Escalations list.
 **Reopen and Flag.** An alert the AI closed on the model's word has two
 controls in its row, for an analyst or an admin. **Reopen** puts it back in
 front of a person: while the case is open it joins the case as open and the
-decision on the case settles it; in a decided case a new run reviews it.
-Either way the AI no longer closes it on the model's word, so the new run
-sends it to an analyst unless a suppression rule or approved benign evidence
-applies to it by then. **Flag** does the same and records that the AI was wrong to close it:
-the flag is counted in the blind-audit and accuracy reports, and because a
-person stands behind it, the other alerts the AI closed on the same host or
-user are reopened too. Both ask for a reason, and neither is sent without
+decision on the case settles it; in a decided case a new run sends it to an
+analyst. Nothing closes a reopened alert again without a person: no model,
+no suppression rule, no earlier verdict, no approved evidence. **Flag** does
+the same and records that the AI was wrong to close it: the flag is counted
+in the blind-audit and accuracy reports. When no open case holds the flagged
+alert, the other alerts the AI closed on the same host or user in the last
+24 hours are reopened too, because a person now stands behind a threat
+there; inside an open case a flag reopens the flagged alert only. Both ask for a reason, and neither is sent without
 one; the reason is kept in the audit log with your name (`alert.reopened`,
 `alert.flagged`) and shown in the alert's row and timeline. Alerts closed by
 a person, a suppression rule, an earlier verdict or approved evidence have

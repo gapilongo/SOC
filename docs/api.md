@@ -315,9 +315,13 @@ Every alert carries `closed_by`: who or what closed it, from its close
 reason. `analyst`, `ai_evidence` (the AI, on approved benign evidence or
 after an automatic response), `ai_audit` (the AI, on the model's word),
 `suppression_rule` or `cached_verdict` (an earlier analyst verdict for the
-same detection). It is null while the alert is open, for a close reason
-this release does not know, and while the alert waits for its blind-audit
-label. The `closed_by` filter takes one or more of the five values and
+same detection). An alert a person stands behind is `analyst` whatever its
+close reason: an analyst decided it, or a person approved or rejected one
+of its response actions before the workflow closed it. That is the
+Overview's test of "reached a person", so the list and the Overview say
+the same of one alert. It is null while the alert is open, for a close
+reason this release does not know, and while the alert waits for its
+blind-audit label. The `closed_by` filter takes one or more of the five values and
 matches closed alerts only; like the `disposition` filter it never matches
 an alert that waits for its blind-audit label, which would say who closed
 it.
@@ -345,9 +349,15 @@ The answer is `{alert_id, status, mode, case_id, flagged}`:
 
 Either way the alert keeps the marker `summary.reopened` (`reason`:
 `analyst_reopen` or `analyst_flag`), which is the closing policy's
-`reopened` blocker: the AI never closes it on the model's word again. A
-suppression rule or approved benign evidence that applies to the alert can
-still close a requeued one in its new run; a folded one has no run.
+`reopened` blocker: the AI never closes it on the model's word again. The
+same marker holds every other close without a person in a requeued alert's
+new run: no suppression rule or cached verdict closes it at the gate, the
+first assessment does not close it, and approved benign evidence does not
+either. The run sends it to an analyst, under the decision code
+`reopened_by_analyst` or `flagged_by_analyst` (`reopened` for an alert the
+safety net reopened, which is held the same way). The marker only blocks:
+a threat score high enough for the response policy still gets its response
+plan. A folded alert has no run.
 
 Both are audited `alert.reopened` with the person and, in `details.note`,
 the reason as it was typed; the alert's timeline gets the same event. A
@@ -355,15 +365,19 @@ flag is also audited `alert.flagged` (the note, the close reason and the
 disposition it disagrees with), leaves `summary.flagged` (`{by, at}`) on
 the alert, is counted in `flagged_ai_closes` of `GET /reports/blind-audit`
 and `GET /reports/accuracy` for the window it was made in (beside their
-rates, never inside them: a flag is not a random draw), and counts as a
-person's confirmation for the safety net: the other alerts the AI closed on
-the same host or user in the last 24 hours, and those linked to the case,
-are reopened too.
+rates, never inside them: a flag is not a random draw). When no open case
+holds the flagged alert (`mode: "requeued"`), the flag also counts as a
+person's confirmation of that alert for the safety net: the other alerts
+the AI closed on its host or user in the last 24 hours are reopened too,
+each recording `confirmation: "flag"`; an alert that waits for its
+blind-audit label is left alone. Inside an open case a flag reopens the
+flagged alert only: nobody has judged the case's threat, and the decision
+on the case is what reopens the alerts linked to it.
 
 The reason is data. It is stored on the audit entry and the timeline event
 only, never in the alert's summary, and no model is shown it: a run reads
-the fixed code of the marker and nothing else. Clients show it as plain
-text.
+the fixed code of the marker and nothing else. The application log gets its
+length, not its text. Clients show it as plain text.
 
 `409` with a code: `not_ai_closed` (the alert is open, or a person, a rule
 or approved evidence closed it; also when it was already reopened),

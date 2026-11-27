@@ -213,10 +213,15 @@ class EscalationsRepo(Repository):
                     return Escalation.model_validate(dict(existing)), False
         raise Conflict(f"could not create or find an active escalation for alert {alert_id}")
 
-    async def get(self, tenant_id: str, escalation_id: str, *, conn: Optional[Connection] = None) -> Escalation:
+    async def get(
+        self, tenant_id: str, escalation_id: str, *, for_update: bool = False, conn: Optional[Connection] = None
+    ) -> Escalation:
+        """``for_update``: the row stays locked until the caller's transaction ends, so a decision on the case
+        waits for a change that depends on the case being open (and that change sees a decision made first)."""
+        lock = " FOR UPDATE" if for_update else ""
         async with self._tenant(tenant_id, conn) as c:
             row = await c.fetchrow(
-                "SELECT * FROM escalations WHERE tenant_id = $1 AND id = $2", tenant_id, escalation_id
+                f"SELECT * FROM escalations WHERE tenant_id = $1 AND id = $2{lock}", tenant_id, escalation_id  # noqa: S608
             )
         esc = to_model(Escalation, row)
         if esc is None:

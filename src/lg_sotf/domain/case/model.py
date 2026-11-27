@@ -164,8 +164,8 @@ class CaseReopened(_Model):
     confirmed_by: Optional[ConfirmedBy] = Field(
         default=None,
         description=(
-            "person: a person's confirmation was recorded directly (a true positive, an approved response action "
-            "or a blind-audit label). workflow: the run reopened it, after an analyst's true positive it resumed "
+            "person: a person's confirmation was recorded directly (a true positive, an approved response action, "
+            "a blind-audit label, or a flag on a related alert's AI close). workflow: the run reopened it, after an analyst's true positive it resumed "
             "from or a response action it carried out. Null when the timeline no longer has the event."
         ),
     )

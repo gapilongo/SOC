@@ -80,14 +80,16 @@ async def invalidate_verdicts(
 
 
 async def reopen_confirmed(
-    ctx: ApiContext, tenant_id: str, alert: Alert, actor: Actor, *, escalation_id: Optional[str], path: str
+    ctx: ApiContext, tenant_id: str, alert: Alert, actor: Actor, *, escalation_id: Optional[str], path: str,
+    by_flag: bool = False,
 ) -> None:
     """A person confirmed the threat on ``alert`` (a true positive, a blind-audit malicious label, an approved
     response action): the alerts the models closed alone on its entities reopen, those linked to it earlier
     included, attached to ``escalation_id`` while it is open (:mod:`lg_sotf.core.retro_reopen`). A failure is
-    counted in ``lgsotf_retro_reopen_failures_total`` (``path``), not raised."""
+    counted in ``lgsotf_retro_reopen_failures_total`` (``path``), not raised. ``by_flag``: the confirmation is a
+    person's flag on ``alert`` itself (``api.routers.alerts``)."""
     for reopened in await reopen_counted(ctx.repos, tenant_id, alert, actor=actor, path=path, confirmed=True,
-                                         escalation_id=escalation_id):
+                                         escalation_id=escalation_id, by_flag=by_flag):
         await enqueue_reopened(ctx, tenant_id, reopened)
 
 
@@ -145,7 +147,7 @@ def alert_out(alert: AlertListItem, *, view: Optional[BlindView] = None) -> Aler
     out = AlertOut.model_validate(alert).model_copy(
         update={
             "entities_preview": EntitiesPreviewOut.model_validate(preview) if preview else None,
-            "closed_by": closer(alert.status, alert.summary.get("close_reason")),
+            "closed_by": closer(alert.status, alert.summary.get("close_reason"), person=alert.closed_by_person),
         }
     )
     if view is None:
@@ -160,7 +162,7 @@ def alert_detail_out(alert: Alert, *, view: Optional[BlindView] = None) -> Alert
     out = AlertDetailOut.model_validate(alert).model_copy(
         update={
             "entities_preview": EntitiesPreviewOut.model_validate(preview) if preview else None,
-            "closed_by": closer(alert.status, alert.summary.get("close_reason")),
+            "closed_by": closer(alert.status, alert.summary.get("close_reason"), person=alert.closed_by_person),
             "findings": [FindingOut.model_validate(f) for f in findings(alert.summary)],
         }
     )

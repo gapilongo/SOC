@@ -240,9 +240,11 @@ export interface paths {
         /**
          * Flag an AI close as wrong, with a reason: recorded as a disagreement, and the alert is reopened
          * @description Say the AI was wrong to close the alert. The disagreement is audited ``alert.flagged`` and counted by the
-         *     blind-audit and accuracy reports; the alert is reopened as by ``/reopen``; and, because a person stands
-         *     behind it, the safety net treats it as a confirmation: the other alerts the AI closed on the same host or
-         *     user are reopened too. Same refusals as ``/reopen``.
+         *     blind-audit and accuracy reports, and the alert is reopened as by ``/reopen``. A person stands behind the
+         *     flag, so when no open case holds the alert the safety net treats it as a confirmation of this alert: the
+         *     other alerts the AI closed on its host or user in the last 24 hours are reopened too (never one that waits
+         *     for its blind-audit label). Inside an open case a flag reopens the flagged alert only. Same refusals as
+         *     ``/reopen``.
          */
         post: operations["flag_alert_api_v1_alerts__alert_id__flag_post"];
         delete?: never;
@@ -322,8 +324,9 @@ export interface paths {
         /**
          * Reopen an alert the AI closed, with a reason: it waits for a person
          * @description Put an alert the AI closed on the model's word back in front of a person. While its case is open it joins
-         *     that case as open and the decision on the case settles it; otherwise a new run reviews it. Either way the AI
-         *     never closes it on the model's word again. Audited ``alert.reopened`` with the person and the reason.
+         *     that case as open and the decision on the case settles it; otherwise a new run sends it to an analyst.
+         *     Nothing closes a reopened alert without a person: no model, no suppression rule, no earlier verdict, no
+         *     approved evidence. Audited ``alert.reopened`` with the person and the reason.
          *
          *     409 ``not_ai_closed`` for any other alert, ``hidden_for_blind_audit`` while it waits for its blind-audit
          *     label, ``already_with_a_person``, ``not_in_case`` when ``case_id`` does not hold it.
@@ -3895,7 +3898,7 @@ export interface components {
             by: components["schemas"]["CasePerson"] | null;
             /**
              * Confirmed By
-             * @description person: a person's confirmation was recorded directly (a true positive, an approved response action or a blind-audit label). workflow: the run reopened it, after an analyst's true positive it resumed from or a response action it carried out. Null when the timeline no longer has the event.
+             * @description person: a person's confirmation was recorded directly (a true positive, an approved response action, a blind-audit label, or a flag on a related alert's AI close). workflow: the run reopened it, after an analyst's true positive it resumed from or a response action it carried out. Null when the timeline no longer has the event.
              */
             confirmed_by: ("person" | "workflow") | null;
             /**

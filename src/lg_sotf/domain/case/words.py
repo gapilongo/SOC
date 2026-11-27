@@ -23,6 +23,8 @@ __all__ = [
     "NOT_AVAILABLE",
     "REOPENED_BY",
     "REOPENED_BY_ANALYST",
+    "REOPENED_BY_FLAG",
+    "REOPENED_BY_FLAG_STEP",
     "Missing",
 ]
 
@@ -64,6 +66,16 @@ EVENT_STEPS: Final[Mapping[str, Step]] = {
     "alert.linked": Step("policy", "The safety net linked this alert to the case. It stays closed."),
     "alert.reopened": Step("policy", "The safety net reopened this alert after a related threat was confirmed."),
 }
+
+#: The safety net reopened an alert because a person flagged the AI's close of a related alert (the reopening
+#: records ``confirmation: flag``): why, and its line on the timeline.
+REOPENED_BY_FLAG: Final = (
+    "A person flagged the AI's close of a related alert as wrong, so the safety net reopened this alert, which "
+    "the AI had closed on the model's word."
+)
+REOPENED_BY_FLAG_STEP: Final = Step(
+    "policy", "The safety net reopened this alert after a person flagged the AI's close of a related alert."
+)
 
 
 class Missing(NamedTuple):

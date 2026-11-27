@@ -55,6 +55,11 @@ def decide_codes() -> Set[str]:
     codes: Set[str] = set()
     for call in ast.walk(_tree(routing)):
         if isinstance(call, ast.Call) and isinstance(call.func, ast.Name) and call.func.id == "Decision":
+            if isinstance(call.args[3], ast.Name):
+                # A reopened alert's code is whatever closure.reopened_code gives (#461): its whole range.
+                assert call.args[3].id == "again", ast.dump(call.args[3])
+                codes |= {closure.REOPENED, *closure.REOPEN_CODES.values()}
+                continue
             codes.add(_text(call.args[3], routing))
     for node in ast.walk(_tree(nodes)):
         # decision["code"] = "response_review" and routing.routing_digest("group_review", ...)

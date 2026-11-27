@@ -29,7 +29,11 @@ unreadable value blocks the close.
   corroborates a threat (``rule_corroborated``);
 * not normalised by a model (the LLM-fallback normalizer chose its fields),
   and not reopened (``reopened``), by the safety net or by a person
-  (:mod:`lg_sotf.core.reopen`): a reopened alert goes to an analyst;
+  (:mod:`lg_sotf.core.reopen`): a reopened alert goes to an analyst. The
+  marker holds every close without a person, not only this one (#461): no
+  suppression rule or cached verdict closes it at the gate, the first
+  assessment does not close it, and approved evidence does not either
+  (:func:`reopened_code`, :mod:`lg_sotf.domain.routing`);
 * no related threat of hold grade (AI-E3.16, #435). When the decision is
   made the workflow reads what the database holds about the tenant's other
   alerts and keeps the ones that relate to this one: a shared host or user
@@ -138,6 +142,7 @@ __all__ = [
     "RELATED_HOLDS",
     "RELATED_OPEN",
     "REOPENED",
+    "REOPEN_CODES",
     "SETTING",
     "UNMAPPED",
     "autonomy_tier",
@@ -148,6 +153,7 @@ __all__ = [
     "model_close_blockers",
     "model_close_class",
     "never_close_class",
+    "reopened_code",
     "validate_ai_closure_settings",
 ]
 
@@ -168,6 +174,8 @@ REOPENED = "reopened"
 #: The marker's reason when a person reopened the alert, or flagged the AI's close as wrong
 #: (lg_sotf.core.reopen). The safety net's own is ``related_threat``.
 ANALYST_REOPEN, ANALYST_FLAG = "analyst_reopen", "analyst_flag"
+#: The decide code of a reopened alert, by the marker's reason. Any other reason is the safety net's: ``reopened``.
+REOPEN_CODES: Mapping[str, str] = {ANALYST_REOPEN: "reopened_by_analyst", ANALYST_FLAG: "flagged_by_analyst"}
 LLM_NORMALIZED_FLAG = "llm_normalized"
 #: The state and alert-summary key of the related-alert check: ``{"threats": [alert ids], "in_progress": [alert
 #: ids], "model_only": [alert ids]}`` as the database held them when the decision was made
@@ -179,6 +187,19 @@ RELATED_OPEN = "related_open"
 #: read. When nothing else blocks the close, the alert goes to an analyst under the blocker's own name as the
 #: decision code (lg_sotf.domain.routing).
 RELATED_HOLDS: FrozenSet[str] = frozenset({"related_unchecked", "related_open_threat", "related_in_progress"})
+
+
+def reopened_code(alert: Any) -> Optional[str]:
+    """The decide code of an alert that carries the ``reopened`` marker (the workflow's view of the alert, or its
+    stored summary): ``reopened`` for the safety net's reopening, ``reopened_by_analyst`` or ``flagged_by_analyst``
+    for a person's. ``None`` without the marker. Nothing closes such an alert without a person: not a suppression
+    rule or a cached verdict at the gate, not the first assessment, not approved evidence, not the models
+    (:mod:`lg_sotf.domain.routing`)."""
+    marker = alert.get(REOPENED) if isinstance(alert, Mapping) else None
+    if marker is None:
+        return None
+    reason = marker.get("reason") if isinstance(marker, Mapping) else None
+    return REOPEN_CODES.get(reason, REOPENED) if isinstance(reason, str) else REOPENED
 
 
 def linked_only_cases(summary: Mapping[str, Any]) -> FrozenSet[str]:

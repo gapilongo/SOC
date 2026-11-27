@@ -36,14 +36,14 @@ const WORDS: Record<ReopenVerb, { title: string; label: string; ok: string; note
     title: 'Reopen this alert',
     label: 'Why reopen it (required)',
     ok: 'Reopen alert',
-    note: 'The alert comes back to a person: it joins this case as open while the case is open, otherwise a new run reviews it. The AI can no longer close it on the model’s word. The original close and its reason stay on record.',
+    note: 'The alert comes back to a person: it joins this case as open while the case is open, otherwise a new run sends it to an analyst. Nothing closes it again without a person: no model, no suppression rule, no earlier verdict. The original close and its reason stay on record.',
     placeholder: 'For example: this is the attachment that started the attack.',
   },
   flag: {
     title: 'Flag this AI close as wrong',
     label: 'Why the close was wrong (required)',
     ok: 'Flag and reopen',
-    note: 'The flag is recorded as a disagreement with the AI’s close and counted in the blind-audit and accuracy reports. The alert is reopened, and because a person stands behind the flag, the other alerts the AI closed on the same host or user are reopened too.',
+    note: 'The flag is recorded as a disagreement with the AI’s close and counted in the blind-audit and accuracy reports. The alert is reopened and comes back to a person, as with Reopen. When no open case holds it, the other alerts the AI closed on the same host or user in the last 24 hours are reopened too.',
     placeholder: 'For example: the earlier verdict was for a different host.',
   },
 };
@@ -65,8 +65,8 @@ export function ReopenDialog({ pending, caseId, onClose }: { pending: PendingReo
     setError(null);
     try {
       const out = await endpoints.reopenAlert(api, alert.id, { reason: given, case_id: caseId }, verb === 'flag');
-      const where = out.mode === 'folded' ? 'It waits for a person in this case.' : 'A new run reviews it.';
-      toast.success(`${verb === 'flag' ? 'Flagged and reopened' : 'Reopened'} ${shortId(alert.id)}. ${where} The AI can no longer close it on the model’s word.`);
+      const where = out.mode === 'folded' ? 'It waits for a person in this case.' : 'A new run sends it to an analyst.';
+      toast.success(`${verb === 'flag' ? 'Flagged and reopened' : 'Reopened'} ${shortId(alert.id)}. ${where} Nothing closes it again without a person.`);
       void afterEscalationDecision(client);
       onClose();
     } catch (err) {

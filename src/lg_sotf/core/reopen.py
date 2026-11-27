@@ -11,17 +11,20 @@ thing whoever reopened it:
 * no open case holds it: it is **requeued** for a new run. The marker
   ``reopened`` on its summary is the closing policy's ``reopened`` blocker
   (:func:`lg_sotf.domain.closure.model_close_blockers`): the models never
-  close it on their word again, so that run sends it to an analyst. What the
-  blocker does not cover is unchanged: a suppression rule or approved benign
-  evidence that applies to the alert by then still closes it, as for an alert
-  the safety net requeued.
+  close it on their word again, and the same marker holds every other close
+  without a person (#461, :func:`lg_sotf.domain.closure.reopened_code`): no
+  suppression rule or cached verdict at the gate, not the first assessment,
+  not approved evidence. That run sends the alert to an analyst.
 
 **Reopen** is "a person wants to look at it". **Flag** is "the AI was wrong
 to close it": the alert also keeps ``flagged`` (who, when) on its summary and
 gets an ``alert.flagged`` event and audit entry, which the blind-audit and
-accuracy reports count as a disagreement with the AI's close; and the caller
-treats it as a person's confirmation for the safety net
-(``api.routers.alerts``).
+accuracy reports count as a disagreement with the AI's close. When no open
+case holds the flagged alert, the caller also treats the flag as a person's
+confirmation of that alert for the safety net (``api.routers.alerts``): the
+other alerts the models closed on its host or user are reopened, except a
+sample that waits for its blind-audit label. Inside an open case a flag
+confirms nothing: nobody has judged the case's threat.
 
 The person's reason is data. It is stored on the timeline event and in the
 audit entry, cut to :data:`MAX_REASON_CHARS`, and never on the alert's
@@ -40,7 +43,7 @@ from datetime import UTC, datetime
 from typing import Optional
 
 from lg_sotf.audit.logger import Actor, AuditLogger
-from lg_sotf.core.retro_reopen import reopen_one
+from lg_sotf.core.retro_reopen import PERSON_TEXT, reopen_one
 from lg_sotf.db import Connection
 from lg_sotf.db.repos import Alert, Escalation, Repositories
 from lg_sotf.domain.case.alerts import FLAGGED_EVENT
@@ -70,8 +73,6 @@ class Reopened:
     mode: str
     #: The open case the alert waits in; ``None`` when it was requeued.
     case_id: Optional[str]
-    #: The alert that case was opened for; ``None`` when it was requeued.
-    case_alert_id: Optional[str]
 
 
 async def _case(
@@ -103,7 +104,7 @@ async def _flag(
     )
     await AuditLogger(repos).record(
         alert.tenant_id, FLAG_ACTION, "alert", alert.id, actor_type=actor.type, actor_id=actor.id,
-        details=dict(details), conn=conn,
+        details=dict(details), unlogged=PERSON_TEXT, conn=conn,
     )
 
 
@@ -144,5 +145,4 @@ async def reopen(
             reason=ANALYST_FLAG if flag else ANALYST_REOPEN, recorded={"note": reason}, conn=conn,
         )
     assert mode is not None  # the row is locked and the models' close stood above
-    held = case if mode == FOLDED else None
-    return Reopened(alert_id, mode, held.id if held else None, held.alert_id if held else None)
+    return Reopened(alert_id, mode, case.id if case is not None and mode == FOLDED else None)

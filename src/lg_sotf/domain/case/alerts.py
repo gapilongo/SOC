@@ -120,6 +120,11 @@ def _note(event: Optional[CaseEvent]) -> Optional[str]:
     return bounded(note, MAX_REASON_CHARS) if isinstance(note, str) and note else None
 
 
+def by_flag(event: Optional[CaseEvent]) -> bool:
+    """The safety net's reopening followed a person's flag on a related alert, not a confirmed threat."""
+    return event is not None and event.data.get("confirmation") == "flag"
+
+
 def _reopened(member: MemberFacts, emails: Mapping[str, str]) -> CaseReopened:
     marker = mapping(member.alert.summary.get(closure.REOPENED))
     event = _last(member.events, REOPENED_EVENT)
@@ -128,8 +133,9 @@ def _reopened(member: MemberFacts, emails: Mapping[str, str]) -> CaseReopened:
     mode = marker.get("mode")
     code = str(marker.get("reason"))
     own = words.REOPENED_BY_ANALYST.get(code)  # a person's own reopening; any other reason is the safety net's
+    net = words.REOPENED_BY_FLAG if by_flag(event) else words.REOPENED_BY[confirmed_by]
     return CaseReopened(
-        reason=InvestigationReason(code=code if own else words.LINK_CODE, sentence=own or words.REOPENED_BY[confirmed_by]),
+        reason=InvestigationReason(code=code if own else words.LINK_CODE, sentence=own or net),
         note=_note(event) if own else None,
         threat_alert_id=_text(marker.get("threat_alert_id")),
         mode=mode if mode in REOPEN_MODES else None,
