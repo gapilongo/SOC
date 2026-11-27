@@ -53,6 +53,7 @@ from tests.integration.engine._related import (
     links,
     other,
     persuaded,
+    respond,
     routine,
     seed_demo,
     store_chain,
@@ -87,6 +88,13 @@ pytestmark = pytest.mark.integration
         ("processing", {"true_positive": True, "severity": "medium", "verdict": "benign"}, {"hosts": [HOST]}),
         ("waiting_approval", {"true_positive": True, "severity": "low"}, {"users": [USER]}),
         ("closed", {"true_positive": True, "severity": "medium"}, {"hosts": [HOST]}),
+        # Confirmed by its response (AI-E3.15, #456), as backward: a response a person approved, also while other
+        # actions still wait and when the tenant's dry-run mode only simulated it; a response that really ran, also
+        # alone under the autonomy policy. Also for 24 hours after the workflow closed the alert malicious.
+        ("waiting_approval", {"severity": "low", "planned": True, "response": ("person", "approved")}, {"hosts": [HOST]}),
+        ("processing", {"severity": "medium", "response": ("policy", "succeeded")}, {"users": [USER]}),
+        ("closed", {"severity": "medium", "response": ("person", "dry_run")}, {"hosts": [HOST]}),
+        ("closed", {"severity": "low", "response": ("policy", "succeeded")}, {"users": ["CORP\\jsmith"]}),
     ],
 )
 async def test_a_hold_grade_threat_on_the_same_host_or_user_holds_the_close(
@@ -190,6 +198,63 @@ async def test_a_blind_audit_malicious_label_holds_the_close_while_its_case_is_o
     assert (await decided(repos, alert_id))["code"] == "related_open_threat"
 
 
+async def test_a_response_a_person_approves_holds_the_later_closes_on_its_host(
+    engine_factory: Any, engine_settings: Settings, repos: Repositories
+) -> None:
+    """AI-E3.15 (#456), through the real workflow. A response the workflow proposes on the models' word only links
+    a related close; once a person has approved it, the threat is confirmed forward as it is backward: the next
+    alert on the host that the models call benign goes to a person, with the code of the related-threat hold."""
+    settings = engine_settings.model_copy(update={"routing": {**dict(engine_settings.routing or {}), "response_threshold": 0}})
+    responding = await engine_factory(settings=settings)  # plans a response for the threat on the models' word
+    engine = await engine_factory()
+    await repos.tenants.update_settings(TENANT_A, {"autonomy": {"low": "approval"}})
+    threat = await make_alert(repos, TENANT_A, title="Unusual outbound traffic volume", severity="medium",
+                              normalized={"entities": {"hosts": ["gw-01.corp.example.com"], "ips": ["185.220.101.44"]}})
+    assert (await responding.run(TENANT_A, threat)).status == "waiting_approval"
+    await tier_on(repos)
+
+    before = await routine(repos, "before-the-approval", hosts=["gw-01"])
+    assert (await engine.run(TENANT_A, before)).status == "completed"
+    closed = await repos.alerts.get(TENANT_A, before)
+    assert (closed.status, closed.disposition, closed.summary["close_reason"]) == MODEL_CLOSE
+    assert closed.summary["related_open"] == {"threats": [], "in_progress": [], "model_only": [threat]}
+
+    user = await analyst(repos)
+    pending = [str(a.id) for a in (await repos.actions.list(TENANT_A, alert_id=threat, limit=50)).items
+               if a.status == "awaiting_approval"]
+    done = await responding.resume(TENANT_A, threat, {
+        "type": "approval", "approved_action_ids": pending, "rejected_action_ids": [], "decided_by": user,
+        "reject_remaining": True})
+    stored = await repos.alerts.get(TENANT_A, threat)
+    actions = (await repos.actions.list(TENANT_A, alert_id=threat, limit=50)).items
+    assert pending and done.status == "completed" and (stored.status, stored.disposition) == ("closed", "malicious")
+    assert stored.summary.get("analyst_decision") is None  # no true positive: only the approval stands behind it
+    assert {a.approved_by for a in actions if str(a.id) in pending} == {user}
+
+    after = await routine(repos, "after-the-approval", hosts=["gw-01"])
+    assert (await engine.run(TENANT_A, after)).status == "waiting_human"
+    held = await repos.alerts.get(TENANT_A, after)
+    assert (held.status, held.disposition) == ("waiting_human", None)
+    assert held.summary["analysis"]["verdict"] == "benign"
+    assert held.summary["related_open"] == {"threats": [threat], "in_progress": [], "model_only": []}
+    event = await decided(repos, after)
+    assert (event["route"], event["code"]) == ("escalate", "related_open_threat")
+    assert "related open threat on the same host" in event["reason"]
+
+
+async def test_an_approved_rollback_confirms_nothing(engine: WorkflowEngine, repos: Repositories) -> None:
+    """#456: approving a rollback undoes a response; it confirms no threat, forward as backward. Here the response
+    itself failed halfway with nobody's approval, and a person approved its rollback."""
+    await tier_on(repos)
+    threat = await other(repos, "waiting_human", severity="medium", verdict="inconclusive")
+    original = await respond(repos, threat, "policy", "failed")
+    await respond(repos, threat, "person", "approved", rollback_of=original)
+    alert_id = await routine(repos, "after-a-rollback")
+    assert (await engine.run(TENANT_A, alert_id)).status == "completed"
+    alert = await repos.alerts.get(TENANT_A, alert_id)
+    assert alert.summary["related_open"] == NOTHING and (await decided(repos, alert_id))["code"] == "model_closed"
+
+
 # ------------------------------------------------------------------ linked forward
 
 
@@ -210,6 +275,10 @@ async def test_a_blind_audit_malicious_label_holds_the_close_while_its_case_is_o
         ("waiting_approval", {"verdict": "inconclusive", "severity": "medium", "planned": True}, {"users": [USER]}),
         ("waiting_approval", {"verdict": "malicious", "severity": "medium", "planned": True}, {"hosts": [HOST]}),
         ("waiting_approval", {"verdict": "inconclusive", "planned": True}, {"hosts": [HOST]}),  # high, not judged a threat
+        # A response nobody approved and that did not run confirms nothing (#456): the autonomy policy approved it
+        # alone and the tenant's dry-run mode simulated it, or a person rejected it.
+        ("waiting_approval", {"severity": "medium", "planned": True, "response": ("policy", "dry_run")}, {"hosts": [HOST]}),
+        ("waiting_approval", {"severity": "low", "planned": True, "response": (None, "rejected")}, {"users": [USER]}),
     ],
 )
 async def test_a_threat_only_a_model_stands_behind_links_the_close_to_its_case(
@@ -295,6 +364,9 @@ async def test_a_threat_that_reaches_hold_grade_after_the_close_reopens_it_into_
         ("waiting_human", {"assessment": "suspicious", "verdict": "inconclusive"}),  # a doubt, not a threat (#352)
         ("waiting_human", {"assessment": "benign", "verdict": "benign"}),  # with a person for another reason
         ("closed", {"verdict": "malicious"}),  # closed without a person's confirmation
+        # Closed malicious after a response that was only simulated, or that failed, with nobody's approval (#456).
+        ("closed", {"severity": "medium", "response": ("policy", "dry_run")}),
+        ("closed", {"verdict": "malicious", "response": ("policy", "failed")}),
         ("failed", {"verdict": "malicious"}),  # a failed alert never holds
         ("failed", {"severity": "critical"}),
         ("waiting_human", {"verdict": "malicious", "ingested_at": datetime.now(UTC) - timedelta(days=8)}),  # too old
@@ -333,6 +405,7 @@ async def test_another_tenants_threat_never_holds_or_links_a_close(engine: Workf
     theirs = await other(repos, "waiting_human", tenant_id=TENANT_B, users=[USER], verdict="malicious")
     await other(repos, "processing", tenant_id=TENANT_B, severity="critical")
     await other(repos, "waiting_human", tenant_id=TENANT_B, severity="low", verdict="malicious", case=True)
+    acted = await other(repos, "closed", tenant_id=TENANT_B, severity="low", users=[USER], response=("person", "succeeded"))
 
     ours = await routine(repos, "ours", users=[USER])
     assert (await engine.run(TENANT_A, ours)).status == "completed"
@@ -350,7 +423,7 @@ async def test_another_tenants_threat_never_holds_or_links_a_close(engine: Workf
     same_names = await routine(repos, "theirs", tenant_id=TENANT_B, users=[USER])
     assert (await engine.run(TENANT_B, same_names)).status == "waiting_human"
     held = await repos.alerts.get(TENANT_B, same_names)
-    assert held.summary["related_open"]["threats"] == [theirs]
+    assert held.summary["related_open"]["threats"] == [theirs, acted]  # the open ones first, then the closed
     assert (await decided(repos, same_names, TENANT_B))["code"] == "related_open_threat"
 
 

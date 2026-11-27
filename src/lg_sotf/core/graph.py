@@ -200,8 +200,30 @@ def _raw_rule_subset(raw: Any) -> Optional[Dict[str, Any]]:
     return subset or None
 
 
-def _omitted_raw(rule: Optional[Dict[str, Any]]) -> Dict[str, Any]:
-    return {"_omitted": RAW_OMITTED, "rule": rule} if rule else {"_omitted": RAW_OMITTED}
+#: The Windows event fields kept like ``raw.rule`` (AI-E3.15), as (part of ``raw.data.win``, field): the
+#: never-close check of Kerberos service tickets reads them (lg_sotf.domain.noise_families).
+RAW_WIN_KEYS = (("system", "eventID"), ("eventdata", "ticketEncryptionType"), ("eventdata", "serviceName"))
+
+
+def _raw_win_subset(raw: Any) -> Optional[Dict[str, Any]]:
+    """The :data:`RAW_WIN_KEYS` fields of ``raw.data.win`` that the event has, each as a short scalar."""
+    data = raw.get("data") if isinstance(raw, Mapping) else None
+    win = data.get("win") if isinstance(data, Mapping) else None
+    subset: Dict[str, Any] = {}
+    for part, key in RAW_WIN_KEYS:
+        section = win.get(part) if isinstance(win, Mapping) else None
+        if isinstance(section, Mapping) and key in section:
+            subset.setdefault(part, {})[key] = _shrink(section[key], 1, 200, 1, 0)
+    return subset or None
+
+
+def _omitted_raw(rule: Optional[Dict[str, Any]], win: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    marker: Dict[str, Any] = {"_omitted": RAW_OMITTED}
+    if rule:
+        marker["rule"] = rule
+    if win:
+        marker["data"] = {"win": win}
+    return marker
 
 
 def cap_alert(canonical: Mapping[str, Any]) -> Dict[str, Any]:
@@ -209,9 +231,10 @@ def cap_alert(canonical: Mapping[str, Any]) -> Dict[str, Any]:
 
     ``raw`` is kept only while it fits :data:`MAX_RAW_JSON_CHARS`; otherwise it
     is replaced by a marker that keeps the small vendor rule subset
-    (``raw.rule``: :data:`RAW_RULE_KEYS`, shortened), which the never-close
+    (``raw.rule``: :data:`RAW_RULE_KEYS`, shortened) and three Windows event
+    fields (``raw.data.win``: :data:`RAW_WIN_KEYS`), which the never-close
     checks read (an attacker who inflates an event must not hide the rule's
-    groups). The whole document is bounded by :data:`MAX_ALERT_JSON_CHARS`:
+    groups or the event id). The whole document is bounded by :data:`MAX_ALERT_JSON_CHARS`:
     first the largest unprotected keys are dropped (``raw`` is first reduced
     to that marker), then ``entities`` is shrunk step by step
     (fewer items, shorter strings) so indicators and response targets
@@ -224,20 +247,21 @@ def cap_alert(canonical: Mapping[str, Any]) -> Dict[str, Any]:
     omitted: List[str] = []
     original_raw = canonical.get("raw")
     original_rule = original_raw.get("rule") if isinstance(original_raw, Mapping) else None
-    rule = _raw_rule_subset(original_raw)
+    rule, win = _raw_rule_subset(original_raw), _raw_win_subset(original_raw)
     kept_rule = capped["raw"].get("rule") if isinstance(capped.get("raw"), dict) else None
     if isinstance(kept_rule, dict) and _groups_cut(original_rule, MAX_LIST_ITEMS):
         kept_rule[GROUPS_TRUNCATED] = True  # the per-list cap cut the groups of a raw event that is kept whole
     reduced = False
-    if "raw" in capped and _json_len(capped["raw"]) > MAX_RAW_JSON_CHARS:
-        capped["raw"], reduced = _omitted_raw(rule), True
+    # Too large, or the per-mapping cap cut one of the kept Windows fields from a raw event that is kept whole.
+    if "raw" in capped and (_json_len(capped["raw"]) > MAX_RAW_JSON_CHARS or _raw_win_subset(capped["raw"]) != win):
+        capped["raw"], reduced = _omitted_raw(rule, win), True
     while _json_len(capped) > limit:
         candidates = [k for k in capped if k not in PROTECTED_ALERT_KEYS]
         if not candidates:
             break
         largest = max(candidates, key=lambda k: _json_len(capped[k]))
-        if largest == "raw" and rule is not None and not reduced:
-            capped["raw"], reduced = _omitted_raw(rule), True
+        if largest == "raw" and (rule is not None or win is not None) and not reduced:
+            capped["raw"], reduced = _omitted_raw(rule, win), True
             continue
         capped.pop(largest)
         omitted.append(largest)

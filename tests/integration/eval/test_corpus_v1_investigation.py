@@ -40,6 +40,7 @@ from tests.integration.eval._investigation import (
     EVENTS,
     EVIDENCE_CODES,
     ITEM_0351,
+    KERBEROAST_TICKETS,
     REPORT,
     alone_on_host,
     blind_to_evidence,
@@ -123,6 +124,9 @@ async def test_the_harness_gives_corpus_alerts_facts_and_changes_no_close(
             assert record["evidence_backed"] is False
     if ITEM_0351 in now:  # the attack the evidence bought a close for, before the review
         assert now[ITEM_0351][0] != "closed" and held_verdicts[ITEM_0351][0] != "closed"
+    # The Kerberoasting ticket requests read as normal sign-ins; a never-close class, they close in no run (#456).
+    tickets = {i: (was[i], now[i], held_verdicts[i]) for i in KERBEROAST_TICKETS}
+    assert all(run[0] != "closed" for runs in tickets.values() for run in runs), tickets
     # The alert is never its own evidence: alone on its host it shows no indicator, and no fact lists its own event.
     skill = load_catalog()[0]
     never_close = list(skill.hypotheses.malicious[0].indicator.any_technique_in)  # type: ignore[union-attr]
@@ -151,6 +155,7 @@ async def test_the_harness_gives_corpus_alerts_facts_and_changes_no_close(
             "closes_stopped_blind": {label: sum(1 for i in stopped if expected[i] == label) for label in ("benign", "malicious")},
             "alone_on_host": alone,
             ITEM_0351: {"off": was.get(ITEM_0351), "on": now.get(ITEM_0351), "blind": held_verdicts.get(ITEM_0351)},
+            "kerberoast_tickets": {i: {"off": off, "on": on, "blind": blind} for i, (off, on, blind) in tickets.items()},
             # Alerts that never reached the deep analysis, by where they ended: the harness runs inside it.
             "not_investigated": dict(Counter(
                 f"{now[i][0]}/{now[i][2] or now[i][3] or 'no decision'}" for i in after if not after[i].get("investigation"))),

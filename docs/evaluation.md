@@ -1351,7 +1351,11 @@ against the corpus telemetry, whatever time they are sent at.
 `LG_SOTF_CORPUS_INVESTIGATION_REPORT=path.json` runs all 520 items and writes
 the numbers). `corpus_v1` at the tier `auto_full_audit`, stand-in model,
 network blocked, 2026-11-26 (after the review of PR 443, with the
-related-threat hold of AI-E3.16 in the policy):
+related-threat hold of AI-E3.16 in the policy). Measured again on 2026-11-27
+with the two holds of AI-E3.15 (#456, [below](#kerberos-service-tickets-and-responses-that-hold))
+in the policy: every one of the 520 alerts ends as before, in each of the
+three runs, with the same decision code and the same verdict, so the numbers
+did not move:
 
 | | |
 |---|---|
@@ -1426,6 +1430,77 @@ indicator that is not shown is then `unknown`, not `false` (neither holds a
 close), and the 41 incomplete answers and 21 `incomplete_fact` findings
 above understate what a live indexer will show. These numbers say nothing
 about a real model: that needs new cassettes recorded with the harness on.
+
+### Kerberos service tickets and responses that hold
+
+AI-E3.15 (#456) added two holds to the closing policy. Both only block a
+close.
+
+**RC4 and DES service tickets.** The corpus holds six Kerberos service
+ticket requests, all of them Kerberoasting (`cv1-0061` to `cv1-0063`,
+`cv1-0294` to `cv1-0296`): Windows event 4769 with `ticketEncryptionType`
+`0x17`, which Wazuh reports as rule 60106 "Windows Logon Success", level 3,
+T1078. There is no benign event 4769 in the corpus. On 2026-11-27 the lead
+ran the pipeline on the labelled corpus with the real model, one alert at a
+time: it closed two of the six as normal sign-ins to a service, and all six
+with a more permissive prompt. Played in time order the related-alert holds
+stopped every step of the two attack chains; judged alone, nothing stopped
+these.
+
+Such an alert is now in the never-close class `credential_access`, whatever
+ATT&CK id its rule carries
+(`lg_sotf.domain.noise_families.vendor_never_close_class`).
+
+| | Before | Now |
+|---|---|---|
+| Corpus alerts whose class the check changes (`tests/unit/domain/test_noise_families.py::test_the_ticket_check_changes_six_corpus_attacks_and_no_benign_corpus_alert`) | | 6 of 520, all malicious; 0 of the 312 benign |
+| The six alone, with a stand-in that reads a ticket request as a routine sign-in, verdict `benign` (`tests/integration/eval/test_corpus_v1_kerberoast.py`) | 6 of 6 closed on the models' word | 0 of 6 closed; each waits for a person (`false_positive_review`) |
+| The full corpus with the ordinary stand-in (the measurement above) | 78 benign and 37 attacks closed | the same 78 and 37; no alert ends differently |
+
+The ordinary stand-in rates the six in the grey zone, so they were with a
+person in the measurement above before the change too; that is why its
+numbers did not move. The second row is the case the check exists for.
+
+What it covers: event 4769 with encryption type `0x17`, `0x18` (RC4), `0x1`
+or `0x3` (DES), in any case and with leading zeros (`0x00000017`), for a
+service that is not a machine account (a name ending in `$`) and not
+`krbtgt`. An encryption type or a service name that cannot be read counts
+against the close, and the state size cap keeps the three fields the check
+reads, so an inflated event hides nothing.
+
+What it does not cover:
+
+- a request for an AES ticket (`0x11`, `0x12`): roasting an account that
+  only allows AES looks like every other ticket request;
+- a service account whose name ends in `$`, which reads as a machine account;
+- ticket-granting ticket requests (event 4768, AS-REP roasting);
+- the same event reported by another source in another shape than Wazuh's
+  `data.win`.
+
+Accepted cost: a domain that still issues RC4 tickets for service accounts
+in normal use gets these alerts in front of a person instead of closed.
+
+**A response a person approved, or that ran, holds forward.** In the
+related-threat hold of AI-E3.16, "confirmed by a person" read only an
+analyst's true positive and a blind-audit malicious label when it looked
+forward; an approved or executed response confirmed backward only (it
+reopened the related alerts the models had closed, but an alert arriving
+afterwards could still close). It now holds forward too, with the same
+decision code `related_open_threat`: while the alert with the response is
+open (up to seven days from its ingestion) and for 24 hours after it closed
+as malicious
+(`tests/integration/engine/test_related_open.py::test_a_response_a_person_approves_holds_the_later_closes_on_its_host`
+through the real workflow, and the cases of
+`test_a_hold_grade_threat_on_the_same_host_or_user_holds_the_close`). It
+does not hold for a response that only waits for an approval, one a person
+rejected, one the tenant's dry-run mode simulated with nobody's approval, a
+failed one, or an approved rollback. No person approves anything in an
+evaluation run, and in the corpus measurement no alert ends differently with
+this hold. Accepted cost: on a
+tenant whose autonomy policy runs low-risk responses alone, each response
+that really ran sends the benign alerts on the same host or user to a person
+for up to 24 hours after that alert closed; the backward net already reopened
+their earlier closes for the same reason.
 
 ## AIT-ADS
 

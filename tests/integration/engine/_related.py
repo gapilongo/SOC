@@ -7,13 +7,14 @@ import importlib.util
 import json
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 from uuid import UUID
 
 from lg_sotf.db.repos import Repositories
 from lg_sotf.ingestion.normalizers import get_normalizer
 from lg_sotf.ingestion.normalizers.base import NormalizeContext
 from lg_sotf.llm import fake
+from lg_sotf.models.vocabulary import POLICY_APPROVER, REQUESTED_BY
 from tests.integration.db._support import TENANT_A, make_alert
 from tests.integration.engine._support import analyst
 
@@ -31,6 +32,15 @@ PATHS: Dict[str, Sequence[str]] = {
     "waiting_approval": ("queued", "processing", "waiting_approval"),
     "closed": ("queued", "processing", "closed"),
     "failed": ("queued", "failed"),
+}
+# How the ledger brings a response action to each end (lg_sotf.db.repos.actions.ACTION_TRANSITIONS).
+ACTION_PATHS: Dict[str, Sequence[str]] = {
+    "awaiting_approval": ("awaiting_approval",),
+    "approved": ("approved",),
+    "succeeded": ("approved", "executing", "succeeded"),
+    "failed": ("approved", "executing", "failed"),
+    "dry_run": ("approved", "dry_run"),
+    "rejected": ("awaiting_approval", "rejected"),
 }
 
 
@@ -53,16 +63,37 @@ async def routine(
     )
 
 
+async def respond(
+    repos: Repositories, alert_id: str, approver: Optional[str], end: str, *, tenant_id: str = TENANT_A,
+    target: str = "203.0.113.9", rollback_of: Optional[UUID] = None,
+) -> UUID:
+    """A response action of the alert as the ledger keeps it, brought to ``end`` through the ledger's own state
+    machine. ``approver``: ``"person"`` (an analyst approved it), ``"policy"`` (the autonomy policy approved it
+    alone) or ``None`` (nobody did: it still waits, or was rejected)."""
+    approved_by = await analyst(repos, tenant_id) if approver == "person" else POLICY_APPROVER if approver else None
+    action, _ = await repos.actions.propose(
+        tenant_id, alert_id, "block_ip", target, "low", requested_by=REQUESTED_BY, rollback_of=rollback_of,
+        scope=f"rollback:{rollback_of}:1" if rollback_of else None,
+    )
+    for step in ACTION_PATHS[end]:
+        approval = {"approved_by": approved_by} if step == "approved" else {}
+        action = await repos.actions.transition(tenant_id, action.id, step, **approval)  # type: ignore[arg-type]
+    return action.id
+
+
 async def other(
     repos: Repositories, status: str, *, tenant_id: str = TENANT_A, severity: str = "high",
     hosts: Sequence[str] = (HOST,), users: Sequence[str] = (), ips: Sequence[str] = (),
     assessment: Optional[str] = None, verdict: Optional[str] = None, planned: bool = False, case: bool = False,
     true_positive: bool = False, ingested_at: Optional[datetime] = None, idle_minutes: int = 0,
+    response: Optional[Tuple[Optional[str], str]] = None,
 ) -> str:
     """Another stored alert of the tenant, at ``status``, with what the workflow would have kept about it: the
     models' assessments, a response plan (``planned``), an open case of its own (``case``), an analyst's
     ``true_positive`` on its case (``true_positive``; a closed one is closed as the analyst's decision closes
-    it), and how long ago the row last changed (``idle_minutes``)."""
+    it), a response action in the ledger (``response``: who approved it and where it ended, :func:`respond`; a
+    closed one is closed malicious, as the workflow closes an alert after its response), and how long ago the
+    row last changed (``idle_minutes``)."""
     alert_id = await make_alert(
         repos, tenant_id, title="Credential dumping from LSASS", severity=severity, ingested_at=ingested_at,
         normalized={"entities": {"hosts": list(hosts), "users": list(users), "ips": list(ips)}},
@@ -87,6 +118,11 @@ async def other(
             if status == "closed":
                 summary.update(close_reason="analyst:true_positive", analyst_decision="true_positive")
                 await repos.alerts.update(tenant_id, alert_id, disposition="malicious")
+    if response is not None:
+        await respond(repos, alert_id, *response, tenant_id=tenant_id)
+        if status == "closed":
+            summary.update(close_reason="policy:response")
+            await repos.alerts.update(tenant_id, alert_id, disposition="malicious")
     if summary:
         await repos.alerts.update(tenant_id, alert_id, summary=summary)  # type: ignore[arg-type]
     if idle_minutes:

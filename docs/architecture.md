@@ -344,8 +344,9 @@ Rules:
     verdict is `benign` (any certainty, below the response policy) unless
     the fast tier said `likely_threat` or `confirmed_threat`, it is
     critical, a never-close class (credential access including the vendor's
-    authentication-failure rules and T1531, `vendor_unknown`, log clearing,
-    tampering, ransomware, named persistence), carries steering text or a
+    authentication-failure rules, T1531 and a Kerberos service ticket
+    request, Windows event 4769, for an RC4 or DES ticket; `vendor_unknown`,
+    log clearing, tampering, ransomware, named persistence), carries steering text or a
     recent true positive, was normalised by a model, or was reopened. The
     `decide` node reads the tier from the tenant's settings at every
     decision.
@@ -363,7 +364,8 @@ Rules:
     `hold_grade`, used forward and backward: the alert is high or
     critical and a model judged it `malicious`, `likely_threat` or
     `confirmed_threat`; or a person confirmed it (an analyst true
-    positive, a blind-audit malicious label). A response that waits for
+    positive, a blind-audit malicious label, a response a person approved
+    or one that really ran). A response that waits for
     an approval is not hold grade, at any severity: a response a model
     proposed and nobody has approved is still only the model's word, so
     such an alert links, forward and backward (on the dev mix, three

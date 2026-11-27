@@ -15,8 +15,9 @@ unreadable value blocks the close.
 * severity ``info``, ``low``, ``medium`` or ``high`` (critical never closes
   on a model's word, at any tier);
 * not a never-close class (:func:`model_close_class`): credential access by
-  ATT&CK tactic or technique (T1531 included) or by the vendor's own
-  authentication-failure rule groups and ids
+  ATT&CK tactic or technique (T1531 included), by the vendor's own
+  authentication-failure rule groups and ids, or as a Kerberos service
+  ticket request (Windows event 4769) with an RC4 or DES ticket
   (:func:`lg_sotf.domain.noise_families.vendor_never_close_class`), a Wazuh
   alert whose rule cannot be read (``vendor_unknown``), log clearing and
   other indicator removal, security-tool tampering, ransomware behaviour,
@@ -38,8 +39,10 @@ unreadable value blocks the close.
   (:func:`lg_sotf.core.retro_reopen.related_open`). The close is held back
   and the alert goes to an analyst (code ``related_open_threat``) when one
   of them is hold grade (:func:`lg_sotf.domain.related.hold_grade`): high
-  or critical and judged a threat by a model, or confirmed by a person (a
-  response that only waits for an approval is not). Such an alert holds for as long as it
+  or critical and judged a threat by a model, or confirmed by a person: an
+  analyst's true positive, a blind-audit malicious label, a response a
+  person approved or one that really ran (a response that only waits for an
+  approval is not). Such an alert holds for as long as it
   is open, up to seven days from its ingestion, and for 24 hours after it
   closed with a person's confirmation. It is also held back while a high or
   critical alert on the same host is being processed (changed in the last

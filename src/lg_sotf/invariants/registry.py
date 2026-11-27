@@ -115,7 +115,8 @@ INVARIANTS: Tuple[Invariant, ...] = (
             "class. Without such evidence an info to high alert closes on the models' word only when the tenant's "
             "autonomy tier is auto_full_audit, the deep tier judges it benign and the fast tier does not call it a "
             "threat (decision policy v3), never for the never-close classes (credential access, including the "
-            "vendor's authentication-failure rules and T1531, a Wazuh alert whose rule cannot be read, log "
+            "vendor's authentication-failure rules, T1531 and a Kerberos service ticket request for an RC4 or DES "
+            "ticket, a Wazuh alert whose rule cannot be read, log "
             "clearing, security-tool tampering, ransomware behaviour, persistence through attacker-named objects), "
             "steering text, entities with a recent true positive, an alert normalised by a model or one reopened; "
             "such a close is marked model_closed for audit. Nor while a related threat of hold grade is there. Two "
@@ -123,7 +124,8 @@ INVARIANTS: Tuple[Invariant, ...] = (
             "never an IP address alone, never an account every host has). Hold grade is one predicate, forward and "
             "backward: the alert is high or critical and a model judged it a threat (deep verdict malicious, or "
             "fast tier likely_threat or confirmed_threat, never a merely suspicious one), or a person confirmed "
-            "it (an analyst true positive, a blind-audit malicious label); a response that only waits for an "
+            "it (an analyst true positive, a blind-audit malicious label, a response a person approved or one "
+            "that really ran); a response that only waits for an "
             "approval is still the model's word and is not hold grade. When the decision is made the workflow reads what the database holds about the tenant's "
             "other alerts, never a model's text: a related alert of hold grade that is open (up to seven days from "
             "its ingestion) or that closed in the last 24 hours with a person's confirmation, or a high or "
@@ -194,6 +196,12 @@ INVARIANTS: Tuple[Invariant, ...] = (
             "tests/integration/engine/test_related_open.py::"
             "test_a_hold_grade_threat_on_the_same_host_or_user_holds_the_close",
             "tests/integration/engine/test_related_open.py::test_a_held_alert_takes_the_ordinary_escalation_path",
+            "tests/integration/engine/test_related_open.py::"
+            "test_a_response_a_person_approves_holds_the_later_closes_on_its_host",
+            "tests/unit/domain/test_noise_families.py::"
+            "test_an_rc4_or_des_service_ticket_never_closes_on_a_benign_verdict",
+            "tests/unit/domain/test_noise_families.py::"
+            "test_a_service_ticket_whose_fields_cannot_be_read_fails_closed",
             "tests/integration/engine/test_related_open.py::"
             "test_a_threat_that_reaches_hold_grade_after_the_close_reopens_it_into_its_case",
             "tests/integration/engine/test_related_open.py::"
