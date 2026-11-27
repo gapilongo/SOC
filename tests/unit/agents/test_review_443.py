@@ -1,9 +1,9 @@
 """Reviewer probes for PR 443 (AI-E3.3). Each test asserts the behaviour a reviewer would want; a failure is a finding.
 
-Kept as the reviewer wrote them, but for three lines where a decision of the review changed what is expected
-(each is marked ``adapted``): p1 (the model no longer reads the steering text: it is shown a marker), p3 (an
-alert alone on its host now has an empty host lookup, so there is no ``value`` to read) and p6 (not built:
-issue 452, an expected failure until then).
+Kept as the reviewer wrote them, but for two lines where a decision of the review changed what is expected
+(each is marked ``adapted``): p1 (the model no longer reads the steering text: it is shown a marker) and p3 (an
+alert alone on its host now has an empty host lookup, so there is no ``value`` to read). p6 was an expected
+failure until issue 452 chose the listed events in parts.
 """
 
 from __future__ import annotations
@@ -138,9 +138,8 @@ def test_p4_a_tenant_override_never_passes_the_install_cap(asked: Any) -> None:
     assert 1 <= got.steps <= 16 and 0 < got.wall_s <= 105.0 and 0 <= got.tokens <= 100_000 and 0 <= got.usd <= 1.0
 
 
-# adapted: finding 4 is a follow-up, not built here (issue 452: keep never-close techniques and the events
-# closest in time). Strict, so the mark has to go when the listing is fixed.
-@pytest.mark.xfail(strict=True, reason="issue 452: host activity lists the 50 loudest events")
+# Finding 4, fixed by issue 452: the certutil event is listed for its rare technique, and the prompt shows
+# the listed events by part (the print below still counts a list: with a sample it prints 0).
 async def test_p6_the_one_incriminating_event_survives_the_attackers_own_noise(make_settings: Make) -> None:
     """One low-level incriminating event, then 60 louder failed logons anybody on the network can cause."""
     bad = logon("4624", 50, doc_id="7")

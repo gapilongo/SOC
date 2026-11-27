@@ -19,7 +19,7 @@ import ipaddress
 import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Annotated, Any, Dict, List, Literal, Mapping, Optional, Tuple
+from typing import Annotated, Any, Dict, List, Literal, Mapping, Optional, Sequence, Tuple
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -28,6 +28,10 @@ from lg_sotf.tools.wazuh import dsl
 from lg_sotf.tools.wazuh.dsl import Clause, all_of, between, named, search, term, terms
 
 MAX_HOST_MINUTES = 60
+NEVER_CLOSE_SHARE = 20
+RARE_SHARE = 10
+NEAREST_SHARE = 10
+"""Of the 50 events a busy host's fact lists (:func:`host_sample`); the highest rule levels fill the rest."""
 MAX_LOGON_LOOKBACK_MINUTES = 1_440
 MAX_LOGON_AFTER_MINUTES = 60
 MAX_LINEAGE_AFTER_MINUTES = 30
@@ -51,9 +55,11 @@ _HOST = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,254}$")
 _SHA256 = re.compile(r"^[0-9A-Fa-f]{64}$")
 
 EVENT_SOURCE = (
-    dsl.TIME, dsl.RULE_ID, dsl.RULE_LEVEL, dsl.RULE_GROUPS, dsl.EVENT_ID, dsl.TARGET_USER, dsl.PROCESS_USER,
-    dsl.IMAGE, dsl.COMMAND_LINE,
+    dsl.TIME, dsl.DOC_ID, dsl.RULE_ID, dsl.RULE_LEVEL, dsl.RULE_GROUPS, dsl.TECHNIQUES, dsl.EVENT_ID, dsl.TARGET_USER,
+    dsl.PROCESS_USER, dsl.IMAGE, dsl.COMMAND_LINE,
 )
+"""``DOC_ID`` tells two events apart when two searches return the same one, and ``TECHNIQUES`` says which
+technique an event of the rare part stands for; an event of a fact holds neither."""
 PROCESS_SOURCE = (
     dsl.TIME, dsl.IMAGE, dsl.COMMAND_LINE, dsl.PROCESS_GUID, dsl.PROCESS_ID, dsl.PROCESS_USER, dsl.PARENT_GUID,
     dsl.PARENT_ID, dsl.PARENT_IMAGE, dsl.PARENT_COMMAND_LINE, dsl.PARENT_USER,
@@ -217,7 +223,9 @@ def _top(field: str) -> Dict[str, Any]:
 
 
 def host_activity(params: HostActivityParams) -> Dict[str, Any]:
-    """The host's alerts around ``at``: the 50 highest, and counts by rule group and technique over all of them."""
+    """The host's alerts around ``at``: the 50 highest, and counts by rule group and technique over all of them.
+
+    When the window holds more than it lists, :func:`host_sample` chooses the listed ones."""
     start, end = params.at - minutes(params.before_min), params.at + minutes(params.after_min)
     return search(
         [term(dsl.AGENT, params.host), between(start, end)],
@@ -231,6 +239,31 @@ def host_activity(params: HostActivityParams) -> Dict[str, Any]:
             "techniques": _top(dsl.TECHNIQUES),
         },
     )
+
+
+def host_sample(params: HostActivityParams, never_close: Sequence[str], rare: Sequence[str]) -> Dict[str, Dict[str, Any]]:
+    """The searches that choose the listed events of a host with more events than a fact lists, by part.
+
+    Rule level alone lets whoever raises louder alerts on the host choose the list (issue 452). So part of
+    it is kept for the newest events of the technique ids ``never_close`` (those the host showed that are in
+    a class only a person may close) and of the ids ``rare`` (those it showed least often), and part for the
+    events closest in time to ``at``, ``before`` and ``after`` it. The ids are ones the indexer listed.
+    """
+    host, start, end = term(dsl.AGENT, params.host), params.at - minutes(params.before_min), params.at + minutes(params.after_min)
+
+    def events(*filters: Clause, order: str = "desc") -> Dict[str, Any]:
+        return search([host, *filters], size=dsl.MAX_HITS, source=EVENT_SOURCE, sort=[(dsl.TIME, order), (dsl.DOC_ID, "asc")])
+
+    bodies: Dict[str, Dict[str, Any]] = {}
+    if never_close:
+        bodies["never_close"] = events(terms(dsl.TECHNIQUES, never_close), between(start, end))
+    if rare:
+        bodies["rare"] = events(terms(dsl.TECHNIQUES, rare), between(start, end))
+    if params.before_min:
+        bodies["before"] = events(between(start, params.at))
+    if params.after_min:
+        bodies["after"] = events(between(params.at, end), order="asc")
+    return bodies
 
 
 def spellings(pivot: str, value: str) -> List[str]:

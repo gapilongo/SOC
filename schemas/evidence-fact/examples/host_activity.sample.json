@@ -1,0 +1,62 @@
+{
+  "schema_version": "1.2.0",
+  "id": "host:0",
+  "kind": "host_activity",
+  "subject": {"type": "host", "value": "FIN-SRV-02"},
+  "observed_at": "2026-11-07T09:45:00Z",
+  "source": {"name": "wazuh.host_activity", "version": "1"},
+  "complete": false,
+  "value": {
+    "window_start": "2026-11-07T08:30:00Z",
+    "window_end": "2026-11-07T09:30:00Z",
+    "total": 61,
+    "max_level": 5,
+    "by_group": [
+      {"group": "authentication_failed", "count": 60},
+      {"group": "windows", "count": 60},
+      {"group": "sysmon", "count": 1}
+    ],
+    "techniques": ["T1531", "T1140"],
+    "never_close_technique_truncated": true,
+    "events": [
+      {
+        "at": "2026-11-07T09:29:00Z",
+        "rule_id": "60122",
+        "level": 5,
+        "groups": ["windows", "authentication_failed"],
+        "event_id": "4625",
+        "user": "svc-backup-job-000",
+        "listed_for": "never_close_class"
+      },
+      {
+        "at": "2026-11-07T08:40:00Z",
+        "rule_id": "92018",
+        "level": 3,
+        "groups": ["sysmon"],
+        "event_id": "1",
+        "user": "CORP\\x",
+        "image_name": "certutil.exe",
+        "command_template": "certutil.exe -decode c:\\users\\public\\a.b64 c:\\users\\public\\loader.exe",
+        "listed_for": "rare_technique"
+      },
+      {
+        "at": "2026-11-07T09:28:30Z",
+        "rule_id": "60106",
+        "level": 3,
+        "groups": ["windows", "authentication_success"],
+        "event_id": "4624",
+        "user": "j.doe",
+        "listed_for": "nearest_in_time"
+      },
+      {
+        "at": "2026-11-07T08:50:00Z",
+        "rule_id": "60122",
+        "level": 5,
+        "groups": ["windows", "authentication_failed"],
+        "event_id": "4625",
+        "user": "svc-backup-job-039",
+        "listed_for": "rule_level"
+      }
+    ]
+  }
+}
