@@ -28,7 +28,12 @@ export const VIEW_STATUSES: Record<AlertView, readonly string[] | null> = {
 };
 
 /** URL parameters that filter the list (everything but `view` and the selected `alert`). */
-export const FILTER_PARAMS = ['status', 'severity', 'disposition', 'source_id', 'q', 'from', 'to', 'closed_from', 'closed_to'] as const;
+export const FILTER_PARAMS = ['status', 'severity', 'disposition', 'closed_by', 'source_id', 'q', 'from', 'to', 'closed_from', 'closed_to'] as const;
+
+/** The views that list closed alerts: only they keep the filter on who or what closed an alert. */
+export function listsClosed(view: AlertView): boolean {
+  return view === 'closed' || view === 'all';
+}
 
 function isView(value: string | null): value is AlertView {
   return (ALERT_VIEWS as readonly (string | null)[]).includes(value);
@@ -67,9 +72,9 @@ export function isTodayWindow(params: URLSearchParams): boolean {
 /** The filters the API receives for `view`: the URL's filters with the view's statuses (and window for Closed). */
 export function viewFilters(view: AlertView, base: AlertFilters, window: AlertCountsWindow): AlertFilters {
   if (view === 'all') return base;
-  const { status: _status, closed_from: _from, closed_to: _to, ...rest } = base;
+  const { status: _status, closed_from: _from, closed_to: _to, closed_by, ...rest } = base;
   const filters: AlertFilters = { ...rest, status: [...(VIEW_STATUSES[view] ?? [])] };
-  if (view === 'closed') Object.assign(filters, window);
+  if (view === 'closed') Object.assign(filters, window, closed_by ? { closed_by } : {});
   return filters;
 }
 
@@ -108,6 +113,7 @@ export function viewHref(view: AlertView, params: URLSearchParams): string {
     next.delete('closed_from');
     next.delete('closed_to');
   }
+  if (!listsClosed(view)) next.delete('closed_by');
   next.set('view', view);
   return `/alerts?${next.toString()}`;
 }

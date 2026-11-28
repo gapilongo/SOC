@@ -26,7 +26,7 @@ from __future__ import annotations
 from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Dict, Mapping, Optional
+from typing import TYPE_CHECKING, Any, Dict, Mapping, Optional, Sequence
 from uuid import UUID
 
 from lg_sotf.db.tenancy import switch_tenant
@@ -109,9 +109,13 @@ class AuditLogger:
         actor_type: str = "system",
         actor_id: Optional[str] = None,
         details: Optional[Mapping[str, Any]] = None,
+        unlogged: Sequence[str] = (),
         conn: Connection,
     ) -> Optional[AuditEntry]:
         """Persist the audit entry of a change in the change's own transaction (``conn``), and log it.
+
+        ``unlogged`` names the details that are a person's own words (the reason of a reopening): the entry
+        keeps them, the log line gives their length only.
 
         Persistence failures propagate: an action whose audit entry cannot
         be written must not be reported as done. Written on ``conn``, the
@@ -120,7 +124,9 @@ class AuditLogger:
         """
         if conn is None:
             raise TypeError("AuditLogger.record needs the change's connection; use record_event for an event")
-        return await self._write(tenant_id, action, resource_type, resource_id, actor_type, actor_id, details, conn)
+        return await self._write(
+            tenant_id, action, resource_type, resource_id, actor_type, actor_id, details, conn, unlogged=unlogged
+        )
 
     async def record_event(
         self,
@@ -154,6 +160,8 @@ class AuditLogger:
         actor_id: Optional[str],
         details: Optional[Mapping[str, Any]],
         conn: Optional[Connection],
+        *,
+        unlogged: Sequence[str] = (),
     ) -> Optional[AuditEntry]:
         safe_details, _ = redact(dict(details or {}))
         if _session_tag.get() is not None:
@@ -185,7 +193,7 @@ class AuditLogger:
             resource_id=resource_id,
             actor_type=actor_type,
             actor_id=actor_id,
-            details=safe_details,
+            details={k: f"<{len(str(v))} characters>" if k in unlogged else v for k, v in safe_details.items()},
             persisted=entry is not None,
         )
         return entry

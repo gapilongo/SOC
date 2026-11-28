@@ -201,6 +201,7 @@ class BlindAuditReport(BaseModel):
     runs: List[BlindAuditRunSummary]
     uncovered: List[UncoveredSpan]
     labels_by_organisation: List[OrganisationLabels]
+    flagged_ai_closes: int = Field(default=0, description="AI closes a person flagged as wrong in the window.")
     notes: List[str]
 
     model_config = ConfigDict(populate_by_name=True)
@@ -223,6 +224,8 @@ REPORT_NOTES = (
     "on Kish's effective sample size; each run also shows its own Wilson interval.",
     "Unsure and pending samples are left out of the rate. The worst case counts them as malicious; the "
     "estimate is marked incomplete until every sample of every run is labelled.",
+    "A person can also flag an AI close as wrong outside any sample (flagged_ai_closes, by the time of the "
+    "flag). A flag is not a random draw, so it is counted beside the estimate and never enters it.",
 )
 
 SETTLE_LAG = timedelta(minutes=5)
@@ -489,6 +492,7 @@ class BlindAuditService:
             runs=runs,
             uncovered=uncovered_spans(window.since, min(window.until, db_now - SETTLE_LAG), runs),
             labels_by_organisation=by_org,
+            flagged_ai_closes=await self._repos.reports.flagged_closes(tenant_id, window.since, window.until),
             notes=list(REPORT_NOTES),
         )
 

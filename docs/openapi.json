@@ -208,6 +208,11 @@
           "feedback": {
             "$ref": "#/components/schemas/FeedbackSummary"
           },
+          "flagged_ai_closes": {
+            "default": 0,
+            "title": "Flagged Ai Closes",
+            "type": "integer"
+          },
           "from": {
             "format": "date",
             "title": "From",
@@ -725,6 +730,25 @@
               }
             ],
             "title": "Closed At"
+          },
+          "closed_by": {
+            "anyOf": [
+              {
+                "enum": [
+                  "analyst",
+                  "ai_evidence",
+                  "ai_audit",
+                  "suppression_rule",
+                  "cached_verdict"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Who or what closed it. Null while it is open, or waits for its blind-audit label.",
+            "title": "Closed By"
           },
           "confidence": {
             "anyOf": [
@@ -1399,6 +1423,19 @@
                   }
                 ]
               },
+              "flagged": {
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "type": "object"
+              },
               "linked": {
                 "items": {
                   "additionalProperties": {
@@ -1929,6 +1966,25 @@
               }
             ],
             "title": "Closed At"
+          },
+          "closed_by": {
+            "anyOf": [
+              {
+                "enum": [
+                  "analyst",
+                  "ai_evidence",
+                  "ai_audit",
+                  "suppression_rule",
+                  "cached_verdict"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Who or what closed it. Null while it is open, or waits for its blind-audit label.",
+            "title": "Closed By"
           },
           "confidence": {
             "anyOf": [
@@ -2585,6 +2641,19 @@
                     "type": "null"
                   }
                 ]
+              },
+              "flagged": {
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "type": "object"
               },
               "linked": {
                 "items": {
@@ -3963,6 +4032,12 @@
           "estimate": {
             "$ref": "#/components/schemas/BlindAuditEstimate"
           },
+          "flagged_ai_closes": {
+            "default": 0,
+            "description": "AI closes a person flagged as wrong in the window.",
+            "title": "Flagged Ai Closes",
+            "type": "integer"
+          },
           "from": {
             "format": "date",
             "title": "From",
@@ -5162,6 +5237,12 @@
           "blind_audit": {
             "$ref": "#/components/schemas/CaseBlindAudit"
           },
+          "can_reopen": {
+            "default": false,
+            "description": "The AI closed it on the model's word and the close stands: an analyst may reopen it or flag the close (POST /alerts/{id}/reopen, POST /alerts/{id}/flag).",
+            "title": "Can Reopen",
+            "type": "boolean"
+          },
           "category": {
             "anyOf": [
               {
@@ -5227,6 +5308,17 @@
             "title": "Entities",
             "type": "array"
           },
+          "flagged": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CaseFlagged"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A person flagged the AI's close as wrong."
+          },
           "hidden_for_blind_audit": {
             "default": false,
             "description": "The alert waits for its blind-audit label: nothing of the AI's side is given.",
@@ -5265,7 +5357,7 @@
             "description": "role reopened: what reopened it."
           },
           "role": {
-            "description": "primary: the alert the case was opened for. attached: grouped with it, so the decision on the case applies to it. linked: closed by the AI and linked by the safety net; it stays closed. reopened: closed by the AI and reopened by the safety net. withheld: the alert waits for its blind-audit label, so how it joined is withheld with the AI's side.",
+            "description": "primary: the alert the case was opened for. attached: grouped with it, so the decision on the case applies to it. linked: closed by the AI and linked by the safety net; it stays closed. reopened: closed by the AI and reopened, by the safety net or by a person. withheld: the alert waits for its blind-audit label, so how it joined is withheld with the AI's side.",
             "enum": [
               "primary",
               "attached",
@@ -5344,7 +5436,9 @@
           "closed_by",
           "blind_audit",
           "link",
-          "reopened"
+          "reopened",
+          "flagged",
+          "can_reopen"
         ],
         "title": "CaseAlert",
         "type": "object"
@@ -5635,6 +5729,12 @@
               "suppression_rule": 0
             }
           },
+          "flagged": {
+            "default": 0,
+            "description": "Alerts whose AI close a person flagged as wrong.",
+            "title": "Flagged",
+            "type": "integer"
+          },
           "linked": {
             "default": 0,
             "title": "Linked",
@@ -5669,6 +5769,7 @@
           "closed",
           "linked",
           "reopened",
+          "flagged",
           "withheld",
           "closed_by",
           "actions_awaiting_approval"
@@ -5780,6 +5881,52 @@
         "title": "CaseEntityRef",
         "type": "object"
       },
+      "CaseFlagged": {
+        "description": "A person flagged the AI's close of this alert as wrong.",
+        "properties": {
+          "at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "At"
+          },
+          "by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CasePerson"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The reason the person gave. Data, at most 1000 characters. Null when the timeline no longer has it.",
+            "title": "Note"
+          }
+        },
+        "required": [
+          "by",
+          "at",
+          "note"
+        ],
+        "title": "CaseFlagged",
+        "type": "object"
+      },
       "CaseLink": {
         "description": "The safety net linked this alert to the case: it stays closed.",
         "properties": {
@@ -5885,7 +6032,7 @@
         "type": "object"
       },
       "CaseReopened": {
-        "description": "The safety net reopened this alert, which the AI had closed on the model's word.",
+        "description": "This alert, which the AI had closed on the model's word, was reopened: by the safety net, or by a person.",
         "properties": {
           "at": {
             "anyOf": [
@@ -5908,7 +6055,7 @@
                 "type": "null"
               }
             ],
-            "description": "person: who confirmed."
+            "description": "person: who confirmed, reopened or flagged."
           },
           "confirmed_by": {
             "anyOf": [
@@ -5923,7 +6070,7 @@
                 "type": "null"
               }
             ],
-            "description": "person: a person's confirmation was recorded directly (a true positive, an approved response action or a blind-audit label). workflow: the run reopened it, after an analyst's true positive it resumed from or a response action it carried out. Null when the timeline no longer has the event.",
+            "description": "person: a person's confirmation was recorded directly (a true positive, an approved response action, a blind-audit label, or a flag on a related alert's AI close). workflow: the run reopened it, after an analyst's true positive it resumed from or a response action it carried out. Null when the timeline no longer has the event.",
             "title": "Confirmed By"
           },
           "mode": {
@@ -5942,8 +6089,21 @@
             "description": "folded: it joined the open case and that case's decision settles it. requeued: a new run reviews it.",
             "title": "Mode"
           },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "analyst_reopen, analyst_flag: the reason the person gave. Data, at most 1000 characters.",
+            "title": "Note"
+          },
           "reason": {
-            "$ref": "#/components/schemas/InvestigationReason"
+            "$ref": "#/components/schemas/InvestigationReason",
+            "description": "related_threat: the safety net reopened it. analyst_reopen: a person reopened it. analyst_flag: a person flagged the AI's close as wrong, which reopened it."
           },
           "threat_alert_id": {
             "anyOf": [
@@ -5960,6 +6120,7 @@
         },
         "required": [
           "reason",
+          "note",
           "threat_alert_id",
           "mode",
           "confirmed_by",
@@ -6211,6 +6372,14 @@
               "type": "integer"
             },
             "title": "By Status",
+            "type": "object"
+          },
+          "closed_without_human_by": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "description": "handled_without_human by who or what closed the alert: ai_evidence, ai_audit, suppression_rule, cached_verdict, and other (a close reason this release does not know).",
+            "title": "Closed Without Human By",
             "type": "object"
           },
           "generated_at": {
@@ -12541,6 +12710,89 @@
         "title": "RecoveryCodesOut",
         "type": "object"
       },
+      "ReopenIn": {
+        "additionalProperties": false,
+        "properties": {
+          "case_id": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The case the alert returns to (it must hold the alert). Default: the open case it is attached to.",
+            "title": "Case Id"
+          },
+          "reason": {
+            "description": "Why, in the person's words: data.",
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "ReopenIn",
+        "type": "object"
+      },
+      "ReopenOut": {
+        "properties": {
+          "alert_id": {
+            "title": "Alert Id",
+            "type": "string"
+          },
+          "case_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Case Id"
+          },
+          "flagged": {
+            "title": "Flagged",
+            "type": "boolean"
+          },
+          "mode": {
+            "description": "folded: it waits for a person in case_id. requeued: no open case holds it, a new run reviews it.",
+            "enum": [
+              "folded",
+              "requeued"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "new",
+              "queued",
+              "processing",
+              "waiting_human",
+              "waiting_approval",
+              "closed",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "alert_id",
+          "status",
+          "mode",
+          "flagged"
+        ],
+        "title": "ReopenOut",
+        "type": "object"
+      },
       "ReprocessOut": {
         "properties": {
           "alert_id": {
@@ -16397,6 +16649,34 @@
             }
           },
           {
+            "description": "Who or what closed it (closed alerts only; never one that waits for its blind-audit label)",
+            "in": "query",
+            "name": "closed_by",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "enum": [
+                      "analyst",
+                      "ai_evidence",
+                      "ai_audit",
+                      "suppression_rule",
+                      "cached_verdict"
+                    ],
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Who or what closed it (closed alerts only; never one that waits for its blind-audit label)",
+              "title": "Closed By"
+            }
+          },
+          {
             "in": "query",
             "name": "source_id",
             "required": false,
@@ -16813,6 +17093,60 @@
         "x-stability": "beta"
       }
     },
+    "/api/v1/alerts/{alert_id}/flag": {
+      "post": {
+        "description": "Say the AI was wrong to close the alert. The disagreement is audited ``alert.flagged`` and counted by the\nblind-audit and accuracy reports, and the alert is reopened as by ``/reopen``. A person stands behind the\nflag, so when no open case holds the alert the safety net treats it as a confirmation of this alert: the\nother alerts the AI closed on its host or user in the last 24 hours are reopened too (never one that waits\nfor its blind-audit label). Inside an open case a flag reopens the flagged alert only. Same refusals as\n``/reopen``.",
+        "operationId": "flag_alert_api_v1_alerts__alert_id__flag_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "alert_id",
+            "required": true,
+            "schema": {
+              "title": "Alert Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReopenIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReopenOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Flag an AI close as wrong, with a reason: recorded as a disagreement, and the alert is reopened",
+        "tags": [
+          "alerts"
+        ],
+        "x-stability": "beta"
+      }
+    },
     "/api/v1/alerts/{alert_id}/incident-report": {
       "post": {
         "operationId": "incident_report_api_v1_alerts__alert_id__incident_report_post",
@@ -16961,6 +17295,60 @@
           "alerts"
         ],
         "x-stability": "stable"
+      }
+    },
+    "/api/v1/alerts/{alert_id}/reopen": {
+      "post": {
+        "description": "Put an alert the AI closed on the model's word back in front of a person. While its case is open it joins\nthat case as open and the decision on the case settles it; otherwise a new run sends it to an analyst.\nNothing closes a reopened alert without a person: no model, no suppression rule, no earlier verdict, no\napproved evidence. Audited ``alert.reopened`` with the person and the reason.\n\n409 ``not_ai_closed`` for any other alert, ``hidden_for_blind_audit`` while it waits for its blind-audit\nlabel, ``already_with_a_person``, ``not_in_case`` when ``case_id`` does not hold it.",
+        "operationId": "reopen_alert_api_v1_alerts__alert_id__reopen_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "alert_id",
+            "required": true,
+            "schema": {
+              "title": "Alert Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReopenIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReopenOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reopen an alert the AI closed, with a reason: it waits for a person",
+        "tags": [
+          "alerts"
+        ],
+        "x-stability": "beta"
       }
     },
     "/api/v1/alerts/{alert_id}/reprocess": {

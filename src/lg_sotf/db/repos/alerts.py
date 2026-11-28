@@ -25,7 +25,7 @@ from lg_sotf.db.repos._base import (
     to_models,
     utcnow,
 )
-from lg_sotf.models.vocabulary import ALERT_STATUSES, DISPOSITIONS, HIGH_SEVERITIES, SEVERITIES
+from lg_sotf.models.vocabulary import ALERT_STATUSES, DISPOSITIONS, HIGH_SEVERITIES, POLICY_APPROVER, SEVERITIES
 from lg_sotf.security.shadow import egress, sink
 
 if TYPE_CHECKING:
@@ -38,6 +38,19 @@ MAX_INSERT_BATCH = 5_000
 DEFAULT_SEARCH_WINDOW = timedelta(days=30)
 MAX_SEARCH_WINDOW = timedelta(days=93)
 MAX_QUERY_CHARS = 200
+# A sample waiting for its blind-audit label: a filter on its verdict, or on who closed it, would reveal it.
+_NOT_A_PENDING_SAMPLE = (
+    "NOT EXISTS (SELECT 1 FROM blind_audit_items b WHERE b.tenant_id = alerts.tenant_id "
+    "AND b.alert_id = alerts.id AND b.label IS NULL)"
+)
+# A person stands behind what happened to the alert: an analyst decided it, or a person approved or rejected one
+# of its response actions. The Overview's test of "reached a person" (``repos.reports``, ``human_actions``), so
+# the alerts list and the Overview say the same of one alert.
+_A_PERSON_ACTED = (
+    "(summary->>'analyst_decision' IS NOT NULL OR EXISTS (SELECT 1 FROM response_actions r "  # noqa: S608
+    "WHERE r.tenant_id = alerts.tenant_id AND r.alert_id = alerts.id AND (r.status IN ('awaiting_approval', 'rejected') "
+    f"OR (r.approved_by IS NOT NULL AND r.approved_by <> '{POLICY_APPROVER}'))))"
+)
 
 # Contract section 6, plus the edges operations need: reprocess (closed/failed
 # -> queued), queue retry after a failed run (failed -> processing) and
@@ -62,12 +75,24 @@ _LIST_COLUMNS = (
 # An alert's detection rule as console views group it: the normalized rule name, else the title
 # (the fingerprint uses the same fallback). ``a`` is the alerts table alias.
 ALERT_RULE_SQL = "COALESCE(NULLIF(btrim(a.normalized->>'rule_name'), ''), a.title)"
-# What a list row shows besides its columns: the source's name (NULL once the source is deleted)
-# and the normalized entities (``entities_preview``).
+# What a list row shows besides its columns: the source's name (NULL once the source is deleted),
+# the normalized entities (``entities_preview``) and whether a person stands behind its close.
 _ROW_EXTRAS = (
-    "(SELECT s.name FROM sources s WHERE s.tenant_id = alerts.tenant_id AND s.id = alerts.source_id) AS source_name, "
-    "COALESCE(normalized->'entities', '{}'::jsonb) AS entities"
+    "(SELECT s.name FROM sources s WHERE s.tenant_id = alerts.tenant_id "  # noqa: S608 (constants only)
+    "AND s.id = alerts.source_id) AS source_name, "
+    "COALESCE(normalized->'entities', '{}'::jsonb) AS entities, "
+    f"(status = 'closed' AND {_A_PERSON_ACTED}) AS closed_by_person"
 )
+
+
+def _closed_by(params: Params, close_reasons: Sequence[str], by_person: bool) -> str:
+    """Closed alerts by who or what closed them: one of ``close_reasons`` with no person behind the close, and,
+    with ``by_person``, the closes a person stands behind whatever their reason."""
+    reasons = f"summary->>'close_reason' = ANY({params.add(list(close_reasons))}::text[])"
+    person = f"({params.add(by_person)}::boolean AND {_A_PERSON_ACTED})"
+    return f"status = 'closed' AND ({person} OR ({reasons} AND NOT {_A_PERSON_ACTED}))"
+
+
 _STRANDED_NEW_SQL = """
 SELECT a.tenant_id, a.id AS alert_id, a.severity
 FROM alerts a
@@ -218,6 +243,9 @@ class AlertListItem(Record):
     #: Read by ``list`` and ``get`` only (rows returned by writes leave them empty).
     source_name: Optional[str] = None
     entities: Dict[str, Any] = Field(default_factory=dict)
+    #: Closed, and a person stands behind it (an analyst's decision, or a response action a person approved or
+    #: rejected). Derived for the reader, never part of the alert's own data: left out of every dump.
+    closed_by_person: bool = Field(default=False, exclude=True)
 
 
 class Alert(AlertListItem):
@@ -366,6 +394,8 @@ class AlertsRepo(Repository):
         status: Union[str, Sequence[str], None] = None,
         severity: Union[str, Sequence[str], None] = None,
         disposition: Union[str, Sequence[str], None] = None,
+        close_reasons: Optional[Sequence[str]] = None,
+        closed_by_person: bool = False,
         source_id: Optional[str] = None,
         assigned_to: Optional[UUID] = None,
         q: Optional[str] = None,
@@ -378,7 +408,8 @@ class AlertsRepo(Repository):
         conn: Optional[Connection] = None,
     ) -> Page[AlertListItem]:
         """Newest first by (ingested_at, id); ``since``/``until`` bound ``ingested_at``,
-        ``closed_from``/``closed_to`` bound ``closed_at`` (so only closed alerts match them).
+        ``closed_from``/``closed_to`` bound ``closed_at`` (so only closed alerts match them);
+        ``close_reasons``, ``closed_by_person``: closed by who or what (:func:`_closed_by`).
 
         ``q`` is a case-insensitive substring match on the title. A ``q``
         search always has a time window: without ``since`` it covers
@@ -408,12 +439,9 @@ class AlertsRepo(Repository):
             where.append(f"severity = ANY({params.add(severities)}::text[])")
         dispositions = check_choices(disposition, DISPOSITIONS, "disposition")
         if dispositions:
-            where.append(f"disposition = ANY({params.add(dispositions)}::text[])")
-            # A sample waiting for its blind-audit label: filtering on its verdict would reveal it.
-            where.append(
-                "NOT EXISTS (SELECT 1 FROM blind_audit_items b WHERE b.tenant_id = alerts.tenant_id "
-                "AND b.alert_id = alerts.id AND b.label IS NULL)"
-            )
+            where += [f"disposition = ANY({params.add(dispositions)}::text[])", _NOT_A_PENDING_SAMPLE]
+        if close_reasons is not None:  # who or what closed it: only closed alerts match
+            where += [_closed_by(params, close_reasons, closed_by_person), _NOT_A_PENDING_SAMPLE]
         if source_id is not None:
             where.append(f"source_id = {params.add(source_id)}")
         if assigned_to is not None:

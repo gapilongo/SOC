@@ -105,9 +105,11 @@ In the web app the **Overview** is the first page. It reads in this order:
 2. **Closed without a person.** Of the alerts received in the window (24
    hours, 7 days or 30 days) that are finished, how many no person touched
    and how many reached one, as a sentence, a bar and the table the bar is
-   drawn from. A share is shown from 5 finished alerts on, a mean time from
-   5 observations on; below that the page says "too few" and gives the
-   count.
+   drawn from. The closes no person touched are split by who or what
+   closed them: the AI on approved evidence, the AI on the model's word, a
+   suppression rule, an earlier analyst verdict. A share is shown from 5
+   finished alerts on, a mean time from 5 observations on; below that the
+   page says "too few" and gives the count.
 3. **How the AI's closes are verified.** The blind audit of the last 30
    days: how many closes were eligible, sampled and labelled, and how many
    an analyst who could not see the AI's verdict labelled malicious. The
@@ -128,7 +130,11 @@ The same data over the API:
   `model_refused`, `response_review`, ...), a summary (verdict, threat score,
   conclusion, recommended actions) and the ids of attached related alerts.
 * `GET /alerts` with filters `status`, `severity`, `disposition`,
-  `source_id`, `from`/`to` and `q` (title search) for everything else.
+  `closed_by`, `source_id`, `from`/`to` and `q` (title search) for
+  everything else. On the Alerts page, the **Closed** view shows who or what
+  closed each alert (an analyst, the AI on approved evidence, the AI on the
+  model's word, a suppression rule, an earlier analyst verdict) and filters
+  by it.
 * Live updates: connect to `/api/v1/ws?token=<access token>` to receive
   `alert.*`, `escalation.*` and `action.updated` events for your tenant.
   After a reconnect, re-read from the REST API (delivery is at most once).
@@ -203,6 +209,22 @@ alert the case was opened for. `J` and `K` move through the alerts and
 screen, and it lists as "not yet available" exactly what that read model
 names in `not_available`. The older decision page (`/escalations/<id>`)
 still opens from the Escalations list.
+
+**Reopen and Flag.** An alert the AI closed on the model's word has two
+controls in its row, for an analyst or an admin. **Reopen** puts it back in
+front of a person: while the case is open it joins the case as open and the
+decision on the case settles it; in a decided case a new run sends it to an
+analyst. Nothing closes a reopened alert again without a person: no model,
+no suppression rule, no earlier verdict, no approved evidence. **Flag** does
+the same and records that the AI was wrong to close it: the flag is counted
+in the blind-audit and accuracy reports. When no open case holds the flagged
+alert, the other alerts the AI closed on the same host or user in the last
+24 hours are reopened too, because a person now stands behind a threat
+there; inside an open case a flag reopens the flagged alert only. Both ask for a reason, and neither is sent without
+one; the reason is kept in the audit log with your name (`alert.reopened`,
+`alert.flagged`) and shown in the alert's row and timeline. Alerts closed by
+a person, a suppression rule, an earlier verdict or approved evidence have
+no such control: change the rule, or ask an admin to reprocess the alert.
 
 1. **Claim** it so colleagues know you are on it:
    `POST /escalations/{id}/claim` with the escalation's current `version`.

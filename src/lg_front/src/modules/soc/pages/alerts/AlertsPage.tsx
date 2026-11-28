@@ -7,10 +7,11 @@ import { endpoints, type AlertFilters } from '../../api/endpoints';
 import { formatEntities } from '../../api/fields';
 import { useAlertCounts, useLivePollInterval } from '../../api/hooks';
 import { qk } from '../../api/queryKeys';
-import { ALERT_STATUSES, DISPOSITIONS, type AlertOut, type LiveEvent } from '../../api/types';
+import { ALERT_STATUSES, CLOSERS, DISPOSITIONS, type AlertOut, type Closer, type LiveEvent } from '../../api/types';
 import { useApi, useAuth } from '../../../../auth/AuthContext';
 import { can } from '../../../../auth/roles';
 import { statusTone } from '../../components/Badge';
+import { CloserMark, closerLabel } from '../../components/case';
 import { ListNotice } from '../../../../components/ListNotice';
 import {
   Button,
@@ -41,6 +42,7 @@ import {
   FILTER_PARAMS,
   closedWindow,
   isTodayWindow,
+  listsClosed,
   viewCount,
   viewFilters,
   viewFromParams,
@@ -55,6 +57,7 @@ export function filtersFromParams(params: URLSearchParams): AlertFilters {
   if (multi('status').length) f.status = multi('status');
   if (multi('severity').length) f.severity = multi('severity');
   if (multi('disposition').length) f.disposition = multi('disposition');
+  if (multi('closed_by').length) f.closed_by = multi('closed_by');
   // The API filters on a single source id; a URL with several keeps the first.
   const source = params.get('source_id')?.trim();
   if (source) f.source_id = source;
@@ -109,22 +112,32 @@ export function formatAge(value: string, now: number = Date.now()): string {
   return `${Math.floor(s / 86400)} d ago`;
 }
 
-export function alertColumns(density: Density, besidePanel = false): Column<AlertOut>[] {
+/** Who or what closed a closed alert, with the mark of the case page; why not, when the API does not say. */
+function ClosedByCell({ alert }: { alert: AlertOut }) {
+  if (alert.hidden_for_blind_audit) return <CloserMark kind="withheld" className="whitespace-nowrap" />;
+  const known = (CLOSERS as readonly string[]).includes(alert.closed_by ?? '');
+  return <CloserMark kind={known ? (alert.closed_by as Closer) : 'closed'} className="whitespace-nowrap" />;
+}
+
+/** `closedBy`: the Closed view, where every row is closed, shows who or what closed it in place of the status. */
+export function alertColumns(density: Density, besidePanel = false, closedBy = false): Column<AlertOut>[] {
   const columns: Column<AlertOut>[] = [
     { key: 'severity', header: 'Severity', width: '6rem', render: (a) => <SeverityTag value={a.severity} /> },
     { key: 'alert', header: 'Alert', width: 'minmax(10rem, 1fr)', render: (a) => <AlertCell alert={a} density={density} /> },
     { key: 'source', header: 'Source', width: '7rem', className: 'text-secondary', render: (a) => <span title={a.source_name ?? a.source_id}>{a.source_name ?? a.source_id}</span> },
     { key: 'verdict', header: 'AI verdict', width: '8.5rem', render: (a) => <VerdictCell alert={a} /> },
-    {
-      key: 'status',
-      header: 'Status',
-      width: '10.25rem',
-      render: (a) => (
-        <StatePill tone={statusTone(a.status)} title={statusWords(a.status)}>
-          {statusShort(a.status)}
-        </StatePill>
-      ),
-    },
+    closedBy
+      ? { key: 'closed_by', header: 'Closed by', width: '13.5rem', render: (a) => <ClosedByCell alert={a} /> }
+      : {
+          key: 'status',
+          header: 'Status',
+          width: '10.25rem',
+          render: (a) => (
+            <StatePill tone={statusTone(a.status)} title={statusWords(a.status)}>
+              {statusShort(a.status)}
+            </StatePill>
+          ),
+        },
     {
       key: 'age',
       header: 'Age',
@@ -156,11 +169,13 @@ export const ALERT_CSV: CsvColumn<AlertOut>[] = [
   { header: 'occurred_at', value: (a) => a.occurred_at },
   { header: 'ingested_at', value: (a) => a.ingested_at },
   { header: 'closed_at', value: (a) => a.closed_at },
+  { header: 'closed_by', value: (a) => a.closed_by },
 ];
 
 const SEVERITY_OPTIONS: FilterOption[] = SEVERITIES.map((s) => ({ value: s, label: humanize(s) }));
 const VERDICT_OPTIONS: FilterOption[] = DISPOSITIONS.map((d) => ({ value: d, label: humanize(d) }));
 const STATUS_OPTIONS: FilterOption[] = ALERT_STATUSES.map((s) => ({ value: s, label: statusWords(s) }));
+const CLOSER_OPTIONS: FilterOption[] = CLOSERS.map((c) => ({ value: c, label: closerLabel(c) }));
 
 /** The view tabs, each with its count (one cached `GET /alerts/counts` for all of them). */
 function ViewTabs({ view, params, byStatus }: { view: AlertView; params: URLSearchParams; byStatus: Record<string, number> | undefined }) {
@@ -296,7 +311,7 @@ export default function AlertsPage() {
   const { fetchNextPage } = list;
   const loadMore = useCallback(() => void fetchNextPage(), [fetchNextPage]);
   // With the alert panel beside the list, the source and the age move to the panel's header: the list keeps the title readable.
-  const columns = useMemo(() => alertColumns(density, Boolean(selected)), [density, selected]);
+  const columns = useMemo(() => alertColumns(density, Boolean(selected), view === 'closed'), [density, selected, view]);
 
   return (
     <div className="xl:flex xl:items-start xl:gap-4">
@@ -340,6 +355,9 @@ export default function AlertsPage() {
           />
           {view === 'all' && (
             <FilterChip label="Status" options={STATUS_OPTIONS} value={urlFilters.status ?? []} onChange={(v) => setMulti('status', v)} />
+          )}
+          {listsClosed(view) && (
+            <FilterChip label="Closed by" options={CLOSER_OPTIONS} value={urlFilters.closed_by ?? []} onChange={(v) => setMulti('closed_by', v)} />
           )}
           <DateField label="From" value={urlFilters.from} onChange={(v) => setSingle('from', v)} />
           <DateField label="To" value={urlFilters.to} onChange={(v) => setSingle('to', v)} />

@@ -25,6 +25,11 @@ describe('alert views', () => {
     expect(viewFilters('needs_analyst', base, window)).toEqual({ severity: ['high'], status: ['waiting_human'] });
     expect(viewFilters('processing', {}, window)).toEqual({ status: ['new', 'queued', 'processing'] });
     expect(viewFilters('closed', base, window)).toEqual({ severity: ['high'], status: ['closed'], closed_from: '2026-11-07T00:00:00.000Z' });
+    // Who or what closed an alert only filters the views that list closed alerts.
+    const closers = { ...base, closed_by: ['ai_audit'] };
+    expect(viewFilters('closed', closers, window)).toMatchObject({ status: ['closed'], closed_by: ['ai_audit'] });
+    expect(viewFilters('all', closers, window)).toBe(closers);
+    expect(viewFilters('needs_analyst', closers, window)).toEqual({ severity: ['high'], status: ['waiting_human'] });
   });
 
   it('counts each tab from by_status; All has no count', () => {
@@ -46,6 +51,10 @@ describe('alert views', () => {
     expect(q.has('closed_from')).toBe(false);
     expect(q.get('alert')).toBe('a-1');
     expect(new URL(viewHref('closed', p('closed_from=x')), 'http://x').searchParams.get('closed_from')).toBe('x');
+    const closers = p('view=closed&closed_by=ai_audit&closed_by=suppression_rule');
+    expect(new URL(viewHref('all', closers), 'http://x').searchParams.getAll('closed_by')).toEqual(['ai_audit', 'suppression_rule']);
+    expect(new URL(viewHref('failed', closers), 'http://x').searchParams.has('closed_by')).toBe(false);
+    expect(viewFromParams(p('closed_by=ai_audit'))).toBe('all');
   });
 
   it('closes "today" from local midnight unless the URL sets the window', () => {

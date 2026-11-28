@@ -129,17 +129,20 @@ flags AS (
     SELECT a.status,
            a.summary->>'analyst_decision' IS NOT NULL AS analyst_decided,
            h.alert_id IS NOT NULL AS human_action,
-           a.summary->>'escalation_id' IS NOT NULL AS escalated
+           a.summary->>'escalation_id' IS NOT NULL AS escalated,
+           CASE WHEN a.status = 'closed' THEN a.summary->>'close_reason' END AS close_reason
     FROM alerts a
     LEFT JOIN human_actions h ON h.alert_id = a.id
     WHERE a.tenant_id = $1 AND a.ingested_at >= $2 AND a.ingested_at < $3 AND a.source_id <> $5
       AND NOT EXISTS (SELECT 1 FROM blind_audit_items b WHERE b.tenant_id = a.tenant_id AND b.alert_id = a.id
                       AND b.label IS NULL)
 )
-SELECT count(*) FILTER (WHERE status = 'closed' AND NOT analyst_decided AND NOT human_action) AS handled,
+SELECT close_reason,
+       count(*) FILTER (WHERE status = 'closed' AND NOT analyst_decided AND NOT human_action) AS handled,
        count(*) FILTER (WHERE analyst_decided OR human_action OR status IN ('waiting_human', 'waiting_approval')
                         OR (escalated AND status <> 'closed')) AS needed
 FROM flags
+GROUP BY close_reason
 """
 
 _ESCALATIONS_SQL = """
@@ -166,6 +169,12 @@ _SLA_DISTINCT_SQL = """
 SELECT count(DISTINCT resource_id)
 FROM audit_log
 WHERE tenant_id = $1 AND ts >= $2 AND ts < $3 AND action = ANY($4::text[])
+"""
+
+_FLAGGED_SQL = """
+SELECT count(*)
+FROM audit_log
+WHERE tenant_id = $1 AND ts >= $2 AND ts < $3 AND action = 'alert.flagged'
 """
 
 _COST_SQL = """
@@ -400,10 +409,19 @@ class ReportsRepo(Repository):
         self, tenant_id: str, start: datetime, end: datetime, *, conn: Optional[Connection] = None
     ) -> Tuple[int, int]:
         """``(handled_without_human, needed_human)`` for alerts ingested in ``[start, end)``."""
+        handled, needed, _ = await self.automation_split(tenant_id, start, end, conn=conn)
+        return handled, needed
+
+    async def automation_split(
+        self, tenant_id: str, start: datetime, end: datetime, *, conn: Optional[Connection] = None
+    ) -> Tuple[int, int, Dict[str, int]]:
+        """:meth:`automation_counts`, and the alerts handled without a human by their close reason (``""`` when
+        the alert records none)."""
         _window(start, end)
         async with self._tenant(tenant_id, conn) as c:
-            row = await fetch_one(c, _AUTOMATION_SQL, tenant_id, start, end, POLICY_APPROVER, SAMPLE_SOURCE_ID)
-        return int(row["handled"]), int(row["needed"])
+            rows = await c.fetch(_AUTOMATION_SQL, tenant_id, start, end, POLICY_APPROVER, SAMPLE_SOURCE_ID)
+        by_reason = {str(r["close_reason"] or ""): int(r["handled"]) for r in rows if r["handled"]}
+        return sum(by_reason.values()), sum(int(r["needed"]) for r in rows), by_reason
 
     async def escalations_daily(
         self, tenant_id: str, start: datetime, end: datetime, *, conn: Optional[Connection] = None
@@ -424,6 +442,14 @@ class ReportsRepo(Repository):
             rows = await c.fetch(_SLA_SQL, tenant_id, start, end, actions)
             distinct = await c.fetchval(_SLA_DISTINCT_SQL, tenant_id, start, end, actions)
         return {r["day"]: int(r["breaches"]) for r in rows}, int(distinct or 0)
+
+    async def flagged_closes(
+        self, tenant_id: str, start: datetime, end: datetime, *, conn: Optional[Connection] = None
+    ) -> int:
+        """AI closes a person flagged as wrong in ``[start, end)`` (``alert.flagged`` in the audit log)."""
+        _window(start, end)
+        async with self._tenant(tenant_id, conn) as c:
+            return int(await c.fetchval(_FLAGGED_SQL, tenant_id, start, end) or 0)
 
     async def llm_cost_daily(
         self, tenant_id: str, start_day: date, end_day: date, *, conn: Optional[Connection] = None

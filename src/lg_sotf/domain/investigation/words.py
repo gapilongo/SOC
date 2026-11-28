@@ -39,6 +39,7 @@ __all__ = [
     "NO_TELEMETRY",
     "NOT_INVESTIGATED",
     "PENDING_HARNESS",
+    "REOPENED_STEPS",
     "TOOL_ERROR_SENTENCE",
     "UNCHECKED_KINDS",
     "UNKNOWN_LOOKUP_TITLE",
@@ -102,6 +103,10 @@ DECIDE_SENTENCES: Final[Mapping[str, str]] = {
     "conflicting_evidence": "The evidence points both ways, so a person decides.",
     "policy_exception": "A policy exception applies to this alert, so a person decides.",
     "reopened": "A related threat appeared after the AI closed this alert, so it was reopened for a person.",
+    "reopened_by_analyst": "An analyst reopened this alert, which the AI had closed on the model's word, so a person decides it.",
+    "flagged_by_analyst": (
+        "An analyst flagged the AI's close of this alert as wrong, so it was reopened and a person decides it."
+    ),
     "evidence_steering": (
         "The AI judged the alert benign, but a fact its lookups found contains text that tries to steer the model, "
         "so a person decides."
@@ -126,7 +131,7 @@ BLOCKER_SENTENCES: Final[Mapping[str, str]] = {
         "security-tool tampering, ransomware behaviour or persistence the attacker names."
     ),
     "llm_normalized": "A model read this alert's fields from unstructured text, so its content is not trusted for a close.",
-    "reopened": "The alert was reopened after a related threat appeared.",
+    "reopened": "The alert was reopened: after a related threat appeared, or by an analyst.",
     "steering_text": "The alert contains text that tries to steer the model.",
     "recent_true_positive": (
         "A confirmed threat involves the same entities: earlier alerts an analyst confirmed as malicious, a "
@@ -225,6 +230,7 @@ EVENT_STEPS: Final[Mapping[str, Step]] = {
     "actions.approval": NODE_STEPS["await_approval"],
     "escalation.detached": Step("policy", DECIDE_SENTENCES["group_review"]),
     "alert.reopened": Step("policy", DECIDE_SENTENCES["reopened"]),
+    "alert.flagged": Step("person", "An analyst flagged the AI's close of this alert as wrong."),
     "note": Step("person", "A person added a note."),
     "ticket.created": Step("code", "Opened a ticket in the connected ticketing system."),
     "ticket.linked": Step("code", "Linked the alert to an existing ticket."),
@@ -232,6 +238,13 @@ EVENT_STEPS: Final[Mapping[str, Step]] = {
     "action.verified": Step("check", "Verified that a response action took effect."),
     "action.verification_failed": Step("check", "Could not verify that a response action took effect."),
     "action.rollback_requested": Step("person", "A person asked to undo a response action."),
+}
+
+#: A person's own reopening (``lg_sotf.core.reopen``), by the reason code of the ``reopened`` marker: its
+#: ``alert.reopened`` step. Any other reason is the safety net's.
+REOPENED_STEPS: Final[Mapping[str, Step]] = {
+    "analyst_reopen": Step("person", "An analyst reopened this alert, which the AI had closed on the model's word."),
+    "analyst_flag": Step("policy", "The flag reopened this alert for a person's decision."),
 }
 
 #: What a lookup tool does, by tool name (``lg_sotf.agents.analysis``): the title of its observations.

@@ -124,6 +124,32 @@ def test_model_normalised_alerts_and_refusals_never_close_on_the_models_word() -
     assert routing.decide(asked, T, AUTO).code == "analyst_request"
 
 
+@pytest.mark.parametrize(
+    ("marker", "code"),
+    [({"reason": "related_threat"}, "reopened"), ({"reason": "analyst_reopen"}, "reopened_by_analyst"),
+     ({"reason": "analyst_flag"}, "flagged_by_analyst"), ({}, "reopened"), ({"reason": 7}, "reopened")],
+)
+def test_a_reopened_alert_never_closes_on_the_models_word_or_as_catalogued_noise(marker: Dict[str, Any], code: str) -> None:
+    """#461: at the tier, the alert the models would close (also a catalogued noise family, and one with
+    approved evidence) goes to an analyst once it carries the ``reopened`` marker, under a code that says who
+    reopened it: the safety net, or a person (reopened, or flagged)."""
+    noise = {"normalizer": "wazuh", "raw": {"rule": {"id": "2902"}}, "mitre": {"tactics": [], "techniques": []},
+             "rule_name": "2902: New dpkg (Debian Package) installed."}
+    for name, plain, closes_as in (
+        ("the models' word", benign_state(), MODEL_CLOSED),
+        ("catalogued noise", benign_state(alert=noise), MODEL_CLOSED),
+        ("approved evidence", benign_state(**{"triage.rule_fp": ["test_detected"]}), "rule_corroborated_benign"),
+    ):
+        closed = routing.decide(plain, T, AUTO)
+        assert (closed.route, closed.code) == ("close", closes_as), name
+        again = {**plain, "alert": {**plain["alert"], closure.REOPENED: marker}}
+        held = routing.decide(again, T, AUTO)
+        assert (held.route, held.code, held.disposition) == ("escalate", code, None), name
+        assert "reopened" in model_close_blockers(again, tier=AUTO)
+    assert closure.reopened_code(benign_state()["alert"]) is None and closure.reopened_code(None) is None
+    assert set(closure.REOPEN_CODES) == {closure.ANALYST_REOPEN, closure.ANALYST_FLAG}
+
+
 def test_a_benign_verdict_closes_below_the_response_policy_and_evidence_closes_first() -> None:
     for threat, code in ((5, MODEL_CLOSED), (30, MODEL_CLOSED), (75, MODEL_CLOSED), (85, "high_risk")):
         assert routing.decide(benign_state(**{"analysis.threat_score": threat}), T, AUTO).code == code

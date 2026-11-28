@@ -295,6 +295,37 @@ def test_policy_response_with_a_failed_action_escalates() -> None:
     assert routing.route_after_execute({**failed, "analyst": TP}) == "close"
 
 
+@pytest.mark.parametrize(
+    ("reason", "code"),
+    [("related_threat", "reopened"), ("analyst_reopen", "reopened_by_analyst"), ("analyst_flag", "flagged_by_analyst"),
+     (None, "reopened")],
+)
+def test_a_reopened_alert_is_not_closed_at_the_first_assessment_or_on_approved_evidence(reason: Any, code: str) -> None:
+    """#461: the safety net or a person reopened the alert. The first assessment does not close it as an obvious
+    false positive and approved benign evidence does not close it either: it goes to an analyst, under a
+    decision code that says who reopened it. The marker only blocks: a threat high enough for the response
+    policy still gets its response. (The models' word and catalogued noise: tests/unit/domain/test_closure.py;
+    the gate: tests/unit/core/test_gate.py.)"""
+    marker = {"reason": reason} if reason else {}
+    obvious_fp = triage(confidence=0, rule_conf=0, rule_fp=4)
+    at_triage = state(severity="low", triage=obvious_fp)
+    assert routing.route_after_triage(at_triage, T) == "close"
+    assert routing.route_after_triage({**at_triage, "alert": {"reopened": marker}}, T) == "correlation"
+
+    evidence = state(
+        severity="low", confidence=10, triage=obvious_fp,
+        analysis={"threat_score": 10, "rule_threat_score": 20, "verdict": "benign"},
+    )
+    closed = routing.decide(evidence, T)
+    assert (closed.route, closed.code) == ("close", "rule_corroborated_benign")
+    held = routing.decide({**evidence, "alert": {"reopened": marker}}, T)
+    assert (held.route, held.code, held.disposition) == ("escalate", code, None)
+
+    threat = state(severity="low", analysis={"threat_score": 95, "verdict": "malicious"}, alert={"reopened": marker})
+    assert routing.decide(threat, T).route == "plan_response"
+    assert routing.reopened(state()) is None and routing.reopened(state(alert={"title": "x"})) is None
+
+
 def test_llm_normalized_alerts_are_never_closed_automatically() -> None:
     """LLM-W6-06: a model-written title yields no trusted FP words and no automatic close."""
     from lg_sotf.agents.triage.base import trusted_evidence_words, trusted_words

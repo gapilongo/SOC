@@ -109,7 +109,7 @@ describe('case page: an open case', () => {
   it('lists every alert oldest first with who or what closed it and the recorded reason', async () => {
     const { container } = await renderPage();
     const table = section('Alerts in this case').getByRole('table');
-    expect(within(table).getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['Time', 'Severity', 'Alert', 'State and closed by', 'Why']);
+    expect(within(table).getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['Time', 'Severity', 'Alert', 'State and closed by', 'Why', 'Reopen or flag']);
     const rows = [...container.querySelectorAll('tr[data-alert]')];
     expect(rows.map((r) => r.getAttribute('data-alert'))).toEqual(OPEN_CASE.alerts.map((a) => a.id));
     expect(rows.map((r) => r.querySelector('[data-closed-by]')?.getAttribute('data-closed-by'))).toEqual([
@@ -222,8 +222,8 @@ describe('case page: an open case', () => {
     const pending = container.querySelector('[data-not-available]') as HTMLElement;
     expect(pending).toHaveTextContent(`Not yet available on this page (${OPEN_CASE.not_available.length})`);
     expect(within(pending).getAllByRole('listitem').map((li) => li.textContent)).toEqual(OPEN_CASE.not_available.map((n) => n.reason));
-    // No control whose backend does not exist: nothing reopens or flags an alert here.
-    expect(screen.queryByRole('button', { name: /reopen|flag/i })).toBeNull();
+    // Reopening and flagging exist now (PRD-2.9a): the list no longer names them.
+    expect(pending).not.toHaveTextContent(/flag/i);
   });
 });
 
@@ -426,6 +426,113 @@ describe('case page: edges', () => {
     fail = false;
     await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(await screen.findByRole('heading', { level: 1, name: TITLE })).toBeInTheDocument();
+  });
+});
+
+describe('case page: reopen and flag (PRD-2.9a)', () => {
+  const REASON = 'This is the attachment that started the attack.';
+  const reopenOut = (id: string, flagged: boolean) => ({ alert_id: id, status: 'waiting_human', mode: 'folded', case_id: CASE_ID, flagged });
+  const answering = (m: string, path: string) => {
+    const hit = m === 'POST' ? /^\/alerts\/([^/]+)\/(reopen|flag)$/.exec(path) : null;
+    return hit ? reopenOut(hit[1], hit[2] === 'flag') : undefined;
+  };
+
+  it('an analyst reopens an alert the AI closed on the model’s word, with a reason; without one nothing is sent', async () => {
+    const { container, calls } = await renderPage({ handler: answering });
+    // Only what the AI closed on the model's word has the controls: the two linked alerts.
+    const alerts = section('Alerts in this case');
+    expect(alerts.getAllByRole('button', { name: /^Reopen ?: / })).toHaveLength(2);
+    expect(alerts.getAllByRole('button', { name: /^Flag ?: / })).toHaveLength(2);
+    expect(within(row(container, 'alr-48226')).queryByRole('button')).toBeNull(); // closed by a suppression rule
+    expect(within(row(container, OPEN_CASE.alert_id)).queryByRole('button')).toBeNull(); // open
+    expect(container.querySelector('[data-reopen-note]')).toHaveTextContent('Both ask for a reason.');
+    expect(screen.getByText('2 alerts closed by the AI are linked here and stay closed').parentElement).toHaveTextContent('You can reopen or flag any of them yourself, now.');
+
+    await userEvent.click(within(row(container, 'alr-48212')).getByRole('button', { name: /^Reopen ?: Outlook opened a Word attachment/ }));
+    const dialog = within(await screen.findByRole('dialog', { name: 'Reopen this alert' }));
+    expect(dialog.getByText(LINKED_TITLE)).toBeInTheDocument();
+    expect(dialog.getByText(/Nothing closes it again without a person: no model, no suppression rule, no earlier verdict\./)).toBeInTheDocument();
+    const send = dialog.getByRole('button', { name: 'Reopen alert' });
+    expect(send).toBeDisabled();
+    const reason = dialog.getByRole('textbox', { name: /Why reopen it \(required\)/ });
+    expect(reason).toBeRequired();
+    await userEvent.type(reason, '   ');
+    expect(send).toBeDisabled(); // blanks are not a reason
+    await userEvent.clear(reason);
+    await userEvent.type(reason, `  ${REASON}  `);
+    const before = calls.filter((c) => c.path === `/cases/${CASE_ID}`).length;
+    await userEvent.click(send);
+    await waitFor(() => expect(posts(calls)).toEqual([expect.objectContaining({ path: '/alerts/alr-48212/reopen', body: { reason: REASON, case_id: CASE_ID } })]));
+    // The alert moved: the case is read again, and the dialog closes.
+    await waitFor(() => expect(calls.filter((c) => c.path === `/cases/${CASE_ID}`).length).toBeGreaterThan(before));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(await screen.findByText(/Reopened alr-48212\. It waits for a person in this case\./)).toBeInTheDocument();
+  });
+
+  it('flags an AI close as wrong through the same dialog, and shows the API’s refusal in it', async () => {
+    let refuse = true;
+    const { container, calls } = await renderPage({
+      handler: (m, path) => {
+        if (m === 'POST' && path === '/alerts/alr-48190/flag' && refuse) throw apiError(409, 'not_ai_closed', "only an alert the AI closed on the model's word can be reopened");
+        return answering(m, path);
+      },
+    });
+    await userEvent.click(within(row(container, 'alr-48190')).getByRole('button', { name: /^Flag ?: / }));
+    const dialog = within(await screen.findByRole('dialog', { name: 'Flag this AI close as wrong' }));
+    expect(dialog.getByText(/counted in the blind-audit and accuracy reports/)).toBeInTheDocument();
+    await userEvent.type(dialog.getByRole('textbox', { name: /Why the close was wrong \(required\)/ }), 'The verdict was for another host.');
+    await userEvent.click(dialog.getByRole('button', { name: 'Flag and reopen' }));
+    expect(await dialog.findByText(/only an alert the AI closed on the model's word can be reopened/)).toBeInTheDocument();
+    expect(screen.getByRole('dialog')).toBeInTheDocument(); // it stays open with the reason typed
+    refuse = false;
+    await userEvent.click(dialog.getByRole('button', { name: 'Flag and reopen' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(posts(calls).map((c) => [c.path, c.body])).toEqual([
+      ['/alerts/alr-48190/flag', { reason: 'The verdict was for another host.', case_id: CASE_ID }],
+      ['/alerts/alr-48190/flag', { reason: 'The verdict was for another host.', case_id: CASE_ID }],
+    ]);
+    expect(await screen.findByText(/Flagged and reopened alr-48190\./)).toBeInTheDocument();
+  });
+
+  it('a viewer gets no reopen or flag control, and is told who can', async () => {
+    const { container } = await renderPage({ role: 'viewer', id: 'u-viewer' });
+    expect(section('Alerts in this case').queryByRole('button')).toBeNull();
+    expect(container.querySelector('[data-reopen-note]')).toHaveTextContent('An analyst can reopen an alert the AI closed on the model’s word, or flag the close as wrong.');
+    expect(screen.getByText('2 alerts closed by the AI are linked here and stay closed').parentElement).not.toHaveTextContent('You can reopen');
+  });
+
+  it('an alert a person reopened or flagged says who, where it waits and their reason, as plain text', async () => {
+    const hostile = '<img src=x onerror="alert(1)"> see the macro in the attachment';
+    const reopened: Partial<CaseAlertOut> = {
+      role: 'reopened', state: 'open', status: 'waiting_human', closed_by: null, closed_at: null, link: null, can_reopen: false, category: 'needs_review',
+      why: { code: 'reopened_by_analyst', sentence: "An analyst reopened this alert, which the AI had closed on the model's word, so a person decides it." },
+      reopened: {
+        reason: { code: 'analyst_reopen', sentence: "An analyst reopened this alert, which the AI had closed on the model's word." },
+        note: hostile, threat_alert_id: OPEN_CASE.alert_id, mode: 'folded', confirmed_by: 'person', by: { user_id: OWNER, email: OPEN_CASE.owner?.email ?? null }, at: '2026-11-14T10:03:00Z',
+      },
+    };
+    const flagged: Partial<CaseAlertOut> = {
+      ...reopened,
+      reopened: { ...(reopened.reopened as NonNullable<CaseAlertOut['reopened']>), reason: { code: 'analyst_flag', sentence: "An analyst flagged the AI's close of this alert as wrong, so it was reopened." }, note: 'The verdict was for another host.', mode: 'requeued', by: { user_id: 'u-other', email: 't.brandt@brightwater.example' } },
+      flagged: { by: { user_id: 'u-other', email: 't.brandt@brightwater.example' }, at: '2026-11-14T10:02:00Z', note: 'The verdict was for another host.' },
+    };
+    const model = withAlert(withAlert(OPEN_CASE, 'alr-48212', reopened), 'alr-48190', flagged);
+    const { container } = await renderPage({ model: { ...model, counts: { ...model.counts, linked: 0, reopened: 2, flagged: 1 } } });
+    const mine = row(container, 'alr-48212');
+    expect(within(mine).getByText('Reopened')).toBeInTheDocument();
+    expect(mine).toHaveTextContent('Reopened by you');
+    expect(mine).toHaveTextContent("An analyst reopened this alert, which the AI had closed on the model's word. It waits in this case: the decision on the case settles it.");
+    // The reason is the person's text: quoted as typed, never as markup.
+    expect(within(mine).getByText(hostile).tagName).toBe('Q');
+    expect(container.querySelector('img')).toBeNull();
+    expect(within(mine).queryByRole('button')).toBeNull(); // it is open again: nothing left to reopen
+    const theirs = row(container, 'alr-48190');
+    expect(within(theirs).getByText('Flagged')).toBeInTheDocument();
+    expect(theirs).toHaveTextContent('Flagged by t.brandt@brightwater.example');
+    expect(theirs).toHaveTextContent('A new run reviews it on its own.');
+    expect(within(theirs).getByText('The verdict was for another host.').tagName).toBe('Q');
+    // The safety net's section lists what the safety net did: nothing here.
+    expect(screen.queryByRole('region', { name: 'Linked by the safety net' })).toBeNull();
   });
 });
 

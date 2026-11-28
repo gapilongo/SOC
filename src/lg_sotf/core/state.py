@@ -332,6 +332,8 @@ class AlertSummary(TypedDict, total=False):
     close_reason: str
     # Decision policy v3 safety net (lg_sotf.core.retro_reopen): why a model-closed alert was reopened.
     reopened: Dict[str, Optional[str]]
+    # A person flagged the AI's close as wrong (lg_sotf.core.reopen): who and when. Never their words.
+    flagged: Dict[str, Optional[str]]
     # The same safety net, for a threat only a model judged: the links of an alert that stays closed (threat
     # alert, case, time) and, on the threat, the alerts it linked.
     linked: List[Dict[str, Optional[str]]]

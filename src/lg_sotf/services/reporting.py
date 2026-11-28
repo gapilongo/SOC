@@ -472,6 +472,7 @@ class AccuracyReport(BaseModel):
     overall: AccuracyBlock
     by_model: List[ModelAccuracy]
     feedback: FeedbackSummary
+    flagged_ai_closes: int = 0
     notes: List[str]
 
     model_config = ConfigDict(populate_by_name=True)
@@ -485,6 +486,8 @@ ACCURACY_NOTES = (
     "class is the alert's latest decision other than needs_more_info.",
     "Every rate comes with its sample size n and a 95% Wilson interval. With fewer samples than min_samples "
     "the result is marked insufficient_data: the rates are shown but should not be relied on.",
+    "flagged_ai_closes counts the AI closes a person flagged as wrong in the window: disagreements with closes "
+    "the AI made on its own. They are counted beside the rates and never enter them.",
 )
 
 
@@ -539,6 +542,7 @@ def build_accuracy_report(
     thresholds: RoutingThresholds,
     generated_at: datetime,
     min_samples: int = MIN_ACCURACY_SAMPLES,
+    flagged_ai_closes: int = 0,
 ) -> AccuracyReport:
     overall: Dict[Tuple[str, str], int] = {}
     per_model: Dict[str, Dict[Tuple[str, str], int]] = {}
@@ -550,10 +554,7 @@ def build_accuracy_report(
         overall[key] = overall.get(key, 0) + g.n
         bucket = per_model.setdefault(model_key(g), {})
         bucket[key] = bucket.get(key, 0) + g.n
-    by_model = [
-        ModelAccuracy(model=name, accuracy=accuracy_block(pairs, min_samples))
-        for name, pairs in per_model.items()
-    ]
+    by_model = [ModelAccuracy(model=name, accuracy=accuracy_block(pairs, min_samples)) for name, pairs in per_model.items()]
     by_model.sort(key=lambda m: (-m.accuracy.samples, m.model))
     return AccuracyReport(
         start=window.start,
@@ -572,6 +573,7 @@ def build_accuracy_report(
             correlation_helpful=feedback_rate(feedback.correlation_helpful_rate, feedback.correlation_rated),
             avg_review_duration_s=feedback.avg_review_duration_s,
         ),
+        flagged_ai_closes=flagged_ai_closes,
         notes=list(ACCURACY_NOTES),
     )
 
@@ -810,18 +812,14 @@ class ReportService:
         t = self._thresholds
         async with self._repos.db.tenant_tx(tenant_id, readonly=True) as conn:
             groups = await self._repos.reports.accuracy_groups(
-                tenant_id,
-                window.since,
-                window.until,
-                low_score=t.close_max_threat,
-                high_score=t.response_threshold,
+                tenant_id, window.since, window.until, low_score=t.close_max_threat, high_score=t.response_threshold,
                 conn=conn,
             )
-            feedback = await self._repos.feedback.decision_stats(
-                tenant_id, window.since, until=window.until, conn=conn
-            )
+            feedback = await self._repos.feedback.decision_stats(tenant_id, window.since, until=window.until, conn=conn)
+            flagged = await self._repos.reports.flagged_closes(tenant_id, window.since, window.until, conn=conn)
         report = build_accuracy_report(
-            window, groups=groups, feedback=feedback, thresholds=t, generated_at=datetime.now(UTC)
+            window, groups=groups, feedback=feedback, thresholds=t, generated_at=datetime.now(UTC),
+            flagged_ai_closes=flagged,
         )
         await self._store(key, report)
         return report

@@ -94,6 +94,7 @@ def counts(alerts: Sequence[CaseAlert], actions: Sequence[CaseAction], total: in
         closed=states["closed"],
         linked=roles["linked"],
         reopened=roles["reopened"],
+        flagged=sum(1 for a in alerts if a.flagged is not None),
         withheld=sum(1 for a in alerts if a.hidden_for_blind_audit),
         closed_by=CaseClosedByCounts(**closers),
         actions_awaiting_approval=sum(1 for a in actions if a.status == "awaiting_approval"),

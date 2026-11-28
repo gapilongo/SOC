@@ -17,6 +17,7 @@ from lg_sotf.db.repos.outbox import OUTBOX_OPERATIONS, OUTBOX_STATUSES
 from lg_sotf.db.repos.sources import SOURCE_HEALTH
 from lg_sotf.db.repos.tenants import TENANT_STATUSES
 from lg_sotf.domain.actions import ACTION_CATALOG, TargetKind
+from lg_sotf.domain.investigation.model import CLOSERS
 from lg_sotf.integrations.events import EVENT_TYPES as INTEGRATION_EVENT_TYPES
 from lg_sotf.models.vocabulary import (
     ACTION_STATUSES,
@@ -59,6 +60,7 @@ ScopeStr = Annotated[str, WithJsonSchema(vocabulary_schema(SCOPES))]
 SeverityStr = Annotated[str, WithJsonSchema(vocabulary_schema(SEVERITIES))]
 AlertStatusStr = Annotated[str, WithJsonSchema(vocabulary_schema(ALERT_STATUSES))]
 DispositionStr = Annotated[str, WithJsonSchema(vocabulary_schema(DISPOSITIONS))]
+CloserStr = Annotated[str, WithJsonSchema(vocabulary_schema(CLOSERS))]
 DecisionStr = Annotated[str, WithJsonSchema(vocabulary_schema(DECISIONS))]
 EscalationStatusStr = Annotated[str, WithJsonSchema(vocabulary_schema(ESCALATION_STATUSES))]
 EscalationLevelStr = Annotated[str, WithJsonSchema(vocabulary_schema(ESCALATION_LEVELS))]
@@ -306,6 +308,9 @@ class AlertOut(Out):
     closed_at: Optional[datetime] = None
     summary: AlertSummaryJson = Field(default_factory=dict)
     case_key: Optional[str] = None
+    closed_by: Optional[CloserStr] = Field(
+        default=None, description="Who or what closed it. Null while it is open, or waits for its blind-audit label."
+    )
     source_name: Optional[str] = Field(default=None, description="The source's name; null once it is deleted.")
     entities_preview: Optional[EntitiesPreviewOut] = None
     hidden_for_blind_audit: bool = Field(
@@ -708,6 +713,11 @@ class DashboardOut(BaseModel):
     handled_without_human: int = 0
     needed_human: int = 0
     handled_without_human_rate: Optional[float] = None
+    closed_without_human_by: Dict[str, int] = Field(
+        default_factory=dict,
+        description="handled_without_human by who or what closed the alert: ai_evidence, ai_audit, "
+        "suppression_rule, cached_verdict, and other (a close reason this release does not know).",
+    )
     analyst_hours_saved: float = 0.0
     minutes_per_alert: int = 15
     # Escalation queue (active escalations, as of generated_at).

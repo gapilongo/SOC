@@ -17,7 +17,7 @@ closed at the gate has no category: the AI never looked at it.
 
 from __future__ import annotations
 
-from typing import Any, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from lg_sotf.domain import closure
 from lg_sotf.domain.investigation import words
@@ -34,6 +34,7 @@ from lg_sotf.domain.investigation.facts import (
     strings,
 )
 from lg_sotf.domain.investigation.model import (
+    CLOSERS,
     InvestigationClosedBy,
     InvestigationOutcome,
     InvestigationReason,
@@ -66,9 +67,10 @@ def decide_code(
     alert: AlertFacts, escalation: Optional[EscalationFacts], events: Sequence[EventFacts]
 ) -> Optional[str]:
     """The code of the decision that routed the alert: its own escalation's, else the one stored at close, else
-    the last ``decide`` step's. ``reopened`` while an alert the safety net reopened is open again."""
+    the last ``decide`` step's. While a reopened alert is open again: ``reopened`` for the safety net's
+    reopening, ``reopened_by_analyst`` or ``flagged_by_analyst`` for a person's."""
     if alert.status != "closed" and alert.summary.get(closure.REOPENED):
-        return "reopened"
+        return closure.reopened_code(alert.summary)
     own = _own(alert, escalation)
     stored = (
         _code(mapping(mapping(own.summary).get("routing")).get("code")) if own is not None else None
@@ -158,6 +160,39 @@ def _closed_by(alert: AlertFacts, reason: str, entry: words.CloseReason) -> Inve
         source_alert_id=_code(by.get("source_alert_id")) if entry.closed_by == "cached_verdict" else None,
         decision=_code(decision) if entry.closed_by in ("cached_verdict", "analyst") else None,
     )
+
+
+def closer(status: str, close_reason: Any, *, person: bool = False) -> Optional[str]:
+    """Which of :data:`~lg_sotf.domain.investigation.model.CLOSERS` closed an alert, from its close reason;
+    ``None`` while it is open, or closed with a reason this release does not know.
+
+    ``person``: a person stands behind the close whatever its reason (an analyst decided the alert, or a person
+    approved or rejected one of its response actions, after which the workflow closed it ``policy:response``).
+    It is then ``analyst``, as the Overview counts it among the alerts that reached a person.
+    """
+    if status == "closed" and person:
+        return "analyst"
+    entry = words.CLOSE_REASONS.get(close_reason) if status == "closed" and isinstance(close_reason, str) else None
+    if entry is None:
+        return None
+    if entry.closed_by != "ai":
+        return entry.closed_by
+    return "ai_audit" if close_reason in AUDIT_CLOSE_REASONS else "ai_evidence"
+
+
+def close_reasons_of(closers: Sequence[str]) -> List[str]:
+    """The close reasons :func:`closer` maps to one of ``closers``: what a list filter on the closer matches."""
+    return [reason for reason in words.CLOSE_REASONS if closer("closed", reason) in closers]
+
+
+def closed_without_a_person(by_close_reason: Mapping[str, int]) -> Dict[str, int]:
+    """Alerts closed without a person, counted by close reason, as counts by who or what closed them: the four
+    of :data:`CLOSERS` that are not a person, and ``other`` for a close reason this release does not know."""
+    out = {kind: 0 for kind in CLOSERS if kind != "analyst"} | {"other": 0}
+    for reason, count in by_close_reason.items():
+        kind = closer("closed", reason)
+        out[kind if kind in out else "other"] += count
+    return out
 
 
 def who_closed(alert: AlertFacts) -> Optional[InvestigationClosedBy]:

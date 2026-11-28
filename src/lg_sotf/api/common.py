@@ -37,6 +37,7 @@ from lg_sotf.domain.blind_audit import (
     without_pending_related,
 )
 from lg_sotf.domain.digests import entities_preview, findings
+from lg_sotf.domain.investigation.outcome import closer
 from lg_sotf.domain.suppression import InvalidRule
 from lg_sotf.models.vocabulary import SEVERITIES
 from lg_sotf.observability.logging import get_logger, log_failure
@@ -79,14 +80,16 @@ async def invalidate_verdicts(
 
 
 async def reopen_confirmed(
-    ctx: ApiContext, tenant_id: str, alert: Alert, actor: Actor, *, escalation_id: Optional[str], path: str
+    ctx: ApiContext, tenant_id: str, alert: Alert, actor: Actor, *, escalation_id: Optional[str], path: str,
+    by_flag: bool = False,
 ) -> None:
     """A person confirmed the threat on ``alert`` (a true positive, a blind-audit malicious label, an approved
     response action): the alerts the models closed alone on its entities reopen, those linked to it earlier
     included, attached to ``escalation_id`` while it is open (:mod:`lg_sotf.core.retro_reopen`). A failure is
-    counted in ``lgsotf_retro_reopen_failures_total`` (``path``), not raised."""
+    counted in ``lgsotf_retro_reopen_failures_total`` (``path``), not raised. ``by_flag``: the confirmation is a
+    person's flag on ``alert`` itself (``api.routers.alerts``)."""
     for reopened in await reopen_counted(ctx.repos, tenant_id, alert, actor=actor, path=path, confirmed=True,
-                                         escalation_id=escalation_id):
+                                         escalation_id=escalation_id, by_flag=by_flag):
         await enqueue_reopened(ctx, tenant_id, reopened)
 
 
@@ -142,7 +145,10 @@ def alert_out(alert: AlertListItem, *, view: Optional[BlindView] = None) -> Aler
     another's correlation digest no longer names them)."""
     preview = entities_preview(alert.entities)
     out = AlertOut.model_validate(alert).model_copy(
-        update={"entities_preview": EntitiesPreviewOut.model_validate(preview) if preview else None}
+        update={
+            "entities_preview": EntitiesPreviewOut.model_validate(preview) if preview else None,
+            "closed_by": closer(alert.status, alert.summary.get("close_reason"), person=alert.closed_by_person),
+        }
     )
     if view is None:
         return out
@@ -156,6 +162,7 @@ def alert_detail_out(alert: Alert, *, view: Optional[BlindView] = None) -> Alert
     out = AlertDetailOut.model_validate(alert).model_copy(
         update={
             "entities_preview": EntitiesPreviewOut.model_validate(preview) if preview else None,
+            "closed_by": closer(alert.status, alert.summary.get("close_reason"), person=alert.closed_by_person),
             "findings": [FindingOut.model_validate(f) for f in findings(alert.summary)],
         }
     )
@@ -209,7 +216,8 @@ async def refuse_hidden(ctx: ApiContext, tenant_id: str, alert_id: str, resource
 
 
 def _hidden_fields() -> Dict[str, Any]:
-    return {**{key: None for key in HIDDEN_ALERT_FIELDS}, "summary": dict(HIDDEN), HIDDEN_KEY: True}
+    # Who closed it is the AI's side too: with the verdict, it is withheld until the label.
+    return {**{key: None for key in HIDDEN_ALERT_FIELDS}, "closed_by": None, "summary": dict(HIDDEN), HIDDEN_KEY: True}
 
 
 async def hidden_alert_ids(ctx: ApiContext, tenant_id: str, alert_ids: Sequence[str]) -> Set[str]:

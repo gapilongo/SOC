@@ -37,6 +37,8 @@ function dashboard(hours) {
     runs_by_status: { queued: 2, running: 3, waiting: 28 }, queue_depth: 2,
     llm_cost_usd: 18.42, llm_tokens: 6_184_300, llm_model: 'deep-model-example',
     handled_without_human: handled, needed_human: needed, handled_without_human_rate: handled / (handled + needed),
+    // The split of the closes without a person (PRD-2.9a): the four kinds add up to `handled`.
+    closed_without_human_by: { ai_evidence: Math.round(handled * 0.34), ai_audit: Math.round(handled * 0.52), suppression_rule: Math.round(handled * 0.1), cached_verdict: handled - Math.round(handled * 0.34) - Math.round(handled * 0.52) - Math.round(handled * 0.1), other: 0 },
     analyst_hours_saved: (handled * 15) / 60, minutes_per_alert: 15,
     unassigned_escalations: 22, unassigned_breaching: 2, overdue_escalations: 3, next_sla_deadline: inMinutes(4),
     open_escalations_by_severity: { critical: 2, high: 11, medium: 12, low: 3 },
@@ -130,7 +132,7 @@ function answer(method, pathname, query) {
         const verified = page.getByRole('region', { name: "How the AI's closes are verified" });
         const marks = {
           ...Object.fromEntries(['Open my queue', 'Open approvals', 'Open the queue', 'Label them'].map((a) => [a, needs.getByRole('link', { name: a })])),
-          'closes not split': closed.getByText('not measured yet'),
+          'closes split by who closed them': closed.locator('tr[data-row="closed-by-ai_audit"]'),
           'blind audit': verified.getByRole('heading', { name: 'Blind audit, last 30 days' }),
           'next deadlines': page.getByRole('region', { name: 'Next deadlines' }),
           'platform health': page.getByRole('region', { name: 'Platform health' }),

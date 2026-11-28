@@ -99,6 +99,8 @@ import type {
   Quotas,
   RateInterval,
   RecoveryCodesOut,
+  ReopenIn,
+  ReopenOut,
   ReprocessOut,
   ResponsePreviewOut,
   ResponseRoutesOut,
@@ -207,6 +209,7 @@ export interface ResponseContract {
   PreviewGuardrailOut: Response<Wire<Schemas['PreviewGuardrailOut']>, PreviewGuardrailOut>;
   RateInterval: Response<Wire<Schemas['RateInterval']>, RateInterval>;
   RecoveryCodesOut: Response<Wire<Schemas['RecoveryCodesOut']>, RecoveryCodesOut>;
+  ReopenOut: Response<Wire<Schemas['ReopenOut']>, ReopenOut>;
   ReprocessOut: Response<Wire<Schemas['ReprocessOut']>, ReprocessOut>;
   ResponsePreviewOut: Response<Wire<Schemas['ResponsePreviewOut']>, ResponsePreviewOut>;
   // The investigation read model with everything nested in it (claims, observations, steps, the proposed response).
@@ -269,6 +272,7 @@ export interface RequestContract {
   IntegrationUpdateIn: Request<IntegrationUpdateIn, Schemas['IntegrationUpdateIn']>;
   PovRunIn: Request<PovRunIn, Schemas['PovRunIn']>;
   ProposeSuppressionIn: Request<ProposeSuppressionIn, Schemas['ProposeSuppressionIn']>;
+  ReopenIn: Request<ReopenIn, Schemas['ReopenIn']>;
   SetupIn: Request<SetupIn, Schemas['SetupIn']>;
   WazuhCheckIn: Request<WazuhCheckIn, Schemas['WazuhCheckIn']>;
   SourceCreateIn: Request<SourceCreateIn, Schemas['SourceCreateIn']>;

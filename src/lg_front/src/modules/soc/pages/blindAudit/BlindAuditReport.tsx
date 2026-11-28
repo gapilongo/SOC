@@ -72,6 +72,10 @@ export function BlindAuditTab({ from, to, tile }: { from: string; to: string; ti
           `${formatInt(e.labelled)} labelled, ${formatInt(e.unsure)} unsure, ${formatInt(e.pending)} waiting. ${formatInterval(e.agreement_rate)}`,
         )}
       </div>
+      <p data-flagged-closes className="text-sm text-body">
+        Flagged by a person, outside the samples: {formatInt(r.flagged_ai_closes)} AI {r.flagged_ai_closes === 1 ? 'close' : 'closes'} in this window. A flag is
+        not a random draw, so it is counted beside the estimate and never enters it.
+      </p>
       {r.uncovered.length > 0 && (
         <Card title="Time no run covered">
           <ul className="space-y-1 text-sm text-body" aria-label="Uncovered time">

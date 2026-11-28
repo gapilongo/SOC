@@ -55,6 +55,11 @@ def decide_codes() -> Set[str]:
     codes: Set[str] = set()
     for call in ast.walk(_tree(routing)):
         if isinstance(call, ast.Call) and isinstance(call.func, ast.Name) and call.func.id == "Decision":
+            if isinstance(call.args[3], ast.Name):
+                # A reopened alert's code is whatever closure.reopened_code gives (#461): its whole range.
+                assert call.args[3].id == "again", ast.dump(call.args[3])
+                codes |= {closure.REOPENED, *closure.REOPEN_CODES.values()}
+                continue
             codes.add(_text(call.args[3], routing))
     for node in ast.walk(_tree(nodes)):
         # decision["code"] = "response_review" and routing.routing_digest("group_review", ...)
@@ -189,7 +194,8 @@ def _sentences() -> List[str]:
     out += [*words.EVIDENCE_REASONS.values(), words.EVIDENCE_STEP.text, words.UNKNOWN_EVIDENCE_REASON]
     out += [*words.SKIPPED_LOOKUP_REASONS.values(), words.UNKNOWN_SKIP_REASON, *words.CITATION_FINDINGS.values()]
     out += [entry.sentence for entry in words.CLOSE_REASONS.values()]
-    out += [step.text for table in (words.NODE_STEPS, words.NODE_STEP_VARIANTS, words.EVENT_STEPS) for step in table.values()]
+    tables = (words.NODE_STEPS, words.NODE_STEP_VARIANTS, words.EVENT_STEPS, words.REOPENED_STEPS)
+    out += [step.text for table in tables for step in table.values()]
     out += [sentence for _, sentence in words.LOOKUP_STATUS_SENTENCES.values()]
     out += [sentence for _, sentence in words.LOOKUP_CLAIMS.values()]
     out += [words.NO_LOOKUP_WHY, words.TOOL_ERROR_SENTENCE, words.NO_TELEMETRY[1], words.NOT_INVESTIGATED[1]]

@@ -389,6 +389,10 @@ function AccuracyTab({ from, to }: { from: string; to: string }) {
         </table>
         <p className="mt-2 text-xs text-muted">Average review time {formatDuration(r.feedback.avg_review_duration_s)}.</p>
       </Card>
+      <p data-flagged-closes className="text-sm text-body">
+        AI closes a person flagged as wrong in this window: {formatInt(r.flagged_ai_closes)}. They are closes the AI made on its own, so they are counted beside
+        the rates above and never enter them.
+      </p>
       <Notes notes={r.notes} />
     </div>
   );

@@ -268,7 +268,7 @@ proposals in the New column, the API's names are the ones to build on:
 |---|---|---|
 | "CASE-2291" | The escalation's id, shortened | A readable case reference |
 | The statement "Nine alerts on one host and one user in 20 hours" | The counts: "9 alerts: 3 with a person, 1 being investigated, 5 closed." | A case summary |
-| Reopen and Flag on a closed alert, with a required reason | Left out | `POST /alerts/{id}/reopen` and `POST /alerts/{id}/flag` with `reason` (today's `POST /alerts/{id}/reprocess` is for admins, takes no reason and lets the AI close the alert again) |
+| Reopen and Flag on a closed alert, with a required reason | **Built (PRD-2.9a, #440)** for an alert the AI closed on the model's word: `POST /alerts/{id}/reopen` and `POST /alerts/{id}/flag` with `reason`. A flag reopens the alert (the design kept it closed) and is counted in the blind-audit and accuracy reports. Nothing closes a reopened alert again without a person (#461) | The same controls for an alert closed by a person, a suppression rule, an earlier verdict or approved evidence |
 | A reason on approve and reject, batch approval of identical actions | The dialog of the Approvals page, one action at a time, no reason | `reason` on `POST /actions/{id}/approve` and `/reject`; the approval inbox story |
 | "Evidence pack" of the case | "Review the evidence" opens the investigation view of the primary alert, which exports that alert's record | A pack over the case's alerts |
 | Ticket | Left out of the header | Tickets by case on the read model (`GET /tickets` lists them by escalation today) |
@@ -310,7 +310,7 @@ give, the page says "not measured yet" and shows no number:
 
 | On the page | Shown as | The API field it waits for |
 |---|---|---|
-| Closed without a person, by who or what closed it (five kinds) | Two measured rows (`handled_without_human`, `needed_human`) and one row "not measured yet" | `closed_by` breakdown on `DashboardOut`, for the same window and cohort |
+| Closed without a person, by who or what closed it (five kinds) | **Built (PRD-2.9a, #440):** the closes without a person are split in four rows from `DashboardOut.closed_without_human_by` (a person's closes are the "reached a person" row) | Nothing more |
 | "125 were decided, in a median of 14 minutes" | The mean time to claim over `acknowledged`, withheld under 5 | Decided count and median for alerts that reached a person |
 | "2 of them have a deadline inside 15 minutes" | Unclaimed items past their deadline (`unassigned_breaching`) | A count of unclaimed items due inside 15 minutes |
 | "The oldest has waited 19 minutes" (approvals) | Left out | Age of the oldest pending approval |

@@ -57,6 +57,8 @@ import type {
   RollbackOut,
   MonthlyReportOut,
   ProposeSuppressionIn,
+  ReopenIn,
+  ReopenOut,
   ReprocessOut,
   ResponsePreviewOut,
   SampleAlertsOut,
@@ -95,6 +97,8 @@ export interface AlertFilters {
   status?: string[];
   severity?: string[];
   disposition?: string[];
+  /** Who or what closed it; only closed alerts match. */
+  closed_by?: string[];
   /** The API filters on one source id (a repeated parameter would keep only the last). */
   source_id?: string;
   q?: string;
@@ -172,6 +176,9 @@ export const endpoints = {
     api.get<Page<AlertEventOut>>(`/alerts/${enc(id)}/events`, { query: { cursor, limit: 200 }, signal }),
   addNote: (api: ApiClient, id: string, text: string) => api.post<AlertEventOut>(`/alerts/${enc(id)}/notes`, { text }),
   reprocess: (api: ApiClient, id: string) => api.post<ReprocessOut>(`/alerts/${enc(id)}/reprocess`),
+  /** Put an alert the AI closed back in front of a person, with a reason; `flag` also records that the close was wrong. */
+  reopenAlert: (api: ApiClient, id: string, body: ReopenIn, flag = false) =>
+    api.post<ReopenOut>(`/alerts/${enc(id)}/${flag ? 'flag' : 'reopen'}`, body),
 
   /** Status counts for the alert view tabs (cached 15 s per tenant and window). */
   alertCounts: (api: ApiClient, window: AlertCountsWindow = {}, signal?: AbortSignal) =>

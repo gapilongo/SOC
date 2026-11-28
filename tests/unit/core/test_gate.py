@@ -85,3 +85,20 @@ async def test_a_model_normalised_alert_skips_rules_and_the_cache(rules: List[Di
     gate = _nodes([_rule(f"r{i}", m) for i, m in enumerate(rules)], cache)
     assert (await gate.gate(_state(flags=["llm_normalized"])))["gate"] == {"suppressed": False}
     assert (await gate.gate(_state()))["gate"]["suppressed"] is True
+
+
+@pytest.mark.parametrize("rules", [[{"verdict_key": VK}], [{"entities.hosts": "srv-app-02"}], [{"title": "New service"}]])
+@pytest.mark.parametrize("reason", ["related_threat", "analyst_reopen", "analyst_flag"])
+async def test_a_reopened_alert_skips_rules_and_the_cache(rules: List[Dict[str, Any]], reason: str) -> None:
+    """#461: the safety net or a person reopened it, so no suppression rule and no cached verdict closes it again
+    at the gate. Nothing is recorded as a hit of the rule."""
+    cache = VerdictCache(fakeredis.aioredis.FakeRedis(), "pfx")
+    for n in (1, 2):
+        await cache.put_analyst_benign("t1", VK, decision="false_positive", alert_id=f"b{n}", escalation_id=None,
+                                       decided_by=f"analyst-{n}", severity="medium")
+    gate = _nodes([_rule(f"r{i}", m) for i, m in enumerate(rules)], cache)
+    reopened = _state()
+    reopened["alert"]["reopened"] = {"reason": reason}
+    assert (await gate.gate(reopened))["gate"] == {"suppressed": False}
+    assert gate.deps.repos.suppressions.hits == []  # type: ignore[attr-defined]
+    assert (await gate.gate(_state()))["gate"]["suppressed"] is True  # the same alert, not reopened, is closed

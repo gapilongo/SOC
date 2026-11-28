@@ -22,6 +22,9 @@ __all__ = [
     "LINK_CODE",
     "NOT_AVAILABLE",
     "REOPENED_BY",
+    "REOPENED_BY_ANALYST",
+    "REOPENED_BY_FLAG",
+    "REOPENED_BY_FLAG_STEP",
     "Missing",
 ]
 
@@ -48,6 +51,12 @@ REOPENED_BY: Final[Mapping[Optional[str], str]] = {
     None: "A related threat was confirmed, so the safety net reopened this alert, which the AI had closed on the model's word.",
 }
 
+#: A person's own reopening, by the reason code of the ``reopened`` marker (``lg_sotf.core.reopen``).
+REOPENED_BY_ANALYST: Final[Mapping[str, str]] = {
+    "analyst_reopen": "An analyst reopened this alert, which the AI had closed on the model's word.",
+    "analyst_flag": "An analyst flagged the AI's close of this alert as wrong, so it was reopened.",
+}
+
 CASE_OPENED: Final = Step("policy", "The case was opened for a person's decision.")
 CASE_CLAIMED: Final = Step("person", "An analyst claimed the case.")
 CASE_DECIDED: Final = Step("person", "An analyst recorded the decision on the case.")
@@ -57,6 +66,16 @@ EVENT_STEPS: Final[Mapping[str, Step]] = {
     "alert.linked": Step("policy", "The safety net linked this alert to the case. It stays closed."),
     "alert.reopened": Step("policy", "The safety net reopened this alert after a related threat was confirmed."),
 }
+
+#: The safety net reopened an alert because a person flagged the AI's close of a related alert (the reopening
+#: records ``confirmation: flag``): why, and its line on the timeline.
+REOPENED_BY_FLAG: Final = (
+    "A person flagged the AI's close of a related alert as wrong, so the safety net reopened this alert, which "
+    "the AI had closed on the model's word."
+)
+REOPENED_BY_FLAG_STEP: Final = Step(
+    "policy", "The safety net reopened this alert after a person flagged the AI's close of a related alert."
+)
 
 
 class Missing(NamedTuple):
@@ -84,10 +103,6 @@ NOT_AVAILABLE: Final[Tuple[Missing, ...]] = (
     Missing(
         "alerts[].reopened.confirmation",
         "A reopening records who or what acted, not which confirmation caused it.",
-    ),
-    Missing(
-        "alerts[].flagged",
-        "An alert cannot be flagged for the next blind-audit sample yet.",
     ),
     Missing(
         "alerts[].closed_by.rule_reviewed_at",

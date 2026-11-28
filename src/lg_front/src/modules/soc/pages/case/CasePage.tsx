@@ -31,7 +31,8 @@ import { useTenantLabel } from '../../api/hooks';
 import { afterEscalationChange } from '../../api/invalidate';
 import type { CaseActionOut, CaseAlertOut, CaseOut, CasePersonOut, CaseTimelineEntryOut, ProposedActionOut } from '../../api/types';
 import { useApi, useAuth } from '../../../../auth/AuthContext';
-import { AlertWhy, ClosedBy, CloserMark, decisionWords, type CloserKind } from '../../components/case';
+import { can } from '../../../../auth/roles';
+import { AlertWhy, ClosedBy, CloserMark, decisionWords, reopenedByPerson, type CloserKind } from '../../components/case';
 import { FactChip, Keycap, OutcomeTag, SeverityBars, SmallTag, StepList, VoiceTag } from '../../components/investigation';
 import { clockOf } from '../../components/investigation/clock';
 import { useToast } from '../../../../components/Toast';
@@ -45,6 +46,7 @@ import { SlaChip, blockedReason, useClaim } from '../investigation/claim';
 import { DecisionDock } from '../investigation/DecisionDock';
 import { isSingleKey, useKeydown, useSingleKeys } from '../investigation/keys';
 import { ResponseTable } from '../investigation/ResponseTable';
+import { ReopenDialog, type PendingReopen } from './ReopenDialog';
 import { useCase } from './useCase';
 
 const LINK = 'text-link underline hover:text-link-hover';
@@ -178,7 +180,10 @@ function When({ at, day }: { at: string; day: string | undefined }) {
   );
 }
 
-function AlertRow({ alert, c, userId }: { alert: CaseAlertOut; c: CaseOut; userId: string | null | undefined }) {
+/** Ask to reopen or flag an alert; null when the person may not (the API would refuse a viewer). */
+type AskReopen = ((pending: PendingReopen) => void) | null;
+
+function AlertRow({ alert, c, userId, ask }: { alert: CaseAlertOut; c: CaseOut; userId: string | null | undefined; ask: AskReopen }) {
   const open = alert.state !== 'closed';
   return (
     <tr
@@ -222,12 +227,25 @@ function AlertRow({ alert, c, userId }: { alert: CaseAlertOut; c: CaseOut; userI
           <AlertWhy alert={alert} caseId={c.id} />
         </span>
       </td>
+      <td className={cx(TD, 'min-[900px]:whitespace-nowrap min-[900px]:text-right')}>
+        {alert.can_reopen && ask && (
+          <span className="flex flex-wrap items-center gap-1.5 pt-1 min-[900px]:flex-nowrap min-[900px]:justify-end min-[900px]:pt-0">
+            <Button size="sm" onClick={() => ask({ alert, verb: 'reopen' })}>
+              Reopen<span className="sr-only">: {alert.title}</span>
+            </Button>
+            <Button size="sm" variant="quiet" onClick={() => ask({ alert, verb: 'flag' })}>
+              Flag<span className="sr-only">: {alert.title}</span>
+            </Button>
+          </span>
+        )}
+      </td>
     </tr>
   );
 }
 
-function Alerts({ c, userId }: { c: CaseOut; userId: string | null | undefined }) {
+function Alerts({ c, userId, ask }: { c: CaseOut; userId: string | null | undefined; ask: AskReopen }) {
   const id = useId();
+  const reopenable = c.alerts.some((a) => a.can_reopen);
   return (
     <section aria-labelledby={id} className="pt-5">
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 pb-2">
@@ -261,14 +279,24 @@ function Alerts({ c, userId }: { c: CaseOut; userId: string | null | undefined }
             <th scope="col" className={TH}>
               Why
             </th>
+            <th scope="col" className={TH}>
+              <span className="sr-only">Reopen or flag</span>
+            </th>
           </tr>
         </thead>
         <tbody className="block min-[900px]:table-row-group">
           {c.alerts.map((alert) => (
-            <AlertRow key={alert.id} alert={alert} c={c} userId={userId} />
+            <AlertRow key={alert.id} alert={alert} c={c} userId={userId} ask={ask} />
           ))}
         </tbody>
       </table>
+      {reopenable && (
+        <p data-reopen-note className="max-w-[62em] pt-2 text-xs text-muted">
+          {ask
+            ? 'Reopen puts an alert the AI closed on the model’s word back in front of a person, and nothing closes it again without one. Flag does the same and records that the close was wrong. Both ask for a reason.'
+            : 'An analyst can reopen an alert the AI closed on the model’s word, or flag the close as wrong.'}
+        </p>
+      )}
     </section>
   );
 }
@@ -291,7 +319,8 @@ function AlertRef({ alert }: { alert: CaseAlertOut }) {
 
 function SafetyNet({ c, userId }: { c: CaseOut; userId: string | null | undefined }) {
   const linked = c.alerts.filter((a) => a.role === 'linked' && a.link);
-  const reopened = c.alerts.filter((a) => a.role === 'reopened' && a.reopened);
+  // What the safety net reopened; an alert a person reopened or flagged says so in its own row.
+  const reopened = c.alerts.filter((a) => a.role === 'reopened' && a.reopened && !reopenedByPerson(a.reopened));
   if (linked.length === 0 && reopened.length === 0) return null;
   return (
     <Section title="Linked by the safety net" note="Alerts the AI closed on the model's word that share a host, a user or an address with this case.">
@@ -607,6 +636,7 @@ function Case({ caseId }: { caseId: string }) {
   const tenant = useTenantLabel();
   const { model, escalation, active } = useCase(caseId);
   const [singleKeys, setSingleKeys] = useSingleKeys(principal?.userId);
+  const [reopening, setReopening] = useState<PendingReopen | null>(null);
   const e = active ? escalation.data : undefined;
   const claim = useClaim(e);
   const userId = principal?.userId;
@@ -637,6 +667,8 @@ function Case({ caseId }: { caseId: string }) {
   const mine = Boolean(e && e.assigned_to && e.assigned_to === userId);
   const owner = personLabel(c.owner, userId);
   const linked = c.counts.linked;
+  // Reopening and flagging are attributed to a person, as a decision is: an analyst with an account here.
+  const mayReopen = can.decide(principal);
 
   const openNext = async () => {
     try {
@@ -685,10 +717,12 @@ function Case({ caseId }: { caseId: string }) {
       {linked > 0 && (
         <Banner tone="info" className="mt-3" title={`${plural(linked, 'alert', 'alerts')} closed by the AI ${linked === 1 ? 'is' : 'are'} linked here and ${linked === 1 ? 'stays' : 'stay'} closed`}>
           {c.alerts.find((a) => a.link)?.link?.reason.sentence}
+          {mayReopen && ' You can reopen or flag any of them yourself, now.'}
         </Banner>
       )}
 
-      <Alerts c={c} userId={userId} />
+      <Alerts c={c} userId={userId} ask={mayReopen ? setReopening : null} />
+      {reopening && <ReopenDialog pending={reopening} caseId={c.id} onClose={() => setReopening(null)} />}
       <SafetyNet c={c} userId={userId} />
       <Response c={c} onDecided={() => void afterEscalationChange(client)} />
 

@@ -186,7 +186,8 @@ def test_alert_summary_declares_what_the_close_node_writes() -> None:
     # ``related_open``: the decide node's related-alert check of a model-led close (AI-E3.16).
     nodes = {"triage", "correlation", "analysis", "response", "escalation_attached", "detached_from", "related_open"}
     # The blind audit, and the safety net of policy v3 (core.retro_reopen): reopened, or only linked to a threat.
-    review = {"blind_audit_review", "reopened", "linked", "linked_alert_ids"}
+    # ``flagged``: a person flagged the AI's close as wrong (core.reopen): who and when, never their words.
+    review = {"blind_audit_review", "reopened", "linked", "linked_alert_ids", "flagged"}
     assert closed | accounting | nodes | review == declared(AlertSummary)
     assert declared(ResponseSummary) == {"threat_type", "evidence", "auto", "awaiting", "blocked", "done"}
 
